@@ -1,4 +1,4 @@
-"""Apply Companion CLI."""
+"""applycling CLI."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def _require_config() -> dict:
         return storage.load_config()
     except storage.StorageError:
         console.print(
-            "[red]No config found.[/red] Run [bold]apply-companion setup[/bold] first."
+            "[red]No config found.[/red] Run [bold]applycling setup[/bold] first."
         )
         sys.exit(1)
 
@@ -63,20 +63,20 @@ def _require_resume() -> str:
         return storage.load_resume()
     except storage.StorageError:
         console.print(
-            "[red]No base resume found.[/red] Run [bold]apply-companion setup[/bold] first."
+            "[red]No base resume found.[/red] Run [bold]applycling setup[/bold] first."
         )
         sys.exit(1)
 
 
 @click.group()
 def main() -> None:
-    """Apply Companion — tailor your resume to job descriptions with a local LLM."""
+    """applycling — your clingy job-search companion."""
 
 
 @main.command()
 def setup() -> None:
     """First-time setup: save base resume and pick an Ollama model."""
-    console.print(Panel.fit("[bold]Apply Companion — Setup[/bold]", style="cyan"))
+    console.print(Panel.fit("[bold]applycling — Setup[/bold]", style="cyan"))
 
     resume = _read_multiline("Paste your base resume below:")
     if not resume:
@@ -113,7 +113,7 @@ def setup() -> None:
         Panel.fit(
             f"[green]Setup complete![/green]\n"
             f"Model: [bold]{chosen}[/bold]\n\n"
-            f"Next: [bold]apply-companion add[/bold] to tailor your resume to a job.",
+            f"Next: [bold]applycling add[/bold] to tailor your resume to a job.",
             style="green",
         )
     )
@@ -194,7 +194,7 @@ def list_jobs() -> None:
     """List all tracked jobs."""
     jobs = storage.load_jobs()
     if not jobs:
-        console.print("[dim]No jobs tracked yet. Run `apply-companion add`.[/dim]")
+        console.print("[dim]No jobs tracked yet. Run `applycling add`.[/dim]")
         return
 
     table = Table(title="Tracked Jobs")

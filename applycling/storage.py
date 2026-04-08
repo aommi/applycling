@@ -31,7 +31,7 @@ def save_resume(text: str) -> None:
 def load_resume() -> str:
     if not RESUME_PATH.exists():
         raise StorageError(
-            "No base resume found. Run `apply-companion setup` first."
+            "No base resume found. Run `applycling setup` first."
         )
     return RESUME_PATH.read_text(encoding="utf-8")
 
@@ -44,7 +44,7 @@ def save_config(config: dict[str, Any]) -> None:
 def load_config() -> dict[str, Any]:
     if not CONFIG_PATH.exists():
         raise StorageError(
-            "No config found. Run `apply-companion setup` first."
+            "No config found. Run `applycling setup` first."
         )
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 

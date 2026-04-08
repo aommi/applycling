@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "apply-companion"
+name = "applycling"
 version = "0.1.0"
-description = "CLI tool that tailors your resume to job descriptions using a local Ollama LLM."
+description = "Your clingy job-search companion. Tailors your resume to job descriptions with a local Ollama LLM."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-apply-companion = "apply_companion.cli:main"
+applycling = "applycling.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["apply_companion*"]
+include = ["applycling*"]

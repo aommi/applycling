@@ -1,4 +1,6 @@
-# Apply Companion
+# applycling
+
+> Your clingy job-search companion. We won't leave you alone until you land your next role.
 
 A small CLI that tailors your resume to job descriptions using a **local Ollama LLM**. Nothing leaves your machine.
 
@@ -30,24 +32,24 @@ This gives you `python3.12` without touching the macOS-bundled `python3`.
 
 ## Install
 
-Apply Companion is a normal Python package — install it into a virtual environment so it doesn't fight with anything else on your system.
+applycling is a normal Python package — install it into a virtual environment so it doesn't fight with anything else on your system.
 
 ```bash
-cd /path/to/apply-companion
+cd /path/to/applycling
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-After this you should have an `apply-companion` command on your PATH **while the venv is active**:
+After this you should have an `applycling` command on your PATH **while the venv is active**:
 
 ```bash
-apply-companion --help
+applycling --help
 ```
 
 > **Each new terminal** you'll need to re-activate the venv before running the command:
 > ```bash
-> cd /path/to/apply-companion
+> cd /path/to/applycling
 > source .venv/bin/activate
 > ```
 > Type `deactivate` to leave the venv.
@@ -65,7 +67,7 @@ ollama serve
 Then, with the venv active:
 
 ```bash
-apply-companion setup
+applycling setup
 ```
 
 You'll be asked to:
@@ -79,7 +81,7 @@ Both your resume and your model choice are saved under `data/`.
 ## Daily use
 
 ```bash
-apply-companion add
+applycling add
 ```
 
 Walks you through:
@@ -90,9 +92,9 @@ Walks you through:
 It then streams a tailored resume from your local model, prints a short fit summary in a panel, and saves the tailored resume to `output/{company}-{title}-{date}.md`. The job gets a tracking ID like `job_001`.
 
 ```bash
-apply-companion list                # table of every tracked job
-apply-companion view job_001        # render a tailored resume in the terminal
-apply-companion status job_001      # update status: tailored / applied / interview / offer / rejected
+applycling list                # table of every tracked job
+applycling view job_001        # render a tailored resume in the terminal
+applycling status job_001      # update status: tailored / applied / interview / offer / rejected
 ```
 
 ---
@@ -100,7 +102,7 @@ apply-companion status job_001      # update status: tailored / applied / interv
 ## Where things live
 
 ```
-apply-companion/
+applycling/
 ├── data/
 │   ├── resume.md     # your base resume
 │   ├── config.json   # which Ollama model to use
@@ -117,6 +119,6 @@ Everything stays on your machine.
 
 - **`Ollama doesn't seem to be running`** → start it with `ollama serve` in another terminal.
 - **`No Ollama models installed`** → pull one, e.g. `ollama pull llama3.2`.
-- **`No base resume found`** → run `apply-companion setup` first.
-- **`command not found: apply-companion`** → activate the venv (`source .venv/bin/activate`), or run it directly with `.venv/bin/apply-companion ...`.
-- **`Package 'apply-companion' requires a different Python`** → your active interpreter is older than 3.10. Create the venv with `python3.12 -m venv .venv` instead of plain `python3`.
+- **`No base resume found`** → run `applycling setup` first.
+- **`command not found: applycling`** → activate the venv (`source .venv/bin/activate`), or run it directly with `.venv/bin/applycling ...`.
+- **`Package 'applycling' requires a different Python`** → your active interpreter is older than 3.10. Create the venv with `python3.12 -m venv .venv` instead of plain `python3`.
