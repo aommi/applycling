@@ -12,6 +12,7 @@ dependencies = [
     "click>=8.1",
     "ollama>=0.3.0",
     "rich>=13.7",
+    "notion-client>=2.2",
 ]
 
 [project.scripts]
