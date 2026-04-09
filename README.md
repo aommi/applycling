@@ -78,6 +78,40 @@ Both your resume and your model choice are saved under `data/`.
 
 ---
 
+## Tracker storage (planned: v0.2)
+
+> The current version stores everything locally in `data/jobs.json`. v0.2 (Epic 0 on the dev board) replaces this with a pluggable `TrackerStore` so you can pick where your job tracker lives. The plan and the connection steps are below — they're aspirational until v0.2 ships.
+
+In v0.2, applycling will support three backends:
+
+- **Notion (recommended)** — your job tracker becomes a real Notion database, with views you can open on any device. Best for reviewing in the morning and editing on a real keyboard.
+- **SQLite (default if no backend is configured)** — a single local file at `data/tracker.db`. Zero config, no account required.
+- **CSV** — import/export only, not a primary store. Use it to move data in or out.
+
+### Connecting to Notion
+
+One-time setup:
+
+1. Go to https://www.notion.so/my-integrations and click **+ New integration**.
+2. Name it `applycling`, set the workspace, and submit.
+3. Copy the **Internal Integration Secret** — you'll need it in a moment.
+4. In your Notion workspace, open the page where you want the job tracker to live (any page works).
+5. Click **··· → Connections → Connect to → applycling** to share that page with the integration.
+
+Then, with the venv active:
+
+```bash
+applycling notion connect
+```
+
+You'll be asked for your integration secret and the URL of the parent page. applycling creates a "Job Tracker" database under that page with the columns it needs (title, company, source URL, status, application URL, fit summary, package folder, dates), and adds a **Review Queue** view filtered to `status = tailored`.
+
+### Daily use after connecting
+
+`applycling add` works exactly the same way it does today, but each tailored job now appears as a row in your Notion Job Tracker with a link to its package folder. Open the **Review Queue** view in Notion when you sit down in the morning to see what's waiting.
+
+---
+
 ## Daily use
 
 ```bash
