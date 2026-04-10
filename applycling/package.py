@@ -38,6 +38,8 @@ def assemble(
     tailored_markdown: str,
     fit_summary: str,
     output_root: Optional[Path] = None,
+    strategy: Optional[str] = None,
+    company_context: Optional[str] = None,
 ) -> Path:
     """Build the application package folder for a job.
 
@@ -69,6 +71,18 @@ def assemble(
         f"# Fit summary — {job.title} @ {job.company}\n\n{fit_summary}\n",
         encoding="utf-8",
     )
+
+    if strategy:
+        (folder / "strategy.md").write_text(
+            f"# Role strategy — {job.title} @ {job.company}\n\n{strategy}\n",
+            encoding="utf-8",
+        )
+
+    if company_context:
+        (folder / "company_context.md").write_text(
+            f"# Company context — {job.company}\n\n{company_context}\n",
+            encoding="utf-8",
+        )
 
     # Manifest. Useful for the autopilot agent later, and for humans now.
     manifest = {

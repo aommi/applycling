@@ -13,6 +13,9 @@ build/
 dist/
 .eggs/
 
+# Secrets
+.env
+
 # Editor / OS
 .DS_Store
 .vscode/

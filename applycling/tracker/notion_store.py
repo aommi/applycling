@@ -101,6 +101,21 @@ class NotionStore(TrackerStore):
         self.secret = cfg["secret"]
         self.database_id = cfg["database_id"]
         self.client = Client(auth=self.secret)
+        # notion-client 3.x queries via data_sources, which needs the
+        # data-source ID (different from the database ID).
+        self._data_source_id = self._resolve_data_source_id()
+
+    def _resolve_data_source_id(self) -> str:
+        """Look up the data-source ID for our database."""
+        try:
+            db = self.client.databases.retrieve(self.database_id)
+            sources = db.get("data_sources") or []
+            if sources:
+                return sources[0]["id"]
+        except Exception:
+            pass
+        # Fallback: the database_id itself (older API versions).
+        return self.database_id
 
     # ---- mapping helpers ----
 
@@ -161,8 +176,8 @@ class NotionStore(TrackerStore):
         max_n = 0
         cursor: Optional[str] = None
         while True:
-            resp = self.client.databases.query(
-                database_id=self.database_id,
+            resp = self.client.data_sources.query(
+                self._data_source_id,
                 start_cursor=cursor,
                 page_size=100,
             )
@@ -183,8 +198,8 @@ class NotionStore(TrackerStore):
         return f"job_{max_n + 1:03d}"
 
     def _find_page_by_id(self, job_id: str) -> Optional[dict[str, Any]]:
-        resp = self.client.databases.query(
-            database_id=self.database_id,
+        resp = self.client.data_sources.query(
+            self._data_source_id,
             filter={
                 "property": PROP_JOB_ID,
                 "rich_text": {"equals": job_id},
@@ -218,8 +233,8 @@ class NotionStore(TrackerStore):
         cursor: Optional[str] = None
         try:
             while True:
-                resp = self.client.databases.query(
-                    database_id=self.database_id,
+                resp = self.client.data_sources.query(
+                    self._data_source_id,
                     start_cursor=cursor,
                     page_size=100,
                     sorts=[

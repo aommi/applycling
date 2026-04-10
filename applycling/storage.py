@@ -12,6 +12,8 @@ OUTPUT_DIR = ROOT / "output"
 RESUME_PATH = DATA_DIR / "resume.md"
 JOBS_PATH = DATA_DIR / "jobs.json"
 CONFIG_PATH = DATA_DIR / "config.json"
+PROFILE_PATH = DATA_DIR / "profile.json"
+CONTEXT_PATH = DATA_DIR / "context.md"
 
 
 def _ensure_dirs() -> None:
@@ -91,6 +93,25 @@ def load_job(job_id: str) -> dict[str, Any]:
         if job.get("id") == job_id:
             return job
     raise StorageError(f"No job found with id '{job_id}'.")
+
+
+def save_profile(profile: dict[str, Any]) -> None:
+    _ensure_dirs()
+    PROFILE_PATH.write_text(json.dumps(profile, indent=2), encoding="utf-8")
+
+
+def load_profile() -> dict[str, Any] | None:
+    if not PROFILE_PATH.exists():
+        return None
+    return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+
+
+def load_context() -> str | None:
+    """Return contents of data/context.md, or None if the file doesn't exist."""
+    if not CONTEXT_PATH.exists():
+        return None
+    text = CONTEXT_PATH.read_text(encoding="utf-8").strip()
+    return text or None
 
 
 def update_job_status(job_id: str, status: str) -> dict[str, Any]:

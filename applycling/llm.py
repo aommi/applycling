@@ -6,7 +6,13 @@ from typing import Iterator
 
 import ollama
 
-from .prompts import FIT_SUMMARY_PROMPT, TAILOR_RESUME_PROMPT
+from .prompts import (
+    COMPANY_CONTEXT_PROMPT,
+    FIT_SUMMARY_PROMPT,
+    PROFILE_SUMMARY_PROMPT,
+    ROLE_ANALYST_PROMPT,
+    TAILOR_RESUME_PROMPT,
+)
 
 
 class LLMError(Exception):
@@ -67,11 +73,28 @@ def _stream_chat(model: str, prompt: str) -> Iterator[str]:
 
 
 def tailor_resume(
-    resume: str, job_description: str, model: str
+    resume: str,
+    job_description: str,
+    model: str,
+    context: str | None = None,
+    strategy: str | None = None,
 ) -> Iterator[str]:
+    context_section = ""
+    if context:
+        context_section = (
+            "\n- You have been given OPTIONAL CONTEXT below. "
+            "Include items from it only if they genuinely strengthen this application for this specific role. "
+            "Omit anything that isn't relevant."
+        )
     prompt = TAILOR_RESUME_PROMPT.format(
-        resume=resume, job_description=job_description
+        resume=resume,
+        job_description=job_description,
+        context_section=context_section,
     )
+    if strategy:
+        prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
+    if context:
+        prompt += f"\n\n=== OPTIONAL CONTEXT (include only if relevant) ===\n{context}\n"
     yield from _stream_chat(model, prompt)
 
 
@@ -79,6 +102,29 @@ def get_fit_summary(
     resume: str, job_description: str, model: str
 ) -> Iterator[str]:
     prompt = FIT_SUMMARY_PROMPT.format(
+        resume=resume, job_description=job_description
+    )
+    yield from _stream_chat(model, prompt)
+
+
+def analyze_role(
+    job_description: str, model: str, company_context: str | None = None
+) -> Iterator[str]:
+    """Pass 1: extract role signal and produce a positioning strategy."""
+    company_section = ""
+    if company_context:
+        company_section = f"\n\n=== COMPANY CONTEXT ===\n{company_context}"
+    prompt = ROLE_ANALYST_PROMPT.format(
+        job_description=job_description,
+        company_section=company_section,
+    )
+    yield from _stream_chat(model, prompt)
+
+
+def get_profile_summary(
+    resume: str, job_description: str, model: str
+) -> Iterator[str]:
+    prompt = PROFILE_SUMMARY_PROMPT.format(
         resume=resume, job_description=job_description
     )
     yield from _stream_chat(model, prompt)

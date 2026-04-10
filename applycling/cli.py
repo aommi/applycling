@@ -26,13 +26,35 @@ STATUS_STYLES = {
 }
 
 
+def _profile_header_markdown(profile: dict) -> str:
+    """Build the static top section of the resume from stored profile fields."""
+    lines = []
+    name = profile.get("name", "").strip()
+    if name:
+        lines.append(f"# {name}\n")
+    contact = " · ".join(filter(None, [
+        profile.get("email", "").strip(),
+        profile.get("phone", "").strip(),
+        profile.get("location", "").strip(),
+    ]))
+    if contact:
+        lines.append(contact)
+    links = " · ".join(filter(None, [
+        profile.get("linkedin", "").strip(),
+        profile.get("github", "").strip(),
+    ]))
+    if links:
+        lines.append(links)
+    return "\n".join(lines)
+
+
 def _read_multiline(prompt_text: str) -> str:
     console.print(f"[bold]{prompt_text}[/bold]")
-    console.print("[dim](end with a single line containing just `---`)[/dim]")
+    console.print("[dim]Paste the text, then type [bold]---[/bold] on its own line and press Enter to finish.[/dim]")
     lines: list[str] = []
     while True:
         try:
-            line = input()
+            line = input("> " if not lines else "  ")
         except EOFError:
             break
         if line.strip() == "---":
@@ -89,18 +111,26 @@ def _setup_resume_from_pdf(model: str) -> str:
             console.print(f"[red]{e}[/red]")
             continue
 
-        try:
-            parts: list[str] = []
-            with console.status(
-                "[cyan]Cleaning into Markdown via Ollama...[/cyan]",
-                spinner="dots",
-            ):
-                for chunk in pdf_import.clean_to_markdown(raw, model):
-                    parts.append(chunk)
-        except llm.LLMError as e:
-            console.print(f"[red]{e}[/red]")
-            sys.exit(1)
-        cleaned = "".join(parts).strip()
+        skip_llm = Prompt.ask(
+            "Clean up text with Ollama? (skip if using a large model on limited RAM)",
+            choices=["yes", "skip"],
+            default="yes",
+        )
+        if skip_llm == "skip":
+            cleaned = raw
+        else:
+            try:
+                parts: list[str] = []
+                with console.status(
+                    "[cyan]Cleaning into Markdown via Ollama...[/cyan]",
+                    spinner="dots",
+                ):
+                    for chunk in pdf_import.clean_to_markdown(raw, model):
+                        parts.append(chunk)
+            except llm.LLMError as e:
+                console.print(f"[red]{e}[/red]")
+                sys.exit(1)
+            cleaned = "".join(parts).strip()
 
         console.print()
         console.print(
@@ -166,6 +196,37 @@ def setup() -> None:
     storage.save_resume(resume)
     storage.save_config({"model": chosen_model})
 
+    # Collect personal details (stored separately, never passed to the LLM).
+    console.print("\n[bold]Personal details[/bold] [dim](used verbatim in every resume — never rewritten by AI)[/dim]")
+    existing = storage.load_profile() or {}
+    profile = {
+        "name":     Prompt.ask("Full name",       default=existing.get("name", "")),
+        "email":    Prompt.ask("Email",            default=existing.get("email", "")),
+        "phone":    Prompt.ask("Phone",            default=existing.get("phone", "")),
+        "location": Prompt.ask("Location",         default=existing.get("location", "")),
+        "linkedin": Prompt.ask("LinkedIn URL",     default=existing.get("linkedin", "")),
+        "github":   Prompt.ask("GitHub URL",       default=existing.get("github", "")),
+    }
+    storage.save_profile({k: v for k, v in profile.items() if v})
+
+    # Ensure Playwright browsers are installed (needed for PDF rendering).
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            p.chromium.launch()  # quick check — will fail if browsers missing
+    except Exception:
+        console.print("\n[yellow]Installing Playwright browsers (one-time)…[/yellow]")
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=False,
+        )
+        if result.returncode != 0:
+            console.print(
+                "[red]Playwright browser install failed.[/red] "
+                "Run manually: [bold]playwright install chromium[/bold]"
+            )
+
     console.print(
         Panel.fit(
             f"[green]Setup complete![/green]\n"
@@ -190,41 +251,128 @@ def add() -> None:
     if not model:
         console.print("[red]No model in config.[/red] Run setup again.")
         sys.exit(1)
+    profile = storage.load_profile()
+    context = storage.load_context()
 
-    title = Prompt.ask("Job title")
-    company = Prompt.ask("Company name")
-    source_url = Prompt.ask("Source URL (optional)", default="")
-    job_description = _read_multiline("Paste the job description below:")
+    source_url = Prompt.ask("Job posting URL (leave blank to enter details manually)", default="")
+    title = company = job_description = ""
+
+    company_url = ""
+    if source_url:
+        from . import scraper
+        try:
+            with console.status("[cyan]Fetching job posting...[/cyan]", spinner="dots"):
+                posting = scraper.fetch_job_posting(source_url, model)
+            title = posting.title
+            company = posting.company
+            job_description = posting.description
+            company_url = posting.company_url
+            console.print(f"[green]Fetched:[/green] [bold]{title}[/bold] @ [bold]{company}[/bold]")
+            title = Prompt.ask("Job title", default=title)
+            company = Prompt.ask("Company name", default=company)
+            if company_url:
+                console.print(f"[dim]Company page detected: {company_url}[/dim]")
+            company_url = Prompt.ask("Company page URL (for context)", default=company_url)
+        except Exception as e:
+            console.print(f"[yellow]Could not auto-fetch details ({e}) — falling back to manual entry.[/yellow]")
+            source_url = ""
+
+    if not source_url:
+        title = Prompt.ask("Job title")
+        company = Prompt.ask("Company name")
+        source_url = Prompt.ask("Source URL (optional)", default="")
+        company_url = Prompt.ask("Company page URL (optional)", default="")
+        job_description = _read_multiline("Paste the job description below (end with --- on its own line):")
+
     if not job_description:
         console.print("[red]Empty job description — aborting.[/red]")
         sys.exit(1)
 
-    # Tailor the resume.
+    want_summary = Prompt.ask(
+        "Include a profile summary section?", choices=["y", "n"], default="y"
+    ) == "y"
+
+    if context:
+        console.print("[dim]Context hints file found — will be considered during tailoring.[/dim]")
+
+    # ---- Pass 1: company context (optional) ----
+    company_context = ""
+    if company_url:
+        try:
+            from . import scraper as _scraper
+            with console.status("[cyan]Fetching company context...[/cyan]", spinner="dots"):
+                company_context = _scraper.fetch_company_context(company_url, model)
+        except Exception as e:
+            console.print(f"[yellow]Company context fetch failed ({e}) — skipping.[/yellow]")
+
+    # ---- Pass 1: Role Analyst ----
     console.print()
+    strategy_parts: list[str] = []
+    try:
+        with console.status("[cyan]Analysing role...[/cyan]", spinner="dots"):
+            for chunk in llm.analyze_role(job_description, model, company_context or None):
+                strategy_parts.append(chunk)
+    except llm.LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    strategy = "".join(strategy_parts).strip()
+
+    # Show strategy and let the user edit before proceeding.
+    console.print(Panel(strategy, title="[bold]Role strategy[/bold] — review and edit if needed", style="cyan"))
+    if Prompt.ask("Proceed with this strategy?", choices=["y", "n", "edit"], default="y") == "edit":
+        strategy = _read_multiline("Paste your edited strategy:")
+
+    # ---- Pass 2: Resume Tailor ----
     tailored_parts: list[str] = []
     try:
         with console.status(
             "[cyan]Tailoring your resume...[/cyan]", spinner="dots"
         ):
-            for chunk in llm.tailor_resume(base_resume, job_description, model):
+            for chunk in llm.tailor_resume(
+                base_resume, job_description, model,
+                context=context, strategy=strategy
+            ):
                 tailored_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    tailored = "".join(tailored_parts).strip()
+    tailored_body = "".join(tailored_parts).strip()
 
-    # Fit summary.
-    summary_parts: list[str] = []
+    # Optionally generate a per-job profile summary.
+    profile_summary = ""
+    if want_summary:
+        summary_parts: list[str] = []
+        try:
+            with console.status(
+                "[cyan]Generating profile summary...[/cyan]", spinner="dots"
+            ):
+                for chunk in llm.get_profile_summary(base_resume, job_description, model):
+                    summary_parts.append(chunk)
+        except llm.LLMError as e:
+            console.print(f"[yellow]Profile summary failed ({e}) — skipping.[/yellow]")
+        profile_summary = "".join(summary_parts).strip()
+
+    # Assemble the final resume: static profile header + optional summary + tailored body.
+    resume_sections = []
+    if profile:
+        resume_sections.append(_profile_header_markdown(profile))
+    if profile_summary:
+        resume_sections.append(f"## Profile\n\n{profile_summary}")
+    resume_sections.append(tailored_body)
+    tailored = "\n\n".join(resume_sections)
+
+    # Fit summary (the internal reviewer note — not in the resume itself).
+    fit_parts: list[str] = []
     try:
         with console.status(
             "[cyan]Generating fit summary...[/cyan]", spinner="dots"
         ):
             for chunk in llm.get_fit_summary(base_resume, job_description, model):
-                summary_parts.append(chunk)
+                fit_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    fit_summary = "".join(summary_parts).strip()
+    fit_summary = "".join(fit_parts).strip()
 
     # Persist the job (auto-assigns id + dates).
     store = get_store()
@@ -250,7 +398,11 @@ def add() -> None:
             "[cyan]Rendering HTML + PDF and assembling package...[/cyan]",
             spinner="dots",
         ):
-            folder = package.assemble(job, tailored, fit_summary)
+            folder = package.assemble(
+                job, tailored, fit_summary,
+                strategy=strategy or None,
+                company_context=company_context or None,
+            )
     except Exception as e:
         console.print(f"[red]Package assembly failed:[/red] {e}")
         sys.exit(1)
@@ -273,6 +425,36 @@ def add() -> None:
     )
     console.print(f"\n[green]Package folder:[/green] [bold]{folder}[/bold]")
     console.print(f"[green]Tracked as:[/green] [bold]{job.id}[/bold]")
+
+    # Token usage estimate.
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        input_text = base_resume + job_description
+        output_text = tailored + fit_summary
+        input_tokens = len(enc.encode(input_text))
+        output_tokens = len(enc.encode(output_text))
+        total_tokens = input_tokens + output_tokens
+        # Approximate costs (per 1M tokens) for reference models.
+        costs = [
+            ("Gemini 2.0 Flash",  0.10,  0.40),
+            ("GPT-4o mini",       0.15,  0.60),
+            ("Claude Haiku 3.5",  0.80,  4.00),
+            ("GPT-4o",            2.50, 10.00),
+            ("Claude Sonnet 3.7", 3.00, 15.00),
+            ("Claude Opus 4",    15.00, 75.00),
+        ]
+        rows = "\n".join(
+            f"  {name:<22} ${(input_tokens * inp + output_tokens * out) / 1_000_000:.4f}"
+            for name, inp, out in costs
+        )
+        console.print(
+            f"\n[dim]Token estimate (tiktoken cl100k): "
+            f"{input_tokens} in + {output_tokens} out = {total_tokens} total\n"
+            f"  If you'd used an API:\n{rows}[/dim]"
+        )
+    except Exception:
+        pass  # tiktoken not installed or encoding failed — skip silently.
 
 
 # ---------- list / view / status ----------

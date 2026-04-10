@@ -123,10 +123,22 @@ def get_store() -> TrackerStore:
         from . import notion_store
 
         if notion_store.is_connected():
-            return notion_store.NotionStore()
+            store = notion_store.NotionStore()
+            # Verify the database is reachable before committing to it.
+            store.load_jobs()
+            return store
     except ImportError:
         # NotionStore module exists but its optional dependency isn't
         # installed; fall back silently.
         pass
+    except (TrackerError, Exception):
+        # Notion database is unreachable (deleted, unshared, etc.).
+        # Fall back to SQLite so the user isn't blocked.
+        import sys
+        print(
+            "\033[33mWarning: Notion database is unreachable — "
+            "falling back to local SQLite tracker.\033[0m",
+            file=sys.stderr,
+        )
 
     return sqlite_store.SQLiteStore()
