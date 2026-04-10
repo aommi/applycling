@@ -266,7 +266,11 @@ def add() -> None:
         try:
             with console.status("[cyan]Fetching job posting...[/cyan]", spinner="dots"):
                 posting, scrape_tokens = scraper.fetch_job_posting(source_url, model)
-            token_steps.append(("Job scraping", scrape_tokens[0], scrape_tokens[1]))
+            if scrape_tokens[0]:  # Empty when structured data was used (no LLM call).
+                token_steps.append(("Job scraping", scrape_tokens[0], scrape_tokens[1]))
+            else:
+                token_steps.append(("Job scraping (HTML)", "", ""))
+                console.print("[dim]Extracted from structured data — no LLM call needed.[/dim]")
             title = posting.title
             company = posting.company
             job_description = posting.description
@@ -465,6 +469,9 @@ def add() -> None:
         total_in = total_out = 0
         step_lines = []
         for step_name, prompt_text, output_text in token_steps:
+            if not prompt_text and not output_text:
+                step_lines.append(f"  {step_name:<20}      0 tokens (structured data)")
+                continue
             s_in = len(enc.encode(prompt_text))
             s_out = len(enc.encode(output_text))
             total_in += s_in
