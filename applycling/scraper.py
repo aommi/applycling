@@ -81,8 +81,12 @@ def _derive_company_url(job_url: str, html: str) -> str:
     return ""
 
 
-def fetch_job_posting(url: str, model: str) -> JobPosting:
-    """Fetch *url*, extract title/company/description, and derive company URL."""
+def fetch_job_posting(url: str, model: str) -> tuple[JobPosting, tuple[str, str]]:
+    """Fetch *url*, extract title/company/description, and derive company URL.
+
+    Returns (JobPosting, (prompt_text, output_text)) so callers can track
+    token usage.
+    """
     import ollama as _ollama
 
     raw, html = _fetch_page(url)
@@ -104,16 +108,20 @@ def fetch_job_posting(url: str, model: str) -> JobPosting:
 
     company_url = _derive_company_url(url, html)
 
-    return JobPosting(
+    posting = JobPosting(
         title=data.get("title", "").strip(),
         company=data.get("company", "").strip(),
         description=data.get("description", "").strip(),
         company_url=company_url,
     )
+    return posting, (prompt, text)
 
 
-def fetch_company_context(url: str, model: str) -> str:
-    """Scrape a company page and return a Markdown summary of the company."""
+def fetch_company_context(url: str, model: str) -> tuple[str, tuple[str, str]]:
+    """Scrape a company page and return a Markdown summary of the company.
+
+    Returns (context_text, (prompt_text, output_text)) for token tracking.
+    """
     import ollama as _ollama
     from .prompts import COMPANY_CONTEXT_PROMPT
 
@@ -122,4 +130,5 @@ def fetch_company_context(url: str, model: str) -> str:
 
     prompt = COMPANY_CONTEXT_PROMPT.format(page_text=cleaned)
     response = _ollama.generate(model=model, prompt=prompt, stream=False)
-    return response.get("response", "").strip()
+    output = response.get("response", "").strip()
+    return output, (prompt, output)

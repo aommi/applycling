@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
-from . import llm, notion_connect, package, pdf_import, storage
+from . import llm, notion_connect, package, pdf_import, prompts, storage
 from .tracker import STATUSES, Job, TrackerError, get_store
 
 console = Console()
@@ -254,6 +254,9 @@ def add() -> None:
     profile = storage.load_profile()
     context = storage.load_context()
 
+    # Token tracking: list of (step_name, prompt_text, output_text).
+    token_steps: list[tuple[str, str, str]] = []
+
     source_url = Prompt.ask("Job posting URL (leave blank to enter details manually)", default="")
     title = company = job_description = ""
 
@@ -262,7 +265,8 @@ def add() -> None:
         from . import scraper
         try:
             with console.status("[cyan]Fetching job posting...[/cyan]", spinner="dots"):
-                posting = scraper.fetch_job_posting(source_url, model)
+                posting, scrape_tokens = scraper.fetch_job_posting(source_url, model)
+            token_steps.append(("Job scraping", scrape_tokens[0], scrape_tokens[1]))
             title = posting.title
             company = posting.company
             job_description = posting.description
@@ -301,7 +305,8 @@ def add() -> None:
         try:
             from . import scraper as _scraper
             with console.status("[cyan]Fetching company context...[/cyan]", spinner="dots"):
-                company_context = _scraper.fetch_company_context(company_url, model)
+                company_context, ctx_tokens = _scraper.fetch_company_context(company_url, model)
+            token_steps.append(("Company context", ctx_tokens[0], ctx_tokens[1]))
         except Exception as e:
             console.print(f"[yellow]Company context fetch failed ({e}) — skipping.[/yellow]")
 
@@ -316,6 +321,11 @@ def add() -> None:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
     strategy = "".join(strategy_parts).strip()
+    _analyst_co = f"\n\n=== COMPANY CONTEXT ===\n{company_context}" if company_context else ""
+    _analyst_prompt = prompts.ROLE_ANALYST_PROMPT.format(
+        job_description=job_description, company_section=_analyst_co
+    )
+    token_steps.append(("Role Analyst", _analyst_prompt, strategy))
 
     # Show strategy and let the user edit before proceeding.
     console.print(Panel(strategy, title="[bold]Role strategy[/bold] — review and edit if needed", style="cyan"))
@@ -337,6 +347,19 @@ def add() -> None:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
     tailored_body = "".join(tailored_parts).strip()
+    _ctx_section = (
+        "\n- You have been given OPTIONAL CONTEXT below. "
+        "Include items from it only if they genuinely strengthen this application for this specific role. "
+        "Omit anything that isn't relevant."
+    ) if context else ""
+    _tailor_prompt = prompts.TAILOR_RESUME_PROMPT.format(
+        resume=base_resume, job_description=job_description, context_section=_ctx_section
+    )
+    if strategy:
+        _tailor_prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
+    if context:
+        _tailor_prompt += f"\n\n=== OPTIONAL CONTEXT (include only if relevant) ===\n{context}\n"
+    token_steps.append(("Resume Tailor", _tailor_prompt, tailored_body))
 
     # Optionally generate a per-job profile summary.
     profile_summary = ""
@@ -351,6 +374,11 @@ def add() -> None:
         except llm.LLMError as e:
             console.print(f"[yellow]Profile summary failed ({e}) — skipping.[/yellow]")
         profile_summary = "".join(summary_parts).strip()
+        if profile_summary:
+            _ps_prompt = prompts.PROFILE_SUMMARY_PROMPT.format(
+                resume=base_resume, job_description=job_description
+            )
+            token_steps.append(("Profile Summary", _ps_prompt, profile_summary))
 
     # Assemble the final resume: static profile header + optional summary + tailored body.
     resume_sections = []
@@ -373,6 +401,10 @@ def add() -> None:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
     fit_summary = "".join(fit_parts).strip()
+    _fit_prompt = prompts.FIT_SUMMARY_PROMPT.format(
+        resume=base_resume, job_description=job_description
+    )
+    token_steps.append(("Fit Summary", _fit_prompt, fit_summary))
 
     # Persist the job (auto-assigns id + dates).
     store = get_store()
@@ -426,35 +458,44 @@ def add() -> None:
     console.print(f"\n[green]Package folder:[/green] [bold]{folder}[/bold]")
     console.print(f"[green]Tracked as:[/green] [bold]{job.id}[/bold]")
 
-    # Token usage estimate.
+    # Token usage estimate — per-step breakdown.
     try:
         import tiktoken
         enc = tiktoken.get_encoding("cl100k_base")
-        input_text = base_resume + job_description
-        output_text = tailored + fit_summary
-        input_tokens = len(enc.encode(input_text))
-        output_tokens = len(enc.encode(output_text))
-        total_tokens = input_tokens + output_tokens
-        # Approximate costs (per 1M tokens) for reference models.
+        total_in = total_out = 0
+        step_lines = []
+        for step_name, prompt_text, output_text in token_steps:
+            s_in = len(enc.encode(prompt_text))
+            s_out = len(enc.encode(output_text))
+            total_in += s_in
+            total_out += s_out
+            step_lines.append(f"  {step_name:<20} {s_in:>6,} in + {s_out:>6,} out")
+        total = total_in + total_out
         costs = [
             ("Gemini 2.0 Flash",  0.10,  0.40),
             ("GPT-4o mini",       0.15,  0.60),
             ("Claude Haiku 3.5",  0.80,  4.00),
             ("GPT-4o",            2.50, 10.00),
             ("Claude Sonnet 3.7", 3.00, 15.00),
+            ("Gemini 2.5 Pro",    2.50, 15.00),
+            ("o4-mini",           1.10,  4.40),
             ("Claude Opus 4",    15.00, 75.00),
+            ("o3",               10.00, 40.00),
         ]
-        rows = "\n".join(
-            f"  {name:<22} ${(input_tokens * inp + output_tokens * out) / 1_000_000:.4f}"
+        cost_lines = "\n".join(
+            f"  {name:<22} ${(total_in * inp + total_out * out) / 1_000_000:.4f}"
             for name, inp, out in costs
         )
+        breakdown = "\n".join(step_lines)
         console.print(
-            f"\n[dim]Token estimate (tiktoken cl100k): "
-            f"{input_tokens} in + {output_tokens} out = {total_tokens} total\n"
-            f"  If you'd used an API:\n{rows}[/dim]"
+            f"\n[dim]Token usage (tiktoken cl100k):\n"
+            f"{breakdown}\n"
+            f"  {'─' * 40}\n"
+            f"  {'Total':<20} {total_in:>6,} in + {total_out:>6,} out = {total:,}\n\n"
+            f"  API cost estimate:\n{cost_lines}[/dim]"
         )
     except Exception:
-        pass  # tiktoken not installed or encoding failed — skip silently.
+        pass
 
 
 # ---------- list / view / status ----------
