@@ -9,27 +9,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# A clean, recruiter-ready resume style. Uses only system fonts so the
-# document renders identically in Chrome, Preview, and headless Chromium.
+# ATS-safe, recruiter-ready resume style.
+# - Arial throughout: universally supported, ATS-readable.
+# - All spacing via line-height and padding, never empty div spacers.
+# - No position:fixed, no CSS multi-column, no CSS Grid with gap.
+# - All text is real HTML text nodes (no SVG/image text).
 RESUME_STYLE = """
-@page { size: Letter; margin: 0.6in; }
+@page { size: letter; margin: 0.7in 0.75in; }
 * { box-sizing: border-box; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-family: Arial, sans-serif;
   font-size: 10.5pt;
-  line-height: 1.42;
+  line-height: 1.45;
   color: #1a1a1a;
-  max-width: 7.4in;
+  max-width: 7in;
   margin: 0 auto;
   padding: 0;
 }
 h1 {
+  font-family: Arial, sans-serif;
   font-size: 22pt;
   margin: 0 0 0.05in 0;
   font-weight: 700;
   letter-spacing: -0.5px;
 }
 h2 {
+  font-family: Arial, sans-serif;
   font-size: 11pt;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -39,6 +44,7 @@ h2 {
   font-weight: 700;
 }
 h3 {
+  font-family: Arial, sans-serif;
   font-size: 11pt;
   margin: 0.13in 0 0.02in 0;
   font-weight: 600;
@@ -124,6 +130,65 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> None:
             )
         finally:
             browser.close()
+
+
+def markdown_to_docx(markdown_text: str, docx_path: Path) -> None:
+    """Convert Markdown text to a .docx file.
+
+    Uses python-docx. US Letter, margins matching the HTML/PDF output.
+    """
+    try:
+        from docx import Document
+        from docx.shared import Pt, Inches
+    except ImportError as e:
+        raise RuntimeError(
+            "python-docx is not installed. Run `pip install python-docx`."
+        ) from e
+
+    doc = Document()
+
+    # Set page size and margins (US Letter).
+    section = doc.sections[0]
+    section.page_width = Inches(8.5)
+    section.page_height = Inches(11)
+    section.top_margin = Inches(0.7)
+    section.bottom_margin = Inches(0.7)
+    section.left_margin = Inches(0.75)
+    section.right_margin = Inches(0.75)
+
+    # Set default font.
+    style = doc.styles["Normal"]
+    font = style.font
+    font.name = "Arial"
+    font.size = Pt(10.5)
+
+    for line in markdown_text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("### "):
+            p = doc.add_heading(stripped[4:], level=3)
+            for run in p.runs:
+                run.font.name = "Arial"
+        elif stripped.startswith("## "):
+            p = doc.add_heading(stripped[3:], level=2)
+            for run in p.runs:
+                run.font.name = "Arial"
+        elif stripped.startswith("# "):
+            p = doc.add_heading(stripped[2:], level=1)
+            for run in p.runs:
+                run.font.name = "Arial"
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            doc.add_paragraph(stripped[2:], style="List Bullet")
+        elif stripped.startswith("<!--"):
+            continue  # Skip HTML comments (tailoring log).
+        elif stripped == "-->":
+            continue
+        else:
+            doc.add_paragraph(stripped)
+
+    docx_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(docx_path))
 
 
 def render_resume(markdown_text: str, out_dir: Path, title: str = "Resume") -> dict[str, Path]:

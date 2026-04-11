@@ -555,6 +555,7 @@ def add(async_mode: bool) -> None:
                 positioning_brief=pos_brief or None,
                 cover_letter=cover_letter_text or None,
                 email_inmail=email_inmail_text or None,
+                generate_docx=cfg.get("generate_docx", False),
             )
     except Exception as e:
         console.print(f"[red]Package assembly failed:[/red] {e}")

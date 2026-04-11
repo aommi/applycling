@@ -43,6 +43,7 @@ def assemble(
     positioning_brief: Optional[str] = None,
     cover_letter: Optional[str] = None,
     email_inmail: Optional[str] = None,
+    generate_docx: bool = False,
 ) -> Path:
     """Build the application package folder for a job.
 
@@ -68,6 +69,8 @@ def assemble(
         folder,
         title=f"{job.title} — {job.company}",
     )
+    if generate_docx:
+        render.markdown_to_docx(tailored_markdown, folder / "resume.docx")
 
     # Fit summary as its own file.
     (folder / "fit_summary.md").write_text(
@@ -100,6 +103,8 @@ def assemble(
         cl_html_path = folder / "cover_letter.html"
         cl_html_path.write_text(cl_html, encoding="utf-8")
         render.html_to_pdf(cl_html_path, folder / "cover_letter.pdf")
+        if generate_docx:
+            render.markdown_to_docx(cl_md, folder / "cover_letter.docx")
 
     if email_inmail:
         (folder / "email_inmail.md").write_text(
