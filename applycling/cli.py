@@ -207,6 +207,19 @@ def setup() -> None:
         "linkedin": Prompt.ask("LinkedIn URL",     default=existing.get("linkedin", "")),
         "github":   Prompt.ask("GitHub URL",       default=existing.get("github", "")),
     }
+
+    # Voice, tone, and hard boundaries.
+    console.print("\n[bold]Writing style[/bold] [dim](injected into every tailoring prompt)[/dim]")
+    profile["voice_tone"] = Prompt.ask(
+        "Voice & tone",
+        default=existing.get("voice_tone", "Direct, active voice, outcome-first. Short sentences. No em-dashes, no clichés."),
+    )
+    console.print("\n[bold]Never fabricate[/bold] [dim](hard boundary: the LLM will never invent these)[/dim]")
+    console.print("[dim]Comma-separated list, e.g.: specific tools not in resume, domain experience not evidenced[/dim]")
+    nf_default = ", ".join(existing.get("never_fabricate", []))
+    nf_input = Prompt.ask("Never fabricate", default=nf_default or "specific tools or platforms not listed in resume or stories, domain experience not evidenced")
+    profile["never_fabricate"] = [s.strip() for s in nf_input.split(",") if s.strip()]
+
     storage.save_profile({k: v for k, v in profile.items() if v})
 
     # Ensure Playwright browsers are installed (needed for PDF rendering).
@@ -243,16 +256,20 @@ def setup() -> None:
 # ---------- add ----------
 
 @main.command()
-def add() -> None:
+@click.option("--async", "async_mode", is_flag=True, help="Skip input gates. Generate full package without stopping.")
+def add(async_mode: bool) -> None:
     """Add a job: tailor a resume + assemble an application package."""
     cfg = _require_config()
+    review_mode = cfg.get("review_mode", "interactive")
+    if async_mode:
+        review_mode = "async"
     base_resume = _require_resume()
     model = cfg.get("model")
     if not model:
         console.print("[red]No model in config.[/red] Run setup again.")
         sys.exit(1)
     profile = storage.load_profile()
-    context = storage.load_context()
+    stories = storage.load_stories()
 
     # Token tracking: list of (step_name, prompt_text, output_text).
     token_steps: list[tuple[str, str, str]] = []
@@ -300,41 +317,66 @@ def add() -> None:
         "Include a profile summary section?", choices=["y", "n"], default="y"
     ) == "y"
 
-    if context:
-        console.print("[dim]Context hints file found — will be considered during tailoring.[/dim]")
+    if stories:
+        console.print("[dim]Stories file found — will be considered during tailoring.[/dim]")
 
-    # ---- Pass 1: company context (optional) ----
-    company_context = ""
+    # ---- Fetch company page text (optional, no LLM call) ----
+    company_page_text = ""
     if company_url:
         try:
             from . import scraper as _scraper
-            with console.status("[cyan]Fetching company context...[/cyan]", spinner="dots"):
-                company_context, ctx_tokens = _scraper.fetch_company_context(company_url, model)
-            token_steps.append(("Company context", ctx_tokens[0], ctx_tokens[1]))
+            with console.status("[cyan]Fetching company page...[/cyan]", spinner="dots"):
+                company_page_text = _scraper.fetch_page_text(company_url)
         except Exception as e:
-            console.print(f"[yellow]Company context fetch failed ({e}) — skipping.[/yellow]")
+            console.print(f"[yellow]Company page fetch failed ({e}) — skipping.[/yellow]")
 
-    # ---- Pass 1: Role Analyst ----
+    # ---- Role Intel (single merged pass) ----
     console.print()
-    strategy_parts: list[str] = []
+    intel_parts: list[str] = []
     try:
-        with console.status("[cyan]Analysing role...[/cyan]", spinner="dots"):
-            for chunk in llm.analyze_role(job_description, model, company_context or None):
-                strategy_parts.append(chunk)
+        with console.status("[cyan]Running Role Intel...[/cyan]", spinner="dots"):
+            for chunk in llm.role_intel(
+                job_description, model,
+                company_page_text=company_page_text or None,
+                resume=base_resume,
+            ):
+                intel_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    strategy = "".join(strategy_parts).strip()
-    _analyst_co = f"\n\n=== COMPANY CONTEXT ===\n{company_context}" if company_context else ""
-    _analyst_prompt = prompts.ROLE_ANALYST_PROMPT.format(
-        job_description=job_description, company_section=_analyst_co
+    strategy = "".join(intel_parts).strip()
+    _co_note = "\nUse the company page text below to inform this section." if company_page_text else ""
+    _cand_section = "\nYou have the candidate's base resume below. Use it to assess keyword coverage and gaps."
+    _intel_prompt = prompts.ROLE_INTEL_PROMPT.format(
+        job_description=job_description, company_note=_co_note, candidate_section=_cand_section
     )
-    token_steps.append(("Role Analyst", _analyst_prompt, strategy))
+    if company_page_text:
+        _intel_prompt += f"\n\n=== COMPANY PAGE TEXT ===\n{company_page_text}\n"
+    _intel_prompt += f"\n\n=== CANDIDATE BASE RESUME ===\n{base_resume}\n"
+    token_steps.append(("Role Intel", _intel_prompt, strategy))
 
-    # Show strategy and let the user edit before proceeding.
-    console.print(Panel(strategy, title="[bold]Role strategy[/bold] — review and edit if needed", style="cyan"))
-    if Prompt.ask("Proceed with this strategy?", choices=["y", "n", "edit"], default="y") == "edit":
-        strategy = _read_multiline("Paste your edited strategy:")
+    # Show Role Intel and structured input gate.
+    console.print(Panel(strategy, title="[bold]Role Intel[/bold]", style="cyan"))
+    if review_mode == "interactive":
+        # Structured questions instead of generic y/n.
+        import re as _re
+        niche_match = _re.search(r"## Identified niche\s*\n(.+)", strategy)
+        niche_text = niche_match.group(1).strip() if niche_match else "see above"
+        console.print(f"\n[bold]Angle:[/bold] {niche_text}")
+        angle_ok = Prompt.ask("Does this angle feel right, or do you want to lead with something else?", default="looks good")
+        if angle_ok.lower() not in ("looks good", "yes", "y", "good", ""):
+            strategy += f"\n\n## Candidate override\nLead with this angle instead: {angle_ok}\n"
+
+        gaps_match = _re.search(r"## Tooling or domain gaps\s*\n([\s\S]*?)(?=\n##|$)", strategy)
+        if gaps_match and gaps_match.group(1).strip() and "no gap" not in gaps_match.group(1).lower():
+            console.print(f"\n[bold]Gaps identified:[/bold]\n{gaps_match.group(1).strip()}")
+            gap_action = Prompt.ask("How to handle gaps? (bridge / deprioritise / other)", default="bridge")
+            strategy += f"\n\n## Gap handling\nCandidate chose: {gap_action}\n"
+
+        if Prompt.ask("Proceed to resume tailoring?", choices=["y", "edit"], default="y") == "edit":
+            strategy = _read_multiline("Paste your edited strategy:")
+    else:
+        console.print("[dim]Async mode — auto-proceeding.[/dim]")
 
     # ---- Pass 2: Resume Tailor ----
     tailored_parts: list[str] = []
@@ -344,25 +386,32 @@ def add() -> None:
         ):
             for chunk in llm.tailor_resume(
                 base_resume, job_description, model,
-                context=context, strategy=strategy
+                stories=stories, strategy=strategy,
+                voice_tone=profile.get("voice_tone") if profile else None,
+                never_fabricate=profile.get("never_fabricate") if profile else None,
             ):
                 tailored_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
     tailored_body = "".join(tailored_parts).strip()
-    _ctx_section = (
-        "\n- You have been given OPTIONAL CONTEXT below. "
-        "Include items from it only if they genuinely strengthen this application for this specific role. "
+    _stories_section = (
+        "\n- You have been given CANDIDATE STORIES below. "
+        "Draw from these only when they genuinely strengthen this application for this specific role. "
         "Omit anything that isn't relevant."
-    ) if context else ""
+    ) if stories else ""
+    _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile and profile.get("voice_tone") else ""
+    _nf_list = profile.get("never_fabricate", []) if profile else []
+    _nf = f"\n- Specifically NEVER fabricate: {'; '.join(_nf_list)}." if _nf_list else ""
     _tailor_prompt = prompts.TAILOR_RESUME_PROMPT.format(
-        resume=base_resume, job_description=job_description, context_section=_ctx_section
+        resume=base_resume, job_description=job_description,
+        stories_section=_stories_section, voice_tone_section=_vt,
+        never_fabricate_section=_nf,
     )
     if strategy:
         _tailor_prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
-    if context:
-        _tailor_prompt += f"\n\n=== OPTIONAL CONTEXT (include only if relevant) ===\n{context}\n"
+    if stories:
+        _tailor_prompt += f"\n\n=== CANDIDATE STORIES (draw from when relevant) ===\n{stories}\n"
     token_steps.append(("Resume Tailor", _tailor_prompt, tailored_body))
 
     # Optionally generate a per-job profile summary.
@@ -393,7 +442,24 @@ def add() -> None:
     resume_sections.append(tailored_body)
     tailored = "\n\n".join(resume_sections)
 
-    # Fit summary (the internal reviewer note — not in the resume itself).
+    # Positioning brief (replaces fit summary — includes decisions, strength, gap prep).
+    brief_parts: list[str] = []
+    try:
+        with console.status(
+            "[cyan]Generating positioning brief...[/cyan]", spinner="dots"
+        ):
+            for chunk in llm.positioning_brief(strategy, tailored, job_description, model):
+                brief_parts.append(chunk)
+    except llm.LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    pos_brief = "".join(brief_parts).strip()
+    _brief_prompt = prompts.POSITIONING_BRIEF_PROMPT.format(
+        role_intel=strategy, tailored_resume=tailored, job_description=job_description
+    )
+    token_steps.append(("Positioning Brief", _brief_prompt, pos_brief))
+
+    # Also generate a short fit summary for the Notion row.
     fit_parts: list[str] = []
     try:
         with console.status(
@@ -437,7 +503,8 @@ def add() -> None:
             folder = package.assemble(
                 job, tailored, fit_summary,
                 strategy=strategy or None,
-                company_context=company_context or None,
+                company_context=company_page_text or None,
+                positioning_brief=pos_brief or None,
             )
     except Exception as e:
         console.print(f"[red]Package assembly failed:[/red] {e}")

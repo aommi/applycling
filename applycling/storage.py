@@ -13,7 +13,7 @@ RESUME_PATH = DATA_DIR / "resume.md"
 JOBS_PATH = DATA_DIR / "jobs.json"
 CONFIG_PATH = DATA_DIR / "config.json"
 PROFILE_PATH = DATA_DIR / "profile.json"
-CONTEXT_PATH = DATA_DIR / "context.md"
+STORIES_PATH = DATA_DIR / "stories.md"
 
 
 def _ensure_dirs() -> None:
@@ -106,11 +106,11 @@ def load_profile() -> dict[str, Any] | None:
     return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
 
 
-def load_context() -> str | None:
-    """Return contents of data/context.md, or None if the file doesn't exist."""
-    if not CONTEXT_PATH.exists():
+def load_stories() -> str | None:
+    """Return contents of data/stories.md, or None if the file doesn't exist."""
+    if not STORIES_PATH.exists():
         return None
-    text = CONTEXT_PATH.read_text(encoding="utf-8").strip()
+    text = STORIES_PATH.read_text(encoding="utf-8").strip()
     return text or None
 
 

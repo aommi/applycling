@@ -7,10 +7,10 @@ from typing import Iterator
 import ollama
 
 from .prompts import (
-    COMPANY_CONTEXT_PROMPT,
     FIT_SUMMARY_PROMPT,
+    POSITIONING_BRIEF_PROMPT,
     PROFILE_SUMMARY_PROMPT,
-    ROLE_ANALYST_PROMPT,
+    ROLE_INTEL_PROMPT,
     TAILOR_RESUME_PROMPT,
 )
 
@@ -76,25 +76,36 @@ def tailor_resume(
     resume: str,
     job_description: str,
     model: str,
-    context: str | None = None,
+    stories: str | None = None,
     strategy: str | None = None,
+    voice_tone: str | None = None,
+    never_fabricate: list[str] | None = None,
 ) -> Iterator[str]:
-    context_section = ""
-    if context:
-        context_section = (
-            "\n- You have been given OPTIONAL CONTEXT below. "
-            "Include items from it only if they genuinely strengthen this application for this specific role. "
+    stories_section = ""
+    if stories:
+        stories_section = (
+            "\n- You have been given CANDIDATE STORIES below. "
+            "Draw from these only when they genuinely strengthen this application for this specific role. "
             "Omit anything that isn't relevant."
         )
+    voice_tone_section = ""
+    if voice_tone:
+        voice_tone_section = f" Candidate's voice and tone: {voice_tone}"
+    never_fabricate_section = ""
+    if never_fabricate:
+        items = "; ".join(never_fabricate)
+        never_fabricate_section = f"\n- Specifically NEVER fabricate: {items}."
     prompt = TAILOR_RESUME_PROMPT.format(
         resume=resume,
         job_description=job_description,
-        context_section=context_section,
+        stories_section=stories_section,
+        voice_tone_section=voice_tone_section,
+        never_fabricate_section=never_fabricate_section,
     )
     if strategy:
         prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
-    if context:
-        prompt += f"\n\n=== OPTIONAL CONTEXT (include only if relevant) ===\n{context}\n"
+    if stories:
+        prompt += f"\n\n=== CANDIDATE STORIES (draw from when relevant) ===\n{stories}\n"
     yield from _stream_chat(model, prompt)
 
 
@@ -107,16 +118,39 @@ def get_fit_summary(
     yield from _stream_chat(model, prompt)
 
 
-def analyze_role(
-    job_description: str, model: str, company_context: str | None = None
+def role_intel(
+    job_description: str,
+    model: str,
+    company_page_text: str | None = None,
+    resume: str | None = None,
 ) -> Iterator[str]:
-    """Pass 1: extract role signal and produce a positioning strategy."""
-    company_section = ""
-    if company_context:
-        company_section = f"\n\n=== COMPANY CONTEXT ===\n{company_context}"
-    prompt = ROLE_ANALYST_PROMPT.format(
+    """Role Intel: extract signal, build positioning strategy, score ATS match."""
+    company_note = ""
+    if company_page_text:
+        company_note = "\nUse the company page text below to inform this section."
+    candidate_section = ""
+    if resume:
+        candidate_section = "\nYou have the candidate's base resume below. Use it to assess keyword coverage and gaps."
+    prompt = ROLE_INTEL_PROMPT.format(
         job_description=job_description,
-        company_section=company_section,
+        company_note=company_note,
+        candidate_section=candidate_section,
+    )
+    if company_page_text:
+        prompt += f"\n\n=== COMPANY PAGE TEXT ===\n{company_page_text}\n"
+    if resume:
+        prompt += f"\n\n=== CANDIDATE BASE RESUME ===\n{resume}\n"
+    yield from _stream_chat(model, prompt)
+
+
+def positioning_brief(
+    role_intel: str, tailored_resume: str, job_description: str, model: str
+) -> Iterator[str]:
+    """Generate the positioning brief from role intel + tailored resume."""
+    prompt = POSITIONING_BRIEF_PROMPT.format(
+        role_intel=role_intel,
+        tailored_resume=tailored_resume,
+        job_description=job_description,
     )
     yield from _stream_chat(model, prompt)
 

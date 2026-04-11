@@ -40,6 +40,7 @@ def assemble(
     output_root: Optional[Path] = None,
     strategy: Optional[str] = None,
     company_context: Optional[str] = None,
+    positioning_brief: Optional[str] = None,
 ) -> Path:
     """Build the application package folder for a job.
 
@@ -81,6 +82,12 @@ def assemble(
     if company_context:
         (folder / "company_context.md").write_text(
             f"# Company context — {job.company}\n\n{company_context}\n",
+            encoding="utf-8",
+        )
+
+    if positioning_brief:
+        (folder / "positioning_brief.md").write_text(
+            f"# Positioning brief — {job.title} @ {job.company}\n\n{positioning_brief}\n",
             encoding="utf-8",
         )
 

@@ -236,18 +236,7 @@ def fetch_job_posting(url: str, model: str) -> tuple[JobPosting, tuple[str, str]
     return posting, (prompt, text)
 
 
-def fetch_company_context(url: str, model: str) -> tuple[str, tuple[str, str]]:
-    """Scrape a company page and return a Markdown summary of the company.
-
-    Returns (context_text, (prompt_text, output_text)) for token tracking.
-    """
-    import ollama as _ollama
-    from .prompts import COMPANY_CONTEXT_PROMPT
-
+def fetch_page_text(url: str) -> str:
+    """Fetch a page and return its cleaned visible text. No LLM call."""
     raw, _ = _fetch_page(url)
-    cleaned = _clean(raw, max_chars=8_000)
-
-    prompt = COMPANY_CONTEXT_PROMPT.format(page_text=cleaned)
-    response = _ollama.generate(model=model, prompt=prompt, stream=False)
-    output = response.get("response", "").strip()
-    return output, (prompt, output)
+    return _clean(raw, max_chars=8_000)
