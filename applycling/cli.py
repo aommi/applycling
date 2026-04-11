@@ -26,6 +26,36 @@ STATUS_STYLES = {
 }
 
 
+def _clean_llm_output(text: str) -> str:
+    """Strip common LLM artifacts from output before rendering."""
+    import re as _re
+
+    # Strip markdown code fences anywhere in the output.
+    text = _re.sub(r"```[a-z]*\s*\n?", "", text)
+
+    # Remove preamble: everything before the first markdown heading or bullet.
+    # Models often write "Here's the revised resume:\n" before the actual content.
+    first_content = _re.search(r"^(#{1,3} |\- |\* |\d+\. )", text, flags=_re.MULTILINE)
+    if first_content and first_content.start() > 0:
+        preamble = text[:first_content.start()]
+        # Only strip if the preamble looks like LLM chatter (no headings/bullets).
+        if not _re.search(r"^#{1,3} ", preamble, flags=_re.MULTILINE):
+            text = text[first_content.start():]
+
+    # Remove leaked prompt markers (=== SOMETHING ===).
+    text = _re.sub(r"^===.*?===.*$", "", text, flags=_re.MULTILINE)
+
+    # Remove trailing sign-off / offer to help.
+    text = _re.sub(
+        r"\n(?:Let me know|Feel free|I hope|By consistently|If you'd like|I can).*$",
+        "", text, flags=_re.DOTALL | _re.IGNORECASE,
+    )
+
+    # Collapse excessive blank lines left by removals.
+    text = _re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def _profile_header_markdown(profile: dict) -> str:
     """Build the static top section of the resume from stored profile fields."""
     lines = []
@@ -346,7 +376,7 @@ def add(async_mode: bool) -> None:
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    strategy = "".join(intel_parts).strip()
+    strategy = _clean_llm_output("".join(intel_parts))
     _co_note = "\nUse the company page text below to inform this section." if company_page_text else ""
     _cand_section = "\nYou have the candidate's base resume below. Use it to assess keyword coverage and gaps."
     _intel_prompt = prompts.ROLE_INTEL_PROMPT.format(
@@ -397,7 +427,7 @@ def add(async_mode: bool) -> None:
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    tailored_body = "".join(tailored_parts).strip()
+    tailored_body = _clean_llm_output("".join(tailored_parts))
     _stories_section = (
         "\n- You have been given CANDIDATE STORIES below. "
         "Draw from these only when they genuinely strengthen this application for this specific role. "
@@ -429,7 +459,7 @@ def add(async_mode: bool) -> None:
                     summary_parts.append(chunk)
         except llm.LLMError as e:
             console.print(f"[yellow]Profile summary failed ({e}) — skipping.[/yellow]")
-        profile_summary = "".join(summary_parts).strip()
+        profile_summary = _clean_llm_output("".join(summary_parts))
         if profile_summary:
             _ps_prompt = prompts.PROFILE_SUMMARY_PROMPT.format(
                 resume=base_resume, job_description=job_description
@@ -456,7 +486,7 @@ def add(async_mode: bool) -> None:
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    pos_brief = "".join(brief_parts).strip()
+    pos_brief = _clean_llm_output("".join(brief_parts))
     _brief_prompt = prompts.POSITIONING_BRIEF_PROMPT.format(
         role_intel=strategy, tailored_resume=tailored, job_description=job_description
     )
@@ -475,7 +505,7 @@ def add(async_mode: bool) -> None:
                 cl_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[yellow]Cover letter generation failed ({e}) — skipping.[/yellow]")
-    cover_letter_text = "".join(cl_parts).strip()
+    cover_letter_text = _clean_llm_output("".join(cl_parts))
     if cover_letter_text:
         _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile and profile.get("voice_tone") else ""
         _cl_prompt = prompts.COVER_LETTER_PROMPT.format(
@@ -502,7 +532,7 @@ def add(async_mode: bool) -> None:
                     ei_parts.append(chunk)
         except llm.LLMError as e:
             console.print(f"[yellow]Email/InMail generation failed ({e}) — skipping.[/yellow]")
-        email_inmail_text = "".join(ei_parts).strip()
+        email_inmail_text = _clean_llm_output("".join(ei_parts))
         if email_inmail_text:
             _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile.get("voice_tone") else ""
             _ei_prompt = prompts.APPLICATION_EMAIL_PROMPT.format(
@@ -523,7 +553,7 @@ def add(async_mode: bool) -> None:
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    fit_summary = "".join(fit_parts).strip()
+    fit_summary = _clean_llm_output("".join(fit_parts))
     _fit_prompt = prompts.FIT_SUMMARY_PROMPT.format(
         resume=base_resume, job_description=job_description
     )
