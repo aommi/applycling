@@ -7,6 +7,8 @@ from typing import Iterator
 import ollama
 
 from .prompts import (
+    APPLICATION_EMAIL_PROMPT,
+    COVER_LETTER_PROMPT,
     FIT_SUMMARY_PROMPT,
     POSITIONING_BRIEF_PROMPT,
     PROFILE_SUMMARY_PROMPT,
@@ -151,6 +153,44 @@ def positioning_brief(
         role_intel=role_intel,
         tailored_resume=tailored_resume,
         job_description=job_description,
+    )
+    yield from _stream_chat(model, prompt)
+
+
+def cover_letter(
+    role_intel_text: str,
+    tailored_resume: str,
+    job_description: str,
+    model: str,
+    voice_tone: str | None = None,
+) -> Iterator[str]:
+    vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
+    prompt = COVER_LETTER_PROMPT.format(
+        role_intel=role_intel_text,
+        tailored_resume=tailored_resume,
+        job_description=job_description,
+        voice_tone_section=vt,
+    )
+    yield from _stream_chat(model, prompt)
+
+
+def application_email(
+    role_intel_text: str,
+    candidate_name: str,
+    candidate_contact: str,
+    job_title: str,
+    company: str,
+    model: str,
+    voice_tone: str | None = None,
+) -> Iterator[str]:
+    vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
+    prompt = APPLICATION_EMAIL_PROMPT.format(
+        role_intel=role_intel_text,
+        candidate_name=candidate_name,
+        candidate_contact=candidate_contact,
+        job_title=job_title,
+        company=company,
+        voice_tone_section=vt,
     )
     yield from _stream_chat(model, prompt)
 

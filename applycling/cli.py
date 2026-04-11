@@ -459,6 +459,54 @@ def add(async_mode: bool) -> None:
     )
     token_steps.append(("Positioning Brief", _brief_prompt, pos_brief))
 
+    # ---- Cover letter ----
+    cover_letter_text = ""
+    cl_parts: list[str] = []
+    try:
+        with console.status("[cyan]Writing cover letter...[/cyan]", spinner="dots"):
+            for chunk in llm.cover_letter(
+                strategy, tailored, job_description, model,
+                voice_tone=profile.get("voice_tone") if profile else None,
+            ):
+                cl_parts.append(chunk)
+    except llm.LLMError as e:
+        console.print(f"[yellow]Cover letter generation failed ({e}) — skipping.[/yellow]")
+    cover_letter_text = "".join(cl_parts).strip()
+    if cover_letter_text:
+        _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile and profile.get("voice_tone") else ""
+        _cl_prompt = prompts.COVER_LETTER_PROMPT.format(
+            role_intel=strategy, tailored_resume=tailored,
+            job_description=job_description, voice_tone_section=_vt,
+        )
+        token_steps.append(("Cover Letter", _cl_prompt, cover_letter_text))
+
+    # ---- Application email + LinkedIn InMail ----
+    email_inmail_text = ""
+    if profile:
+        ei_parts: list[str] = []
+        contact_line = " · ".join(filter(None, [
+            profile.get("email", ""), profile.get("phone", ""),
+        ]))
+        try:
+            with console.status("[cyan]Drafting email + InMail...[/cyan]", spinner="dots"):
+                for chunk in llm.application_email(
+                    strategy, profile.get("name", ""), contact_line,
+                    title, company, model,
+                    voice_tone=profile.get("voice_tone"),
+                ):
+                    ei_parts.append(chunk)
+        except llm.LLMError as e:
+            console.print(f"[yellow]Email/InMail generation failed ({e}) — skipping.[/yellow]")
+        email_inmail_text = "".join(ei_parts).strip()
+        if email_inmail_text:
+            _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile.get("voice_tone") else ""
+            _ei_prompt = prompts.APPLICATION_EMAIL_PROMPT.format(
+                role_intel=strategy, candidate_name=profile.get("name", ""),
+                candidate_contact=contact_line, job_title=title,
+                company=company, voice_tone_section=_vt,
+            )
+            token_steps.append(("Email + InMail", _ei_prompt, email_inmail_text))
+
     # Also generate a short fit summary for the Notion row.
     fit_parts: list[str] = []
     try:
@@ -505,6 +553,8 @@ def add(async_mode: bool) -> None:
                 strategy=strategy or None,
                 company_context=company_page_text or None,
                 positioning_brief=pos_brief or None,
+                cover_letter=cover_letter_text or None,
+                email_inmail=email_inmail_text or None,
             )
     except Exception as e:
         console.print(f"[red]Package assembly failed:[/red] {e}")

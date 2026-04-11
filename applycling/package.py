@@ -41,6 +41,8 @@ def assemble(
     strategy: Optional[str] = None,
     company_context: Optional[str] = None,
     positioning_brief: Optional[str] = None,
+    cover_letter: Optional[str] = None,
+    email_inmail: Optional[str] = None,
 ) -> Path:
     """Build the application package folder for a job.
 
@@ -88,6 +90,20 @@ def assemble(
     if positioning_brief:
         (folder / "positioning_brief.md").write_text(
             f"# Positioning brief — {job.title} @ {job.company}\n\n{positioning_brief}\n",
+            encoding="utf-8",
+        )
+
+    if cover_letter:
+        cl_md = f"# Cover Letter — {job.title} @ {job.company}\n\n{cover_letter}\n"
+        (folder / "cover_letter.md").write_text(cl_md, encoding="utf-8")
+        cl_html = render.markdown_to_html(cl_md, title=f"Cover Letter — {job.title}")
+        cl_html_path = folder / "cover_letter.html"
+        cl_html_path.write_text(cl_html, encoding="utf-8")
+        render.html_to_pdf(cl_html_path, folder / "cover_letter.pdf")
+
+    if email_inmail:
+        (folder / "email_inmail.md").write_text(
+            f"# Outreach — {job.title} @ {job.company}\n\n{email_inmail}\n",
             encoding="utf-8",
         )
 
