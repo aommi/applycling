@@ -1,10 +1,10 @@
-"""Ollama integration layer."""
+"""LLM integration layer — supports Ollama, Anthropic, and Google AI Studio."""
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Iterator
-
-import ollama
 
 from .prompts import (
     APPLICATION_EMAIL_PROMPT,
@@ -16,42 +16,42 @@ from .prompts import (
     TAILOR_RESUME_PROMPT,
 )
 
+# Load .env from repo root so API keys are available.
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(_env_path)
+except ImportError:
+    pass
+
 
 class LLMError(Exception):
     """Raised when the LLM call fails in a way the CLI should surface."""
 
 
-def _wrap_errors(exc: Exception) -> LLMError:
-    msg = str(exc).lower()
-    if isinstance(exc, ConnectionError) or "connection" in msg or "refused" in msg:
-        return LLMError(
-            "Ollama doesn't seem to be running. Start it with: `ollama serve`"
-        )
-    return LLMError(f"Ollama error: {exc}")
+# ---------------------------------------------------------------------------
+# Provider routing
+# ---------------------------------------------------------------------------
+
+def _stream_chat(model: str, prompt: str, provider: str = "ollama") -> Iterator[str]:
+    """Route a prompt to the right provider and yield text chunks."""
+    if provider == "anthropic":
+        yield from _stream_anthropic(model, prompt)
+    elif provider == "google":
+        yield from _stream_google(model, prompt)
+    else:
+        yield from _stream_ollama(model, prompt)
 
 
-def get_available_models() -> list[str]:
+# ---------------------------------------------------------------------------
+# Ollama
+# ---------------------------------------------------------------------------
+
+def _stream_ollama(model: str, prompt: str) -> Iterator[str]:
     try:
-        resp = ollama.list()
-    except ollama.ResponseError as e:
-        raise _wrap_errors(e) from e
-    except Exception as e:
-        raise _wrap_errors(e) from e
-
-    models = []
-    # The Ollama SDK returns either a dict {"models": [...]} or an object with .models
-    raw_models = resp.get("models", []) if isinstance(resp, dict) else getattr(resp, "models", [])
-    for m in raw_models:
-        if isinstance(m, dict):
-            name = m.get("model") or m.get("name")
-        else:
-            name = getattr(m, "model", None) or getattr(m, "name", None)
-        if name:
-            models.append(name)
-    return models
-
-
-def _stream_chat(model: str, prompt: str) -> Iterator[str]:
+        import ollama
+    except ImportError as e:
+        raise LLMError("ollama package is not installed.") from e
     try:
         stream = ollama.chat(
             model=model,
@@ -68,11 +68,98 @@ def _stream_chat(model: str, prompt: str) -> Iterator[str]:
                     content = getattr(msg, "content", "") or ""
             if content:
                 yield content
-    except ollama.ResponseError as e:
-        raise _wrap_errors(e) from e
     except Exception as e:
-        raise _wrap_errors(e) from e
+        msg = str(e).lower()
+        if "connection" in msg or "refused" in msg:
+            raise LLMError(
+                "Ollama doesn't seem to be running. Start it with: `ollama serve`"
+            ) from e
+        raise LLMError(f"Ollama error: {e}") from e
 
+
+# ---------------------------------------------------------------------------
+# Anthropic
+# ---------------------------------------------------------------------------
+
+def _stream_anthropic(model: str, prompt: str) -> Iterator[str]:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise LLMError(
+            "ANTHROPIC_API_KEY is not set. Add it to your .env file."
+        )
+    try:
+        import anthropic
+    except ImportError as e:
+        raise LLMError("anthropic package is not installed. Run: pip install anthropic") from e
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        with client.messages.stream(
+            model=model,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+    except Exception as e:
+        raise LLMError(f"Anthropic error: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Google AI Studio (Gemini)
+# ---------------------------------------------------------------------------
+
+def _stream_google(model: str, prompt: str) -> Iterator[str]:
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise LLMError(
+            "GOOGLE_API_KEY is not set. Add it to your .env file."
+        )
+    try:
+        from google import genai
+    except ImportError as e:
+        raise LLMError("google-genai package is not installed. Run: pip install google-genai") from e
+    try:
+        client = genai.Client(api_key=api_key)
+        for chunk in client.models.generate_content_stream(
+            model=model,
+            contents=prompt,
+        ):
+            if chunk.text:
+                yield chunk.text
+    except Exception as e:
+        raise LLMError(f"Google AI error: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Model listing
+# ---------------------------------------------------------------------------
+
+def get_available_models() -> list[str]:
+    """Return locally available Ollama models."""
+    try:
+        import ollama
+    except ImportError:
+        return []
+    try:
+        resp = ollama.list()
+    except Exception:
+        return []
+
+    models = []
+    raw_models = resp.get("models", []) if isinstance(resp, dict) else getattr(resp, "models", [])
+    for m in raw_models:
+        if isinstance(m, dict):
+            name = m.get("model") or m.get("name")
+        else:
+            name = getattr(m, "model", None) or getattr(m, "name", None)
+        if name:
+            models.append(name)
+    return models
+
+
+# ---------------------------------------------------------------------------
+# Public API — all functions accept an optional `provider` kwarg
+# ---------------------------------------------------------------------------
 
 def tailor_resume(
     resume: str,
@@ -82,6 +169,7 @@ def tailor_resume(
     strategy: str | None = None,
     voice_tone: str | None = None,
     never_fabricate: list[str] | None = None,
+    provider: str = "ollama",
 ) -> Iterator[str]:
     stories_section = ""
     if stories:
@@ -108,16 +196,16 @@ def tailor_resume(
         prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
     if stories:
         prompt += f"\n\n=== CANDIDATE STORIES (draw from when relevant) ===\n{stories}\n"
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)
 
 
 def get_fit_summary(
-    resume: str, job_description: str, model: str
+    resume: str, job_description: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
     prompt = FIT_SUMMARY_PROMPT.format(
         resume=resume, job_description=job_description
     )
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)
 
 
 def role_intel(
@@ -125,8 +213,8 @@ def role_intel(
     model: str,
     company_page_text: str | None = None,
     resume: str | None = None,
+    provider: str = "ollama",
 ) -> Iterator[str]:
-    """Role Intel: extract signal, build positioning strategy, score ATS match."""
     company_note = ""
     if company_page_text:
         company_note = "\nUse the company page text below to inform this section."
@@ -142,19 +230,18 @@ def role_intel(
         prompt += f"\n\n=== COMPANY PAGE TEXT ===\n{company_page_text}\n"
     if resume:
         prompt += f"\n\n=== CANDIDATE BASE RESUME ===\n{resume}\n"
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)
 
 
 def positioning_brief(
-    role_intel: str, tailored_resume: str, job_description: str, model: str
+    role_intel: str, tailored_resume: str, job_description: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
-    """Generate the positioning brief from role intel + tailored resume."""
     prompt = POSITIONING_BRIEF_PROMPT.format(
         role_intel=role_intel,
         tailored_resume=tailored_resume,
         job_description=job_description,
     )
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)
 
 
 def cover_letter(
@@ -163,6 +250,7 @@ def cover_letter(
     job_description: str,
     model: str,
     voice_tone: str | None = None,
+    provider: str = "ollama",
 ) -> Iterator[str]:
     vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
     prompt = COVER_LETTER_PROMPT.format(
@@ -171,7 +259,7 @@ def cover_letter(
         job_description=job_description,
         voice_tone_section=vt,
     )
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)
 
 
 def application_email(
@@ -182,6 +270,7 @@ def application_email(
     company: str,
     model: str,
     voice_tone: str | None = None,
+    provider: str = "ollama",
 ) -> Iterator[str]:
     vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
     prompt = APPLICATION_EMAIL_PROMPT.format(
@@ -192,13 +281,13 @@ def application_email(
         company=company,
         voice_tone_section=vt,
     )
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)
 
 
 def get_profile_summary(
-    resume: str, job_description: str, model: str
+    resume: str, job_description: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
     prompt = PROFILE_SUMMARY_PROMPT.format(
         resume=resume, job_description=job_description
     )
-    yield from _stream_chat(model, prompt)
+    yield from _stream_chat(model, prompt, provider)

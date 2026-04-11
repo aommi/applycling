@@ -268,6 +268,7 @@ def add(async_mode: bool) -> None:
     if not model:
         console.print("[red]No model in config.[/red] Run setup again.")
         sys.exit(1)
+    provider = cfg.get("provider", "ollama")
     profile = storage.load_profile()
     stories = storage.load_stories()
 
@@ -339,6 +340,7 @@ def add(async_mode: bool) -> None:
                 job_description, model,
                 company_page_text=company_page_text or None,
                 resume=base_resume,
+                provider=provider,
             ):
                 intel_parts.append(chunk)
     except llm.LLMError as e:
@@ -389,6 +391,7 @@ def add(async_mode: bool) -> None:
                 stories=stories, strategy=strategy,
                 voice_tone=profile.get("voice_tone") if profile else None,
                 never_fabricate=profile.get("never_fabricate") if profile else None,
+                provider=provider,
             ):
                 tailored_parts.append(chunk)
     except llm.LLMError as e:
@@ -422,7 +425,7 @@ def add(async_mode: bool) -> None:
             with console.status(
                 "[cyan]Generating profile summary...[/cyan]", spinner="dots"
             ):
-                for chunk in llm.get_profile_summary(base_resume, job_description, model):
+                for chunk in llm.get_profile_summary(base_resume, job_description, model, provider=provider):
                     summary_parts.append(chunk)
         except llm.LLMError as e:
             console.print(f"[yellow]Profile summary failed ({e}) — skipping.[/yellow]")
@@ -448,7 +451,7 @@ def add(async_mode: bool) -> None:
         with console.status(
             "[cyan]Generating positioning brief...[/cyan]", spinner="dots"
         ):
-            for chunk in llm.positioning_brief(strategy, tailored, job_description, model):
+            for chunk in llm.positioning_brief(strategy, tailored, job_description, model, provider=provider):
                 brief_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
@@ -467,6 +470,7 @@ def add(async_mode: bool) -> None:
             for chunk in llm.cover_letter(
                 strategy, tailored, job_description, model,
                 voice_tone=profile.get("voice_tone") if profile else None,
+                provider=provider,
             ):
                 cl_parts.append(chunk)
     except llm.LLMError as e:
@@ -493,6 +497,7 @@ def add(async_mode: bool) -> None:
                     strategy, profile.get("name", ""), contact_line,
                     title, company, model,
                     voice_tone=profile.get("voice_tone"),
+                    provider=provider,
                 ):
                     ei_parts.append(chunk)
         except llm.LLMError as e:
@@ -513,7 +518,7 @@ def add(async_mode: bool) -> None:
         with console.status(
             "[cyan]Generating fit summary...[/cyan]", spinner="dots"
         ):
-            for chunk in llm.get_fit_summary(base_resume, job_description, model):
+            for chunk in llm.get_fit_summary(base_resume, job_description, model, provider=provider):
                 fit_parts.append(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
