@@ -8,7 +8,7 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - First bullet of the top role: the single strongest quantified outcome relevant to this role.
 - Domain relevance must appear in the top third of the page.
 - Every bullet leads with the outcome, not the activity. Active voice only.
-- Bullet count per role is driven by relevance to THIS job, not recency. A highly relevant older role deserves as many bullets as the most recent role. A recent but less relevant role gets 2-3 credibility bullets.
+- Bullet count per role is driven by two factors: relevance to THIS job AND tenure length. A short-tenure role (under 6 months) should not receive more bullets than a longer-tenure role even if it is more recent or more relevant — cap short-tenure roles at 3 bullets regardless. A highly relevant role with substantial tenure (1+ years) deserves the most bullets.
 - Never remove roles entirely. The goal is tailoring emphasis, not gutting history.
 - Never merge two roles at the same company into one. Different date ranges = different roles = different entries. Separate roles show career progression and must stay separate even if the company name is identical.
 - Skills section: only include skills evidenced in experience or called out in the positioning strategy.
@@ -52,6 +52,7 @@ Write 2-3 tight sentences (no bullet points) that:
 - Position the candidate for this specific role using the job description's language.
 - Highlight their most relevant experience and strengths.
 - Sound natural and confident, not like a generic template.
+- Reflect the candidate's ACTUAL experience level from the resume — do not echo back the JD's minimum requirements. If the candidate has 10+ years, say that. Never undersell by mirroring "5+ years" just because the JD asks for it.
 
 Output ONLY the summary text. No heading, no preamble, no closing remarks.
 
@@ -136,7 +137,7 @@ How they describe themselves, their tone, their stage, their customer. One short
 3-4 sentences. This is the candidate's interview and cover letter story — not a resume instruction. Answer: what is the through-line of their career that maps to the 20% signal? What specific angle makes them non-obvious for this role? What should they lead with in an interview when asked "why you"? Be concrete and specific to this candidate's actual background.
 
 ## Resume tailoring brief
-A short tactical brief for the resume editor. Answer: which 2-3 roles or experiences from the resume are most relevant to the 20% signal and should receive the most bullets? Which keyword gaps from the ATS table can be authentically bridged by reframing existing experience (not fabricating)? What lens should bullets be written through for this hiring manager? Never suggest merging separate roles — different date ranges at the same company represent distinct positions that show career progression and must remain separate.
+A short tactical brief for the resume editor. Answer: which 2-3 roles or experiences from the resume are most relevant to the 20% signal and should receive the most bullets? Which keyword gaps from the ATS table can be authentically bridged by reframing existing experience (not fabricating)? What lens should bullets be written through for this hiring manager? Factor in tenure when recommending bullet counts — a short-tenure role (under 6 months) should be capped at 3 bullets even if highly relevant; roles with substantial tenure (1+ years) that are relevant should receive the most bullets. Never suggest merging separate roles — different date ranges at the same company represent distinct positions that show career progression and must remain separate.
 
 ## ATS keyword match
 Top 10-12 keywords and hard skills from the JD (specific tools, technologies, domain terms, role-specific verbs). For each, note coverage:
