@@ -173,7 +173,7 @@ def _derive_company_url(job_url: str, html: str) -> str:
     return ""
 
 
-def fetch_job_posting(url: str, model: str) -> tuple[JobPosting, tuple[str, str]]:
+def fetch_job_posting(url: str, model: str, provider: str = "ollama") -> tuple[JobPosting, tuple[str, str]]:
     """Fetch *url*, extract title/company/description, and derive company URL.
 
     Tries JSON-LD structured data first (zero LLM tokens). Falls back to
@@ -198,12 +198,29 @@ def fetch_job_posting(url: str, model: str) -> tuple[JobPosting, tuple[str, str]
         return posting, ("", "")  # No LLM call — zero tokens.
 
     # Slow path: send page text to LLM for extraction.
-    import ollama as _ollama
-
     cleaned = _clean(raw)
     prompt = _EXTRACT_PROMPT.format(page_text=cleaned)
-    response = _ollama.generate(model=model, prompt=prompt, stream=False)
-    text = response.get("response", "").strip()
+
+    if provider == "anthropic":
+        import os
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+        msg = client.messages.create(
+            model=model, max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = msg.content[0].text.strip()
+    elif provider == "google":
+        import os
+        from google import genai as _genai
+        client = _genai.Client(api_key=os.environ.get("GOOGLE_API_KEY", ""))
+        resp = client.models.generate_content(model=model, contents=prompt)
+        text = resp.text.strip()
+    else:
+        import ollama as _ollama
+        response = _ollama.generate(model=model, prompt=prompt, stream=False)
+        text = response.get("response", "") if isinstance(response, dict) else getattr(response, "response", "")
+        text = text.strip()
 
     text = re.sub(r"^```[a-z]*\n?", "", text)
     text = re.sub(r"\n?```$", "", text)

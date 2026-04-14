@@ -8,7 +8,8 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - First bullet of the top role: the single strongest quantified outcome relevant to this role.
 - Domain relevance must appear in the top third of the page.
 - Every bullet leads with the outcome, not the activity. Active voice only.
-- For less-relevant roles: keep 2-3 bullets that show career progression and credibility, even if not directly relevant. Never remove roles entirely. The goal is tailoring emphasis, not gutting history.
+- Bullet count per role is driven by relevance to THIS job, not recency. A highly relevant older role deserves as many bullets as the most recent role. A recent but less relevant role gets 2-3 credibility bullets.
+- Never remove roles entirely. The goal is tailoring emphasis, not gutting history.
 - Skills section: only include skills evidenced in experience or called out in the positioning strategy.
 
 **Tailoring rules:**
@@ -155,7 +156,7 @@ You have the role intel (with company signal) and the tailored resume. Use both.
 **Structure (5 short paragraphs, each with one job):**
 1. Hook: something specific about the company not found in the JD. Shows research. One or two sentences.
 2. Differentiator: the one thing that makes this candidate non-obvious for this role. Not their strongest skill, but their unique angle.
-3. Evidence: 2-3 outcomes mapped directly to the 20% signal from role intel. Specific, quantified.
+3. Evidence: 2-3 outcomes mapped directly to the 20% signal from role intel. Specific, quantified. Scan the entire resume — pick the strongest matches regardless of which role they came from. Do NOT default to the most recent role.
 4. How they work: prototyping speed, cross-functional approach, starts with the customer problem. One short paragraph.
 5. Close: one sentence. No fluff. No "I look forward to the opportunity."
 

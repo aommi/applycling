@@ -508,7 +508,7 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
         try:
             _step_start = _dt.datetime.utcnow()
             with console.status("[cyan]Fetching job posting...[/cyan]", spinner="dots"):
-                posting, scrape_tokens = scraper.fetch_job_posting(source_url, model)
+                posting, scrape_tokens = scraper.fetch_job_posting(source_url, model, provider=provider)
             _step_end = _dt.datetime.utcnow()
             if scrape_tokens[0]:  # Empty when structured data was used (no LLM call).
                 step_logs.append({"name": "job_scraping", "started_at": _step_start.isoformat() + "Z", "finished_at": _step_end.isoformat() + "Z", "duration_seconds": round((_step_end - _step_start).total_seconds(), 2), "status": "ok", "prompt_text": scrape_tokens[0], "output_text": scrape_tokens[1]})
