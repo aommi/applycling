@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import os
 import sys
 import uuid as _uuid
 from pathlib import Path
@@ -31,15 +32,15 @@ STATUS_STYLES = {
 def _pick(question: str, options: list[str], default: str = "") -> str:
     """Interactive selector with arrow key navigation."""
     try:
-        import questionary
-        result = questionary.select(
-            question,
+        from InquirerPy import inquirer
+        result = inquirer.select(
+            message=question,
             choices=options,
             default=default if default in options else options[0],
-        ).ask()
+        ).execute()
         return result if result is not None else (default or options[0])
     except ImportError:
-        # Fallback to numbered list if questionary isn't installed.
+        # Fallback to numbered list if InquirerPy isn't installed.
         console.print(f"\n{question}")
         for i, opt in enumerate(options, 1):
             marker = "[bold cyan]>[/bold cyan]" if opt == default else " "
@@ -273,21 +274,42 @@ def setup() -> None:
                 "[bold]ollama pull llama3.2[/bold]"
             )
             sys.exit(1)
-        console.print("\n[bold]Available Ollama models:[/bold]")
-        for i, name in enumerate(models, 1):
-            console.print(f"  [cyan]{i}[/cyan]. {name}")
-        choice = Prompt.ask(
-            "Pick a model",
-            choices=[str(i) for i in range(1, len(models) + 1)],
-            default="1",
-        )
-        chosen_model = models[int(choice) - 1]
+        chosen_model = _pick("Pick a model", models,
+                             default=existing_cfg.get("model", models[0]))
     elif provider == "anthropic":
-        console.print("[dim]Examples: claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6[/dim]")
-        chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "claude-haiku-4-5-20251001"))
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+        try:
+            import anthropic as _anthropic
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if api_key:
+                _client = _anthropic.Anthropic(api_key=api_key)
+                models = [m.id for m in _client.models.list().data]
+            else:
+                raise ValueError("no key")
+        except Exception:
+            models = ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"]
+            console.print("[dim]Could not fetch models — showing defaults.[/dim]")
+        chosen_model = _pick("Pick a model", models,
+                             default=existing_cfg.get("model", models[0]))
     elif provider == "openai":
-        console.print("[dim]Examples: gpt-4o, gpt-4o-mini, o3-mini[/dim]")
-        chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gpt-4o"))
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+        try:
+            import openai as _openai
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            if api_key:
+                _client = _openai.OpenAI(api_key=api_key)
+                all_models = [m.id for m in _client.models.list().data]
+                # Filter to chat-capable models only
+                models = sorted([m for m in all_models if m.startswith(("gpt-", "o1", "o3", "o4"))])
+            else:
+                raise ValueError("no key")
+        except Exception:
+            models = ["gpt-4o", "gpt-4o-mini", "o3-mini"]
+            console.print("[dim]Could not fetch models — showing defaults.[/dim]")
+        chosen_model = _pick("Pick a model", models,
+                             default=existing_cfg.get("model", models[0]))
     else:  # google
         console.print("[dim]Examples: gemini-2.0-flash, gemini-2.5-pro[/dim]")
         chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gemini-2.0-flash"))
@@ -406,7 +428,7 @@ def setup() -> None:
             existing_linkedin = None  # fall through to import below
 
     if not existing_linkedin:
-        li_action = _pick("Import LinkedIn PDF now?", ["skip", "yes"], default="skip")
+        li_action = _pick("Import LinkedIn PDF now?", ["yes", "skip"], default="skip")
         if li_action == "yes":
             while True:
                 li_path_str = Prompt.ask("LinkedIn PDF path")
