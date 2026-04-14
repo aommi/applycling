@@ -14,6 +14,7 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 **Tailoring rules:**
 - Mirror the JD's language, keywords, and priorities where the candidate honestly has the experience.
 - Use the ATS keyword table from the positioning strategy as a checklist. Every keyword marked "weave in" must appear somewhere. Only integrate where the experience genuinely supports it.
+- **Reframe, don't rewrite:** For each bullet, ask — what does this achievement signal to *this specific hiring manager*? Lead with the signal they care about, not the signal from the original context. The facts and numbers stay identical; only the lens changes. Example: the same outcome that was framed as "operational efficiency" for one role becomes "platform scale" for another if that's what the JD cares about.
 - You MAY rename job titles if it better reflects the actual work and fits the role. Keep it honest.
 - You MAY reorder sections to put the most relevant experience first.
 - Within each section, entries MUST stay in reverse chronological order (most recent first). Never reorder individual roles, jobs, or projects within a section.
