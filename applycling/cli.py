@@ -29,17 +29,27 @@ STATUS_STYLES = {
 
 
 def _pick(question: str, options: list[str], default: str = "") -> str:
-    """Show a numbered list and return the selected option value."""
-    console.print(f"\n{question}")
-    for i, opt in enumerate(options, 1):
-        marker = "[bold cyan]>[/bold cyan]" if opt == default else " "
-        console.print(f"  {marker} [cyan]{i}[/cyan]. {opt}")
-    default_idx = str(options.index(default) + 1) if default in options else "1"
-    choice = Prompt.ask("Enter number", default=default_idx)
+    """Interactive selector with arrow key navigation."""
     try:
-        return options[int(choice) - 1]
-    except (ValueError, IndexError):
-        return default or options[0]
+        import questionary
+        result = questionary.select(
+            question,
+            choices=options,
+            default=default if default in options else options[0],
+        ).ask()
+        return result if result is not None else (default or options[0])
+    except ImportError:
+        # Fallback to numbered list if questionary isn't installed.
+        console.print(f"\n{question}")
+        for i, opt in enumerate(options, 1):
+            marker = "[bold cyan]>[/bold cyan]" if opt == default else " "
+            console.print(f"  {marker} [cyan]{i}[/cyan]. {opt}")
+        default_idx = str(options.index(default) + 1) if default in options else "1"
+        choice = Prompt.ask("Enter number", default=default_idx)
+        try:
+            return options[int(choice) - 1]
+        except (ValueError, IndexError):
+            return default or options[0]
 
 
 def _clean_llm_output(text: str) -> str:
