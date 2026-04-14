@@ -59,11 +59,15 @@ applycling setup
 This walks you through:
 
 1. **Pick an Ollama model** from your installed models.
-2. **Import your base resume** — from PDF or paste.
+2. **Import your base resume** — from PDF or paste (keeps existing resume if already set up).
 3. **Personal details** — name, email, phone, location, LinkedIn, GitHub. Used verbatim in every resume, never rewritten by AI.
 4. **Voice and tone** — how you want your resume and cover letter to sound (e.g. "Direct, active voice, outcome-first").
 5. **Never fabricate** — hard boundaries on what the LLM must never invent.
-6. **Playwright browsers** — installed automatically for PDF rendering.
+6. **Output settings** — whether to generate `run_log.json` (timing, tokens, cost per run) and `.docx` files.
+7. **Stories** — optional extra experiences the tailorer can draw from. Preview or edit if already set.
+8. **Playwright browsers** — installed automatically for PDF rendering.
+
+Re-running `applycling setup` at any time will pre-fill all existing values so you only need to update what changed.
 
 To use a cloud provider instead of Ollama, edit `data/config.json` after setup:
 
@@ -80,16 +84,23 @@ Valid providers: `ollama`, `anthropic`, `google`.
 
 ## Commands
 
-### `applycling add [--async]`
+### `applycling add [--async] [--url URL] [--model MODEL] [--provider PROVIDER]`
 
 Add a job and generate the full application package.
 
 ```bash
-applycling add                  # interactive mode (default)
-applycling add --async          # skip input gates, generate everything
+applycling add                                         # interactive mode (default)
+applycling add --async                                 # skip input gates, generate everything
+applycling add --url "https://..." --async             # fully non-interactive, no prompts
+applycling add --url "https://..." --model gemma4:27b  # override model for this run
+applycling add --url "https://..." \
+  --model claude-sonnet-4-6 \
+  --provider anthropic                                 # override both model and provider
 ```
 
 **Interactive mode** asks you to confirm the positioning angle and gap handling before writing the resume. **Async mode** generates the full package without stopping — review the output later.
+
+`--model` and `--provider` override `config.json` for a single run without changing your default. Useful for benchmarking models or using a stronger model for important applications.
 
 The flow:
 1. Provide a job URL (or enter details manually)
@@ -165,7 +176,8 @@ Sold to multiple shops via word of mouth.
   "model": "claude-haiku-4-5-20251001",
   "provider": "anthropic",
   "review_mode": "interactive",
-  "generate_docx": false
+  "generate_docx": false,
+  "generate_run_log": true
 }
 ```
 
@@ -175,6 +187,7 @@ Sold to multiple shops via word of mouth.
 | `model` | Any model name for the provider | (set during setup) |
 | `review_mode` | `interactive`, `async` | `interactive` |
 | `generate_docx` | `true`, `false` | `false` |
+| `generate_run_log` | `true`, `false` | `true` |
 
 ---
 

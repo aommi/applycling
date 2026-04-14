@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import sys
+import uuid as _uuid
 from pathlib import Path
 
 import click
@@ -113,6 +115,64 @@ def _require_resume() -> str:
         sys.exit(1)
 
 
+class _Step:
+    """Context manager that times a pipeline step and auto-appends to step_logs.
+
+    Usage::
+
+        step = _Step("role_intel", step_logs, output_file="strategy.md")
+        step.prompt_text = prompt  # set before entering
+        try:
+            with step, console.status("..."):
+                for chunk in llm.something(...):
+                    step.collect(chunk)
+        except llm.LLMError as e:
+            ...
+        result = _clean_llm_output(step.output)
+
+    Any new pipeline step that uses this automatically gets timed, logged,
+    and counted in the token breakdown — no manual wiring needed.
+    """
+
+    def __init__(self, name: str, logs: list[dict], output_file: str | None = None) -> None:
+        self.name = name
+        self._logs = logs
+        self.output_file = output_file
+        self.prompt_text: str = ""
+        self.output: str = ""
+        self.status: str = "ok"
+        self.duration: float = 0.0
+        self._parts: list[str] = []
+        self._started: _dt.datetime | None = None
+
+    def __enter__(self) -> "_Step":
+        self._started = _dt.datetime.utcnow()
+        return self
+
+    def collect(self, chunk: str) -> None:
+        self._parts.append(chunk)
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        finished = _dt.datetime.utcnow()
+        self.output = "".join(self._parts)
+        self.duration = round((finished - self._started).total_seconds(), 2)
+        if exc_type is not None:
+            self.status = "failed"
+        elif not self.output.strip():
+            self.status = "skipped"
+        self._logs.append({
+            "name": self.name,
+            "started_at": self._started.isoformat() + "Z",
+            "finished_at": finished.isoformat() + "Z",
+            "duration_seconds": self.duration,
+            "output_file": self.output_file,
+            "status": self.status,
+            "prompt_text": self.prompt_text,
+            "output_text": self.output,
+        })
+        return False  # Never suppress exceptions — caller handles them.
+
+
 @click.group()
 def main() -> None:
     """applycling — your clingy job-search companion."""
@@ -181,50 +241,95 @@ def _setup_resume_from_pdf(model: str) -> str:
 
 @main.command()
 def setup() -> None:
-    """First-time setup: save base resume and pick an Ollama model."""
+    """First-time setup: save base resume and pick a model."""
     console.print(Panel.fit("[bold]applycling — Setup[/bold]", style="cyan"))
 
-    # Pick a model first so the PDF importer can use it.
+    existing_cfg = {}
     try:
-        models = llm.get_available_models()
-    except llm.LLMError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    if not models:
-        console.print(
-            "[red]No Ollama models installed.[/red] Try: "
-            "[bold]ollama pull llama3.2[/bold]"
-        )
-        sys.exit(1)
+        existing_cfg = storage.load_config()
+    except storage.StorageError:
+        pass
 
-    console.print("\n[bold]Available Ollama models:[/bold]")
-    for i, name in enumerate(models, 1):
-        console.print(f"  [cyan]{i}[/cyan]. {name}")
-    choice = Prompt.ask(
-        "Pick a model",
-        choices=[str(i) for i in range(1, len(models) + 1)],
-        default="1",
+    # Pick provider.
+    console.print("\n[bold]LLM provider[/bold]")
+    provider = Prompt.ask(
+        "Provider",
+        choices=["ollama", "anthropic", "google"],
+        default=existing_cfg.get("provider", "ollama"),
     )
-    chosen_model = models[int(choice) - 1]
+
+    # Pick model based on provider.
+    if provider == "ollama":
+        try:
+            models = llm.get_available_models()
+        except llm.LLMError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+        if not models:
+            console.print(
+                "[red]No Ollama models installed.[/red] Try: "
+                "[bold]ollama pull llama3.2[/bold]"
+            )
+            sys.exit(1)
+        console.print("\n[bold]Available Ollama models:[/bold]")
+        for i, name in enumerate(models, 1):
+            console.print(f"  [cyan]{i}[/cyan]. {name}")
+        choice = Prompt.ask(
+            "Pick a model",
+            choices=[str(i) for i in range(1, len(models) + 1)],
+            default="1",
+        )
+        chosen_model = models[int(choice) - 1]
+    elif provider == "anthropic":
+        console.print("[dim]Examples: claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6[/dim]")
+        chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "claude-haiku-4-5-20251001"))
+    else:  # google
+        console.print("[dim]Examples: gemini-2.0-flash, gemini-2.5-pro[/dim]")
+        chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gemini-2.0-flash"))
 
     # Pick how to provide the base resume.
     console.print()
-    source = Prompt.ask(
-        "Base resume input",
-        choices=["pdf", "paste"],
-        default="pdf",
-    )
-    if source == "pdf":
-        resume = _setup_resume_from_pdf(chosen_model)
+    existing_resume = None
+    try:
+        existing_resume = storage.load_resume()
+    except storage.StorageError:
+        pass
+
+    if existing_resume:
+        keep = Prompt.ask(
+            "A base resume already exists. Keep it?",
+            choices=["yes", "replace"],
+            default="yes",
+        )
+        if keep == "yes":
+            resume = existing_resume
+        else:
+            source = Prompt.ask(
+                "Base resume input",
+                choices=["pdf", "paste"],
+                default="pdf",
+            )
+            if source == "pdf":
+                resume = _setup_resume_from_pdf(chosen_model)
+            else:
+                resume = _read_multiline("Paste your base resume below:")
     else:
-        resume = _read_multiline("Paste your base resume below:")
+        source = Prompt.ask(
+            "Base resume input",
+            choices=["pdf", "paste"],
+            default="pdf",
+        )
+        if source == "pdf":
+            resume = _setup_resume_from_pdf(chosen_model)
+        else:
+            resume = _read_multiline("Paste your base resume below:")
 
     if not resume:
         console.print("[red]Empty resume — aborting.[/red]")
         sys.exit(1)
 
     storage.save_resume(resume)
-    storage.save_config({"model": chosen_model})
+    storage.save_config({"provider": provider, "model": chosen_model})
 
     # Collect personal details (stored separately, never passed to the LLM).
     console.print("\n[bold]Personal details[/bold] [dim](used verbatim in every resume — never rewritten by AI)[/dim]")
@@ -251,6 +356,50 @@ def setup() -> None:
     profile["never_fabricate"] = [s.strip() for s in nf_input.split(",") if s.strip()]
 
     storage.save_profile({k: v for k, v in profile.items() if v})
+
+    # Output settings.
+    existing_cfg = storage.load_config() if storage.CONFIG_PATH.exists() else {}
+    console.print("\n[bold]Output settings[/bold]")
+    generate_run_log = Prompt.ask(
+        "Generate run_log.json in each package folder? (timing, tokens, cost per run)",
+        choices=["yes", "no"],
+        default="yes" if existing_cfg.get("generate_run_log", True) else "no",
+    ) == "yes"
+    generate_docx = Prompt.ask(
+        "Generate .docx files in addition to PDF?",
+        choices=["yes", "no"],
+        default="yes" if existing_cfg.get("generate_docx", False) else "no",
+    ) == "yes"
+    storage.save_config({"generate_run_log": generate_run_log, "generate_docx": generate_docx})
+
+    # Stories file — mention it so users know it exists.
+    console.print("\n[bold]Stories[/bold] [dim](optional — extra experiences the tailorer can draw from)[/dim]")
+    console.print(
+        "[dim]Side projects, consulting, part-time work, achievements not on your resume. "
+        "The AI reads this and decides what's relevant for each job.[/dim]"
+    )
+    existing_stories = storage.load_stories()
+    if existing_stories:
+        console.print(f"\n[dim]Current stories file ({len(existing_stories)} chars):[/dim]")
+        preview = existing_stories[:400] + ("…" if len(existing_stories) > 400 else "")
+        console.print(Panel(preview, style="dim"))
+        edit_stories = Prompt.ask("Edit stories?", choices=["yes", "skip"], default="skip")
+        if edit_stories == "yes":
+            new_stories = _read_multiline("Paste your updated stories below:")
+            if new_stories:
+                storage.save_stories(new_stories)
+                console.print("[green]Stories updated.[/green]")
+    else:
+        add_stories = Prompt.ask(
+            "Add stories now?", choices=["yes", "skip"], default="skip"
+        )
+        if add_stories == "yes":
+            new_stories = _read_multiline("Paste your stories below:")
+            if new_stories:
+                storage.save_stories(new_stories)
+                console.print("[green]Stories saved.[/green]")
+        else:
+            console.print(f"[dim]You can add them later: edit [bold]data/stories.md[/bold] in the project folder.[/dim]")
 
     # Ensure Playwright browsers are installed (needed for PDF rendering).
     try:
@@ -288,23 +437,27 @@ def setup() -> None:
 @main.command()
 @click.option("--async", "async_mode", is_flag=True, help="Skip input gates. Generate full package without stopping.")
 @click.option("--url", "url_arg", default="", help="Job posting URL — skips the URL prompt.")
-def add(async_mode: bool, url_arg: str) -> None:
+@click.option("--model", "model_arg", default="", help="Override the model from config (e.g. gemma4:27b, claude-haiku-4-5-20251001).")
+@click.option("--provider", "provider_arg", default="", help="Override the provider from config (ollama, anthropic, google).")
+def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> None:
     """Add a job: tailor a resume + assemble an application package."""
     cfg = _require_config()
     review_mode = cfg.get("review_mode", "interactive")
     if async_mode:
         review_mode = "async"
     base_resume = _require_resume()
-    model = cfg.get("model")
+    model = model_arg or cfg.get("model")
     if not model:
         console.print("[red]No model in config.[/red] Run setup again.")
         sys.exit(1)
-    provider = cfg.get("provider", "ollama")
+    provider = provider_arg or cfg.get("provider", "ollama")
     profile = storage.load_profile()
     stories = storage.load_stories()
 
-    # Token tracking: list of (step_name, prompt_text, output_text).
-    token_steps: list[tuple[str, str, str]] = []
+    # Run tracking.
+    run_id = str(_uuid.uuid4())
+    run_started = _dt.datetime.utcnow()
+    step_logs: list[dict] = []
 
     source_url = url_arg or (
         "" if async_mode else Prompt.ask("Job posting URL (leave blank to enter details manually)", default="")
@@ -315,12 +468,14 @@ def add(async_mode: bool, url_arg: str) -> None:
     if source_url:
         from . import scraper
         try:
+            _step_start = _dt.datetime.utcnow()
             with console.status("[cyan]Fetching job posting...[/cyan]", spinner="dots"):
                 posting, scrape_tokens = scraper.fetch_job_posting(source_url, model)
+            _step_end = _dt.datetime.utcnow()
             if scrape_tokens[0]:  # Empty when structured data was used (no LLM call).
-                token_steps.append(("Job scraping", scrape_tokens[0], scrape_tokens[1]))
+                step_logs.append({"name": "job_scraping", "started_at": _step_start.isoformat() + "Z", "finished_at": _step_end.isoformat() + "Z", "duration_seconds": round((_step_end - _step_start).total_seconds(), 2), "status": "ok", "prompt_text": scrape_tokens[0], "output_text": scrape_tokens[1]})
             else:
-                token_steps.append(("Job scraping (HTML)", "", ""))
+                step_logs.append({"name": "job_scraping", "started_at": _step_start.isoformat() + "Z", "finished_at": _step_end.isoformat() + "Z", "duration_seconds": round((_step_end - _step_start).total_seconds(), 2), "status": "ok", "note": "structured data — no LLM call", "prompt_text": "", "output_text": ""})
                 console.print("[dim]Extracted from structured data — no LLM call needed.[/dim]")
             title = posting.title
             company = posting.company
@@ -372,20 +527,6 @@ def add(async_mode: bool, url_arg: str) -> None:
 
     # ---- Role Intel (single merged pass) ----
     console.print()
-    intel_parts: list[str] = []
-    try:
-        with console.status("[cyan]Running Role Intel...[/cyan]", spinner="dots"):
-            for chunk in llm.role_intel(
-                job_description, model,
-                company_page_text=company_page_text or None,
-                resume=base_resume,
-                provider=provider,
-            ):
-                intel_parts.append(chunk)
-    except llm.LLMError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    strategy = _clean_llm_output("".join(intel_parts))
     _co_note = "\nUse the company page text below to inform this section." if company_page_text else ""
     _cand_section = "\nYou have the candidate's base resume below. Use it to assess keyword coverage and gaps."
     _intel_prompt = prompts.ROLE_INTEL_PROMPT.format(
@@ -394,7 +535,21 @@ def add(async_mode: bool, url_arg: str) -> None:
     if company_page_text:
         _intel_prompt += f"\n\n=== COMPANY PAGE TEXT ===\n{company_page_text}\n"
     _intel_prompt += f"\n\n=== CANDIDATE BASE RESUME ===\n{base_resume}\n"
-    token_steps.append(("Role Intel", _intel_prompt, strategy))
+    _s = _Step("role_intel", step_logs, output_file="strategy.md")
+    _s.prompt_text = _intel_prompt
+    try:
+        with _s, console.status("[cyan]Running Role Intel...[/cyan]", spinner="dots"):
+            for chunk in llm.role_intel(
+                job_description, model,
+                company_page_text=company_page_text or None,
+                resume=base_resume,
+                provider=provider,
+            ):
+                _s.collect(chunk)
+    except llm.LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    strategy = _clean_llm_output(_s.output)
 
     # Show Role Intel and structured input gate.
     console.print(Panel(strategy, title="[bold]Role Intel[/bold]", style="cyan"))
@@ -420,23 +575,6 @@ def add(async_mode: bool, url_arg: str) -> None:
         console.print("[dim]Async mode — auto-proceeding.[/dim]")
 
     # ---- Pass 2: Resume Tailor ----
-    tailored_parts: list[str] = []
-    try:
-        with console.status(
-            "[cyan]Tailoring your resume...[/cyan]", spinner="dots"
-        ):
-            for chunk in llm.tailor_resume(
-                base_resume, job_description, model,
-                stories=stories, strategy=strategy,
-                voice_tone=profile.get("voice_tone") if profile else None,
-                never_fabricate=profile.get("never_fabricate") if profile else None,
-                provider=provider,
-            ):
-                tailored_parts.append(chunk)
-    except llm.LLMError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    tailored_body = _clean_llm_output("".join(tailored_parts))
     _stories_section = (
         "\n- You have been given CANDIDATE STORIES below. "
         "Draw from these only when they genuinely strengthen this application for this specific role. "
@@ -454,119 +592,130 @@ def add(async_mode: bool, url_arg: str) -> None:
         _tailor_prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
     if stories:
         _tailor_prompt += f"\n\n=== CANDIDATE STORIES (draw from when relevant) ===\n{stories}\n"
-    token_steps.append(("Resume Tailor", _tailor_prompt, tailored_body))
+    _s = _Step("resume_tailor", step_logs, output_file="resume.md")
+    _s.prompt_text = _tailor_prompt
+    try:
+        with _s, console.status("[cyan]Tailoring your resume...[/cyan]", spinner="dots"):
+            for chunk in llm.tailor_resume(
+                base_resume, job_description, model,
+                stories=stories, strategy=strategy,
+                voice_tone=profile.get("voice_tone") if profile else None,
+                never_fabricate=profile.get("never_fabricate") if profile else None,
+                provider=provider,
+            ):
+                _s.collect(chunk)
+    except llm.LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    tailored_body = _clean_llm_output(_s.output)
 
     # Optionally generate a per-job profile summary.
     profile_summary = ""
     if want_summary:
-        summary_parts: list[str] = []
+        _s = _Step("profile_summary", step_logs)
+        _s.prompt_text = prompts.PROFILE_SUMMARY_PROMPT.format(
+            resume=base_resume, job_description=job_description
+        )
         try:
-            with console.status(
-                "[cyan]Generating profile summary...[/cyan]", spinner="dots"
-            ):
+            with _s, console.status("[cyan]Generating profile summary...[/cyan]", spinner="dots"):
                 for chunk in llm.get_profile_summary(base_resume, job_description, model, provider=provider):
-                    summary_parts.append(chunk)
+                    _s.collect(chunk)
         except llm.LLMError as e:
             console.print(f"[yellow]Profile summary failed ({e}) — skipping.[/yellow]")
-        profile_summary = _clean_llm_output("".join(summary_parts))
-        if profile_summary:
-            _ps_prompt = prompts.PROFILE_SUMMARY_PROMPT.format(
-                resume=base_resume, job_description=job_description
-            )
-            token_steps.append(("Profile Summary", _ps_prompt, profile_summary))
+        profile_summary = _clean_llm_output(_s.output)
 
-    # Assemble the final resume: static profile header + optional summary + tailored body.
+    # ---- Format pass — reshape to preferred template (no content changes) ----
+    _s = _Step("format_resume", step_logs, output_file="resume.md")
+    _s.prompt_text = prompts.FORMAT_RESUME_PROMPT.format(resume=tailored_body)
+    try:
+        with _s, console.status("[cyan]Formatting resume...[/cyan]", spinner="dots"):
+            for chunk in llm.format_resume(tailored_body, model, provider=provider):
+                _s.collect(chunk)
+    except llm.LLMError as e:
+        console.print(f"[yellow]Format pass failed ({e}) — using unformatted output.[/yellow]")
+    formatted_body = _clean_llm_output(_s.output) or tailored_body
+
+    # Assemble the final resume: static profile header + optional summary + formatted body.
     resume_sections = []
     if profile:
         resume_sections.append(_profile_header_markdown(profile))
     if profile_summary:
-        resume_sections.append(f"## Profile\n\n{profile_summary}")
-    resume_sections.append(tailored_body)
+        resume_sections.append(f"## PROFILE\n\n{profile_summary}")
+    resume_sections.append(formatted_body)
     tailored = "\n\n".join(resume_sections)
 
     # Positioning brief (replaces fit summary — includes decisions, strength, gap prep).
-    brief_parts: list[str] = []
+    _s = _Step("positioning_brief", step_logs, output_file="positioning_brief.md")
+    _s.prompt_text = prompts.POSITIONING_BRIEF_PROMPT.format(
+        role_intel=strategy, tailored_resume=tailored, job_description=job_description
+    )
     try:
-        with console.status(
-            "[cyan]Generating positioning brief...[/cyan]", spinner="dots"
-        ):
+        with _s, console.status("[cyan]Generating positioning brief...[/cyan]", spinner="dots"):
             for chunk in llm.positioning_brief(strategy, tailored, job_description, model, provider=provider):
-                brief_parts.append(chunk)
+                _s.collect(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    pos_brief = _clean_llm_output("".join(brief_parts))
-    _brief_prompt = prompts.POSITIONING_BRIEF_PROMPT.format(
-        role_intel=strategy, tailored_resume=tailored, job_description=job_description
-    )
-    token_steps.append(("Positioning Brief", _brief_prompt, pos_brief))
+    pos_brief = _clean_llm_output(_s.output)
 
     # ---- Cover letter ----
-    cover_letter_text = ""
-    cl_parts: list[str] = []
+    _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile and profile.get("voice_tone") else ""
+    _s = _Step("cover_letter", step_logs, output_file="cover_letter.md")
+    _s.prompt_text = prompts.COVER_LETTER_PROMPT.format(
+        role_intel=strategy, tailored_resume=tailored,
+        job_description=job_description, voice_tone_section=_vt,
+    )
     try:
-        with console.status("[cyan]Writing cover letter...[/cyan]", spinner="dots"):
+        with _s, console.status("[cyan]Writing cover letter...[/cyan]", spinner="dots"):
             for chunk in llm.cover_letter(
                 strategy, tailored, job_description, model,
                 voice_tone=profile.get("voice_tone") if profile else None,
                 provider=provider,
             ):
-                cl_parts.append(chunk)
+                _s.collect(chunk)
     except llm.LLMError as e:
         console.print(f"[yellow]Cover letter generation failed ({e}) — skipping.[/yellow]")
-    cover_letter_text = _clean_llm_output("".join(cl_parts))
-    if cover_letter_text:
-        _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile and profile.get("voice_tone") else ""
-        _cl_prompt = prompts.COVER_LETTER_PROMPT.format(
-            role_intel=strategy, tailored_resume=tailored,
-            job_description=job_description, voice_tone_section=_vt,
-        )
-        token_steps.append(("Cover Letter", _cl_prompt, cover_letter_text))
+    cover_letter_text = _clean_llm_output(_s.output)
 
     # ---- Application email + LinkedIn InMail ----
     email_inmail_text = ""
     if profile:
-        ei_parts: list[str] = []
         contact_line = " · ".join(filter(None, [
             profile.get("email", ""), profile.get("phone", ""),
         ]))
+        _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile.get("voice_tone") else ""
+        _s = _Step("email_inmail", step_logs, output_file="email_inmail.md")
+        _s.prompt_text = prompts.APPLICATION_EMAIL_PROMPT.format(
+            role_intel=strategy, candidate_name=profile.get("name", ""),
+            candidate_contact=contact_line, job_title=title,
+            company=company, voice_tone_section=_vt,
+        )
         try:
-            with console.status("[cyan]Drafting email + InMail...[/cyan]", spinner="dots"):
+            with _s, console.status("[cyan]Drafting email + InMail...[/cyan]", spinner="dots"):
                 for chunk in llm.application_email(
                     strategy, profile.get("name", ""), contact_line,
                     title, company, model,
                     voice_tone=profile.get("voice_tone"),
                     provider=provider,
                 ):
-                    ei_parts.append(chunk)
+                    _s.collect(chunk)
         except llm.LLMError as e:
             console.print(f"[yellow]Email/InMail generation failed ({e}) — skipping.[/yellow]")
-        email_inmail_text = _clean_llm_output("".join(ei_parts))
-        if email_inmail_text:
-            _vt = f" Candidate's voice and tone: {profile['voice_tone']}" if profile.get("voice_tone") else ""
-            _ei_prompt = prompts.APPLICATION_EMAIL_PROMPT.format(
-                role_intel=strategy, candidate_name=profile.get("name", ""),
-                candidate_contact=contact_line, job_title=title,
-                company=company, voice_tone_section=_vt,
-            )
-            token_steps.append(("Email + InMail", _ei_prompt, email_inmail_text))
+        email_inmail_text = _clean_llm_output(_s.output)
 
     # Also generate a short fit summary for the Notion row.
-    fit_parts: list[str] = []
+    _s = _Step("fit_summary", step_logs, output_file="fit_summary.md")
+    _s.prompt_text = prompts.FIT_SUMMARY_PROMPT.format(
+        resume=base_resume, job_description=job_description
+    )
     try:
-        with console.status(
-            "[cyan]Generating fit summary...[/cyan]", spinner="dots"
-        ):
+        with _s, console.status("[cyan]Generating fit summary...[/cyan]", spinner="dots"):
             for chunk in llm.get_fit_summary(base_resume, job_description, model, provider=provider):
-                fit_parts.append(chunk)
+                _s.collect(chunk)
     except llm.LLMError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    fit_summary = _clean_llm_output("".join(fit_parts))
-    _fit_prompt = prompts.FIT_SUMMARY_PROMPT.format(
-        resume=base_resume, job_description=job_description
-    )
-    token_steps.append(("Fit Summary", _fit_prompt, fit_summary))
+    fit_summary = _clean_llm_output(_s.output)
 
     # Persist the job (auto-assigns id + dates).
     store = get_store()
@@ -586,6 +735,48 @@ def add(async_mode: bool, url_arg: str) -> None:
         console.print(f"[red]Failed to save job:[/red] {e}")
         sys.exit(1)
 
+    # Build the run log to pass into the package assembler.
+    run_finished = _dt.datetime.utcnow()
+    _costs = [
+        ("gemini_2_flash",   0.10,  0.40),
+        ("gpt4o_mini",       0.15,  0.60),
+        ("claude_haiku",     0.80,  4.00),
+        ("gpt4o",            2.50, 10.00),
+        ("claude_sonnet",    3.00, 15.00),
+        ("gemini_2_5_pro",   2.50, 15.00),
+        ("claude_opus",     15.00, 75.00),
+    ]
+    try:
+        import tiktoken as _tiktoken
+        _enc = _tiktoken.get_encoding("cl100k_base")
+        _steps_out = []
+        _total_in = _total_out = 0
+        for s in step_logs:
+            _in = len(_enc.encode(s.get("prompt_text", "")))
+            _out = len(_enc.encode(s.get("output_text", "")))
+            _total_in += _in
+            _total_out += _out
+            _steps_out.append({k: v for k, v in s.items() if k not in ("prompt_text", "output_text")} | {"tokens_in": _in, "tokens_out": _out})
+        _cost_estimates = {name: round((_total_in * inp + _total_out * out) / 1_000_000, 6) for name, inp, out in _costs}
+    except Exception:
+        _steps_out = [{k: v for k, v in s.items() if k not in ("prompt_text", "output_text")} for s in step_logs]
+        _total_in = _total_out = 0
+        _cost_estimates = {}
+
+    run_log = {
+        "run_id": run_id,
+        "started_at": run_started.isoformat() + "Z",
+        "finished_at": run_finished.isoformat() + "Z",
+        "duration_seconds": round((run_finished - run_started).total_seconds(), 2),
+        "model": model,
+        "provider": provider,
+        "source_url": source_url or None,
+        "job": {"title": title, "company": company},
+        "steps": _steps_out,
+        "totals": {"tokens_in": _total_in, "tokens_out": _total_out, "total_tokens": _total_in + _total_out},
+        "cost_estimates": _cost_estimates,
+    }
+
     # Build the application package folder (md + html + pdf + manifest).
     try:
         with console.status(
@@ -600,6 +791,8 @@ def add(async_mode: bool, url_arg: str) -> None:
                 cover_letter=cover_letter_text or None,
                 email_inmail=email_inmail_text or None,
                 generate_docx=cfg.get("generate_docx", False),
+                run_log=run_log if cfg.get("generate_run_log", True) else None,
+                model=model_arg or None,
             )
     except Exception as e:
         console.print(f"[red]Package assembly failed:[/red] {e}")
@@ -624,47 +817,29 @@ def add(async_mode: bool, url_arg: str) -> None:
     console.print(f"\n[green]Package folder:[/green] [bold]{folder}[/bold]")
     console.print(f"[green]Tracked as:[/green] [bold]{job.id}[/bold]")
 
-    # Token usage estimate — per-step breakdown.
-    try:
-        import tiktoken
-        enc = tiktoken.get_encoding("cl100k_base")
-        total_in = total_out = 0
+    # Token usage display from run_log.
+    if run_log["totals"]["total_tokens"] > 0:
         step_lines = []
-        for step_name, prompt_text, output_text in token_steps:
-            if not prompt_text and not output_text:
-                step_lines.append(f"  {step_name:<20}      0 tokens (structured data)")
-                continue
-            s_in = len(enc.encode(prompt_text))
-            s_out = len(enc.encode(output_text))
-            total_in += s_in
-            total_out += s_out
-            step_lines.append(f"  {step_name:<20} {s_in:>6,} in + {s_out:>6,} out")
-        total = total_in + total_out
-        costs = [
-            ("Gemini 2.0 Flash",  0.10,  0.40),
-            ("GPT-4o mini",       0.15,  0.60),
-            ("Claude Haiku 3.5",  0.80,  4.00),
-            ("GPT-4o",            2.50, 10.00),
-            ("Claude Sonnet 3.7", 3.00, 15.00),
-            ("Gemini 2.5 Pro",    2.50, 15.00),
-            ("o4-mini",           1.10,  4.40),
-            ("Claude Opus 4",    15.00, 75.00),
-            ("o3",               10.00, 40.00),
-        ]
+        for s in run_log["steps"]:
+            label = s["name"].replace("_", " ").title()
+            note = s.get("note", "")
+            if note:
+                step_lines.append(f"  {label:<22} {note}")
+            else:
+                step_lines.append(f"  {label:<22} {s.get('tokens_in', 0):>6,} in + {s.get('tokens_out', 0):>6,} out  [{s.get('duration_seconds', 0):.1f}s]")
         cost_lines = "\n".join(
-            f"  {name:<22} ${(total_in * inp + total_out * out) / 1_000_000:.4f}"
-            for name, inp, out in costs
+            f"  {name:<22} ${cost:.4f}"
+            for name, cost in run_log["cost_estimates"].items()
         )
-        breakdown = "\n".join(step_lines)
+        t = run_log["totals"]
         console.print(
             f"\n[dim]Token usage (tiktoken cl100k):\n"
-            f"{breakdown}\n"
-            f"  {'─' * 40}\n"
-            f"  {'Total':<20} {total_in:>6,} in + {total_out:>6,} out = {total:,}\n\n"
+            f"{chr(10).join(step_lines)}\n"
+            f"  {'─' * 50}\n"
+            f"  {'Total':<22} {t['tokens_in']:>6,} in + {t['tokens_out']:>6,} out = {t['total_tokens']:,}\n"
+            f"  Run time: {run_log['duration_seconds']}s  |  Model: {run_log['model']} ({run_log['provider']})\n\n"
             f"  API cost estimate:\n{cost_lines}[/dim]"
         )
-    except Exception:
-        pass
 
 
 # ---------- list / view / status ----------
