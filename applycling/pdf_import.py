@@ -53,13 +53,13 @@ def extract_text(pdf_path: Path) -> str:
     return text
 
 
-def clean_to_markdown(extracted_text: str, model: str) -> Iterator[str]:
+def clean_to_markdown(extracted_text: str, model: str, provider: str = "ollama") -> Iterator[str]:
     """Stream Markdown chunks from the LLM that clean the extracted text.
 
     Yields token strings as they arrive. Caller joins them.
     """
     prompt = PDF_RESUME_CLEANUP_PROMPT.format(extracted_text=extracted_text)
-    yield from llm._stream_chat(model, prompt)
+    yield from llm._stream_chat(model, prompt, provider)
 
 
 def import_pdf(pdf_path: Path, model: str) -> str:

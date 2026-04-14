@@ -10,11 +10,14 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - Every bullet leads with the outcome, not the activity. Active voice only.
 - Bullet count per role is driven by relevance to THIS job, not recency. A highly relevant older role deserves as many bullets as the most recent role. A recent but less relevant role gets 2-3 credibility bullets.
 - Never remove roles entirely. The goal is tailoring emphasis, not gutting history.
+- Never merge two roles at the same company into one. Different date ranges = different roles = different entries. Separate roles show career progression and must stay separate even if the company name is identical.
 - Skills section: only include skills evidenced in experience or called out in the positioning strategy.
 
 **Tailoring rules:**
 - Mirror the JD's language, keywords, and priorities where the candidate honestly has the experience.
-- Use the ATS keyword table from the positioning strategy as a checklist. Every keyword marked "weave in" must appear somewhere. Only integrate where the experience genuinely supports it.
+- Use the ATS keyword table and the Resume tailoring brief from the positioning strategy as your primary guide.
+- For every keyword marked "weave in": scan every role in the resume for authentic evidence before treating it as a gap. A keyword doesn't need to be in the original bullet — if the experience supports it, reframe the bullet to surface it. Only mark as absent if no role in the resume provides genuine support.
+- Use the Resume tailoring brief to decide which roles get the most bullets and which lens to write through.
 - **Reframe, don't rewrite:** For each bullet, ask — what does this achievement signal to *this specific hiring manager*? Lead with the signal they care about, not the signal from the original context. The facts and numbers stay identical; only the lens changes. Example: the same outcome that was framed as "operational efficiency" for one role becomes "platform scale" for another if that's what the JD cares about.
 - You MAY rename job titles if it better reflects the actual work and fits the role. Keep it honest.
 - You MAY reorder sections to put the most relevant experience first.
@@ -129,8 +132,11 @@ Template language that should not drive resume content. Note: this is an analyti
 ## Company signal
 How they describe themselves, their tone, their stage, their customer. One short paragraph.{company_note}
 
-## Identified niche
-One sentence. The specific angle the candidate should lead with for this role, based on the 20% signal.
+## Positioning narrative
+3-4 sentences. This is the candidate's interview and cover letter story — not a resume instruction. Answer: what is the through-line of their career that maps to the 20% signal? What specific angle makes them non-obvious for this role? What should they lead with in an interview when asked "why you"? Be concrete and specific to this candidate's actual background.
+
+## Resume tailoring brief
+A short tactical brief for the resume editor. Answer: which 2-3 roles or experiences from the resume are most relevant to the 20% signal and should receive the most bullets? Which keyword gaps from the ATS table can be authentically bridged by reframing existing experience (not fabricating)? What lens should bullets be written through for this hiring manager? Never suggest merging separate roles — different date ranges at the same company represent distinct positions that show career progression and must remain separate.
 
 ## ATS keyword match
 Top 10-12 keywords and hard skills from the JD (specific tools, technologies, domain terms, role-specific verbs). For each, note coverage:

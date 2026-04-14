@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 
 @dataclass
@@ -202,7 +210,6 @@ def fetch_job_posting(url: str, model: str, provider: str = "ollama") -> tuple[J
     prompt = _EXTRACT_PROMPT.format(page_text=cleaned)
 
     if provider == "anthropic":
-        import os
         import anthropic as _anthropic
         client = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
         msg = client.messages.create(
@@ -211,7 +218,6 @@ def fetch_job_posting(url: str, model: str, provider: str = "ollama") -> tuple[J
         )
         text = msg.content[0].text.strip()
     elif provider == "google":
-        import os
         from google import genai as _genai
         client = _genai.Client(api_key=os.environ.get("GOOGLE_API_KEY", ""))
         resp = client.models.generate_content(model=model, contents=prompt)

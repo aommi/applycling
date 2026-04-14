@@ -28,6 +28,20 @@ STATUS_STYLES = {
 }
 
 
+def _pick(question: str, options: list[str], default: str = "") -> str:
+    """Show a numbered list and return the selected option value."""
+    console.print(f"\n{question}")
+    for i, opt in enumerate(options, 1):
+        marker = "[bold cyan]>[/bold cyan]" if opt == default else " "
+        console.print(f"  {marker} [cyan]{i}[/cyan]. {opt}")
+    default_idx = str(options.index(default) + 1) if default in options else "1"
+    choice = Prompt.ask("Enter number", default=default_idx)
+    try:
+        return options[int(choice) - 1]
+    except (ValueError, IndexError):
+        return default or options[0]
+
+
 def _clean_llm_output(text: str) -> str:
     """Strip common LLM artifacts from output before rendering."""
     import re as _re
@@ -180,7 +194,7 @@ def main() -> None:
 
 # ---------- setup ----------
 
-def _setup_resume_from_pdf(model: str) -> str:
+def _setup_resume_from_pdf(model: str, provider: str = "ollama") -> str:
     """Interactive PDF import. Returns the cleaned Markdown."""
     while True:
         path_str = Prompt.ask("PDF path")
@@ -201,26 +215,7 @@ def _setup_resume_from_pdf(model: str) -> str:
             console.print(f"[red]{e}[/red]")
             continue
 
-        skip_llm = Prompt.ask(
-            "Clean up text with Ollama? (skip if using a large model on limited RAM)",
-            choices=["yes", "skip"],
-            default="yes",
-        )
-        if skip_llm == "skip":
-            cleaned = raw
-        else:
-            try:
-                parts: list[str] = []
-                with console.status(
-                    "[cyan]Cleaning into Markdown via Ollama...[/cyan]",
-                    spinner="dots",
-                ):
-                    for chunk in pdf_import.clean_to_markdown(raw, model):
-                        parts.append(chunk)
-            except llm.LLMError as e:
-                console.print(f"[red]{e}[/red]")
-                sys.exit(1)
-            cleaned = "".join(parts).strip()
+        cleaned = raw
 
         console.print()
         console.print(
@@ -252,11 +247,8 @@ def setup() -> None:
 
     # Pick provider.
     console.print("\n[bold]LLM provider[/bold]")
-    provider = Prompt.ask(
-        "Provider",
-        choices=["ollama", "anthropic", "google"],
-        default=existing_cfg.get("provider", "ollama"),
-    )
+    provider = _pick("Provider", ["ollama", "anthropic", "google"],
+                     default=existing_cfg.get("provider", "ollama"))
 
     # Pick model based on provider.
     if provider == "ollama":
@@ -296,31 +288,19 @@ def setup() -> None:
         pass
 
     if existing_resume:
-        keep = Prompt.ask(
-            "A base resume already exists. Keep it?",
-            choices=["yes", "replace"],
-            default="yes",
-        )
-        if keep == "yes":
+        keep = _pick("A base resume already exists.", ["keep", "replace"], default="keep")
+        if keep == "keep":
             resume = existing_resume
         else:
-            source = Prompt.ask(
-                "Base resume input",
-                choices=["pdf", "paste"],
-                default="pdf",
-            )
+            source = _pick("Base resume input", ["pdf", "paste"], default="pdf")
             if source == "pdf":
-                resume = _setup_resume_from_pdf(chosen_model)
+                resume = _setup_resume_from_pdf(chosen_model, provider=provider)
             else:
                 resume = _read_multiline("Paste your base resume below:")
     else:
-        source = Prompt.ask(
-            "Base resume input",
-            choices=["pdf", "paste"],
-            default="pdf",
-        )
+        source = _pick("Base resume input", ["pdf", "paste"], default="pdf")
         if source == "pdf":
-            resume = _setup_resume_from_pdf(chosen_model)
+            resume = _setup_resume_from_pdf(chosen_model, provider=provider)
         else:
             resume = _read_multiline("Paste your base resume below:")
 
@@ -360,14 +340,14 @@ def setup() -> None:
     # Output settings.
     existing_cfg = storage.load_config() if storage.CONFIG_PATH.exists() else {}
     console.print("\n[bold]Output settings[/bold]")
-    generate_run_log = Prompt.ask(
-        "Generate run_log.json in each package folder? (timing, tokens, cost per run)",
-        choices=["yes", "no"],
+    generate_run_log = _pick(
+        "Generate run_log.json per package? (timing, tokens, cost)",
+        ["yes", "no"],
         default="yes" if existing_cfg.get("generate_run_log", True) else "no",
     ) == "yes"
-    generate_docx = Prompt.ask(
+    generate_docx = _pick(
         "Generate .docx files in addition to PDF?",
-        choices=["yes", "no"],
+        ["yes", "no"],
         default="yes" if existing_cfg.get("generate_docx", False) else "no",
     ) == "yes"
     storage.save_config({"generate_run_log": generate_run_log, "generate_docx": generate_docx, "use_linkedin_profile": True})
@@ -383,23 +363,21 @@ def setup() -> None:
         console.print(f"\n[dim]Current stories file ({len(existing_stories)} chars):[/dim]")
         preview = existing_stories[:400] + ("…" if len(existing_stories) > 400 else "")
         console.print(Panel(preview, style="dim"))
-        edit_stories = Prompt.ask("Edit stories?", choices=["yes", "skip"], default="skip")
+        edit_stories = _pick("Edit stories?", ["skip", "yes"], default="skip")
         if edit_stories == "yes":
             new_stories = _read_multiline("Paste your updated stories below:")
             if new_stories:
                 storage.save_stories(new_stories)
                 console.print("[green]Stories updated.[/green]")
     else:
-        add_stories = Prompt.ask(
-            "Add stories now?", choices=["yes", "skip"], default="skip"
-        )
+        add_stories = _pick("Add stories now?", ["skip", "yes"], default="skip")
         if add_stories == "yes":
             new_stories = _read_multiline("Paste your stories below:")
             if new_stories:
                 storage.save_stories(new_stories)
                 console.print("[green]Stories saved.[/green]")
         else:
-            console.print(f"[dim]You can add them later: edit [bold]data/stories.md[/bold] in the project folder.[/dim]")
+            console.print(f"[dim]You can add them later — run [bold]applycling setup[/bold] again, or edit [bold]data/stories.md[/bold] directly in any text editor.[/dim]")
 
     # LinkedIn profile — optional additional tailoring context.
     console.print("\n[bold]LinkedIn profile[/bold] [dim](optional — richer context for tailoring, zero tokens)[/dim]")
@@ -410,14 +388,12 @@ def setup() -> None:
     existing_linkedin = storage.load_linkedin_profile()
     if existing_linkedin:
         console.print(f"\n[dim]LinkedIn profile already imported ({len(existing_linkedin)} chars).[/dim]")
-        update_li = Prompt.ask("Re-import?", choices=["yes", "skip"], default="skip")
+        update_li = _pick("LinkedIn profile already imported. Re-import?", ["skip", "yes"], default="skip")
         if update_li == "yes":
             existing_linkedin = None  # fall through to import below
 
     if not existing_linkedin:
-        li_action = Prompt.ask(
-            "Import LinkedIn PDF now?", choices=["yes", "skip"], default="skip"
-        )
+        li_action = _pick("Import LinkedIn PDF now?", ["skip", "yes"], default="skip")
         if li_action == "yes":
             while True:
                 li_path_str = Prompt.ask("LinkedIn PDF path")
