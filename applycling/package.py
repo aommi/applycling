@@ -26,11 +26,14 @@ def _slugify(value: str) -> str:
     return value.strip("-") or "untitled"
 
 
-def folder_name(company: str, title: str, date: Optional[str] = None) -> str:
-    """Return the canonical {company}-{title}-{date} folder name."""
+def folder_name(company: str, title: str, date: Optional[str] = None, model: Optional[str] = None) -> str:
+    """Return the canonical {company}-{title}-{date}[-{model}] folder name."""
     if date is None:
         date = dt.date.today().isoformat()
-    return f"{_slugify(company)}-{_slugify(title)}-{date}"
+    base = f"{_slugify(company)}-{_slugify(title)}-{date}"
+    if model:
+        return f"{base}-{_slugify(model)}"
+    return base
 
 
 def assemble(
@@ -44,6 +47,8 @@ def assemble(
     cover_letter: Optional[str] = None,
     email_inmail: Optional[str] = None,
     generate_docx: bool = False,
+    run_log: Optional[dict] = None,
+    model: Optional[str] = None,
 ) -> Path:
     """Build the application package folder for a job.
 
@@ -59,7 +64,7 @@ def assemble(
     base = (output_root or OUTPUT_DIR).resolve()
     base.mkdir(parents=True, exist_ok=True)
 
-    name = folder_name(job.company, job.title, job.date_added.split("T")[0] if job.date_added else None)
+    name = folder_name(job.company, job.title, job.date_added.split("T")[0] if job.date_added else None, model=model)
     folder = base / name
     folder.mkdir(parents=True, exist_ok=True)
 
@@ -132,5 +137,21 @@ def assemble(
     (folder / "job.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
+
+    # Run log — enumerate actual files written with sizes.
+    if run_log is not None:
+        run_log["package_folder"] = str(folder)
+        files_inventory = {}
+        for f in sorted(folder.iterdir()):
+            if f.name == "run_log.json":
+                continue
+            files_inventory[f.name] = {
+                "bytes": f.stat().st_size,
+                "generated": True,
+            }
+        run_log["files"] = files_inventory
+        (folder / "run_log.json").write_text(
+            json.dumps(run_log, indent=2), encoding="utf-8"
+        )
 
     return folder
