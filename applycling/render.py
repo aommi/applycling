@@ -48,8 +48,20 @@ h3 {
   font-size: 11pt;
   margin: 0.13in 0 0.02in 0;
   font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+h3 em {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 10pt;
+  color: #555;
+  white-space: nowrap;
+  margin-left: 0.2in;
 }
 p { margin: 0.04in 0; }
+p.company { margin: 0 0 0.04in 0; color: #444; font-size: 10pt; }
 ul { margin: 0.05in 0 0.1in 0; padding-left: 0.22in; }
 li { margin: 0.03in 0; }
 a { color: #1a1a1a; text-decoration: none; }

@@ -10,6 +10,7 @@ from .prompts import (
     APPLICATION_EMAIL_PROMPT,
     COVER_LETTER_PROMPT,
     FIT_SUMMARY_PROMPT,
+    FORMAT_RESUME_PROMPT,
     POSITIONING_BRIEF_PROMPT,
     PROFILE_SUMMARY_PROMPT,
     ROLE_INTEL_PROMPT,
@@ -290,4 +291,11 @@ def get_profile_summary(
     prompt = PROFILE_SUMMARY_PROMPT.format(
         resume=resume, job_description=job_description
     )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def format_resume(
+    resume: str, model: str, provider: str = "ollama"
+) -> Iterator[str]:
+    prompt = FORMAT_RESUME_PROMPT.format(resume=resume)
     yield from _stream_chat(model, prompt, provider)

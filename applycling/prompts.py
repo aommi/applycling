@@ -8,7 +8,7 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - First bullet of the top role: the single strongest quantified outcome relevant to this role.
 - Domain relevance must appear in the top third of the page.
 - Every bullet leads with the outcome, not the activity. Active voice only.
-- Compress less-relevant roles to 1-2 bullets. Never remove roles entirely.
+- For less-relevant roles: keep 2-3 bullets that show career progression and credibility, even if not directly relevant. Never remove roles entirely. The goal is tailoring emphasis, not gutting history.
 - Skills section: only include skills evidenced in experience or called out in the positioning strategy.
 
 **Tailoring rules:**
@@ -16,6 +16,7 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - Use the ATS keyword table from the positioning strategy as a checklist. Every keyword marked "weave in" must appear somewhere. Only integrate where the experience genuinely supports it.
 - You MAY rename job titles if it better reflects the actual work and fits the role. Keep it honest.
 - You MAY reorder sections to put the most relevant experience first.
+- Within each section, entries MUST stay in reverse chronological order (most recent first). Never reorder individual roles, jobs, or projects within a section.
 - Quantify impact whenever the original resume gives you the numbers.
 
 **Hard boundaries:**
@@ -212,6 +213,43 @@ Output as two sections with headers:
 
 === COMPANY ===
 {company}
+"""
+
+FORMAT_RESUME_PROMPT = """You are a resume formatter. Your ONLY job is to reformat the resume below into the exact structure described. Do NOT change any content — no rewording, no adding, no removing bullets or roles. Only restructure and reformat.
+
+**Required markdown structure:**
+
+1. Name is already handled — do NOT output a name or contact line. Start from the first section.
+
+2. Section headers: `## SECTION NAME` (ALL CAPS). Use exactly these section names: PROFILE, SKILLS, EXPERIENCE, EDUCATION. Add `---` after each section's content block (before the next section header).
+
+3. Job entries:
+   ```
+   ### Job Title *Month Year – Month Year*
+   Company Name · Location
+   ```
+   Title is plain text inside ###. Date range is in *italic* on the SAME line as the title (not a new line). Company and location on the line immediately below, separated by ` · `. No bold on company line.
+
+4. Bullets: standard `- ` bullets. Keep every bullet exactly as written.
+
+5. Skills section:
+   ```
+   **Category:** item · item · item
+   ```
+   Each category on its own line. Items separated by ` · `.
+
+6. Education entries follow the same pattern as job entries:
+   ```
+   ### Degree Name *Year – Year*
+   University · City
+   ```
+
+7. Profile section: paragraph text only, no bullets.
+
+Output ONLY the reformatted markdown. No preamble, no commentary.
+
+=== RESUME TO REFORMAT ===
+{resume}
 """
 
 PDF_RESUME_CLEANUP_PROMPT = """You are an expert at converting messy PDF-extracted resume text into clean Markdown.
