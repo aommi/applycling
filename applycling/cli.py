@@ -256,193 +256,220 @@ def setup() -> None:
     except storage.StorageError:
         pass
 
-    # Pick provider + model (looped so user can go back from model to provider).
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-    _BACK = "← back"
-    provider = ""
-    chosen_model = ""
-    while not chosen_model:
-        console.print("\n[bold]LLM provider[/bold]")
-        provider = _pick("Provider", ["ollama", "anthropic", "openai", "google"],
-                         default=existing_cfg.get("provider", "ollama"))
 
-        if provider == "ollama":
+    _BACK = "← back"
+
+    # ---------------------------------------------------------------------------
+    # Step helpers — each returns its result or _BACK sentinel
+    # ---------------------------------------------------------------------------
+
+    def _step_provider_model(prev_provider="", prev_model=""):
+        console.print("\n[bold]Step 1 — LLM provider & model[/bold]")
+        p = _pick("Provider", ["ollama", "anthropic", "openai", "google"],
+                  default=prev_provider or existing_cfg.get("provider", "ollama"))
+        if p == "ollama":
             try:
                 models = llm.get_available_models()
             except llm.LLMError as e:
-                console.print(f"[red]{e}[/red]")
-                sys.exit(1)
+                console.print(f"[red]{e}[/red]"); sys.exit(1)
             if not models:
-                console.print(
-                    "[red]No Ollama models installed.[/red] Try: "
-                    "[bold]ollama pull llama3.2[/bold]"
-                )
+                console.print("[red]No Ollama models installed.[/red] Try: [bold]ollama pull llama3.2[/bold]")
                 sys.exit(1)
-        elif provider == "anthropic":
+        elif p == "anthropic":
             try:
-                import anthropic as _anthropic
-                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-                if not api_key:
-                    raise ValueError("no key")
-                _client = _anthropic.Anthropic(api_key=api_key)
-                models = [m.id for m in _client.models.list().data]
+                import anthropic as _a
+                key = os.environ.get("ANTHROPIC_API_KEY", "")
+                if not key: raise ValueError()
+                models = [m.id for m in _a.Anthropic(api_key=key).models.list().data]
             except Exception:
                 models = ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"]
                 console.print("[dim]Could not fetch models — showing defaults.[/dim]")
-        elif provider == "openai":
+        elif p == "openai":
             try:
-                import openai as _openai
-                api_key = os.environ.get("OPENAI_API_KEY", "")
-                if not api_key:
-                    raise ValueError("no key")
-                _client = _openai.OpenAI(api_key=api_key)
-                all_models = [m.id for m in _client.models.list().data]
-                models = sorted([m for m in all_models if m.startswith(("gpt-", "o1", "o3", "o4"))])
+                import openai as _o
+                key = os.environ.get("OPENAI_API_KEY", "")
+                if not key: raise ValueError()
+                all_m = [m.id for m in _o.OpenAI(api_key=key).models.list().data]
+                models = sorted([m for m in all_m if m.startswith(("gpt-", "o1", "o3", "o4"))])
             except Exception:
                 models = ["gpt-4o", "gpt-4o-mini", "o3-mini"]
                 console.print("[dim]Could not fetch models — showing defaults.[/dim]")
-        else:  # google — free-text entry, no dynamic list
-            chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gemini-2.0-flash"))
-            break
+        else:  # google
+            m = Prompt.ask("Model name", default=prev_model or existing_cfg.get("model", "gemini-2.0-flash"))
+            return p, m
+        default_m = prev_model if prev_model in models else (existing_cfg.get("model") if existing_cfg.get("model") in models else models[0])
+        sel = _pick("Pick a model", models + [_BACK], default=default_m)
+        if sel == _BACK:
+            return _step_provider_model(prev_provider=p, prev_model="")
+        return p, sel
 
-        selection = _pick("Pick a model", [_BACK] + models,
-                          default=existing_cfg.get("model", models[0]) if existing_cfg.get("model") in models else models[0])
-        if selection != _BACK:
-            chosen_model = selection
-
-    # Pick how to provide the base resume.
-    console.print()
-    existing_resume = None
-    try:
-        existing_resume = storage.load_resume()
-    except storage.StorageError:
-        pass
-
-    if existing_resume:
-        keep = _pick("A base resume already exists.", ["keep", "replace"], default="keep")
-        if keep == "keep":
-            resume = existing_resume
+    def _step_resume(prev_provider, prev_model):
+        console.print("\n[bold]Step 2 — Base resume[/bold]")
+        existing_resume = None
+        try:
+            existing_resume = storage.load_resume()
+        except storage.StorageError:
+            pass
+        if existing_resume:
+            choice = _pick("A base resume already exists.", ["keep", "replace", _BACK], default="keep")
+            if choice == _BACK: return _BACK
+            if choice == "keep": return existing_resume
+        src = _pick("Base resume input", ["pdf", "paste", _BACK], default="pdf")
+        if src == _BACK: return _BACK
+        if src == "pdf":
+            r = _setup_resume_from_pdf(prev_model, provider=prev_provider)
         else:
-            source = _pick("Base resume input", ["pdf", "paste"], default="pdf")
-            if source == "pdf":
-                resume = _setup_resume_from_pdf(chosen_model, provider=provider)
+            r = _read_multiline("Paste your base resume below:")
+        return r or _BACK
+
+    def _step_profile():
+        console.print("\n[bold]Step 3 — Personal details[/bold] [dim](never rewritten by AI)[/dim]")
+        existing = storage.load_profile() or {}
+        p = {
+            "name":     Prompt.ask("Full name",   default=existing.get("name", "")),
+            "email":    Prompt.ask("Email",        default=existing.get("email", "")),
+            "phone":    Prompt.ask("Phone",        default=existing.get("phone", "")),
+            "location": Prompt.ask("Location",     default=existing.get("location", "")),
+            "linkedin": Prompt.ask("LinkedIn URL", default=existing.get("linkedin", "")),
+            "github":   Prompt.ask("GitHub URL",   default=existing.get("github", "")),
+        }
+        console.print("\n[bold]Writing style[/bold] [dim](injected into every tailoring prompt)[/dim]")
+        p["voice_tone"] = Prompt.ask(
+            "Voice & tone",
+            default=existing.get("voice_tone", "Direct, active voice, outcome-first. Short sentences. No em-dashes, no clichés."),
+        )
+        console.print("\n[bold]Never fabricate[/bold] [dim](comma-separated — the LLM will never invent these)[/dim]")
+        nf_default = ", ".join(existing.get("never_fabricate", []))
+        nf_input = Prompt.ask("Never fabricate", default=nf_default or "specific tools or platforms not listed in resume or stories, domain experience not evidenced")
+        p["never_fabricate"] = [s.strip() for s in nf_input.split(",") if s.strip()]
+        back = _pick("Continue?", ["continue", _BACK], default="continue")
+        if back == _BACK: return _BACK
+        return p
+
+    def _step_output_settings():
+        console.print("\n[bold]Step 4 — Output settings[/bold]")
+        cfg_now = storage.load_config() if storage.CONFIG_PATH.exists() else {}
+        run_log = _pick("Generate run_log.json per package?", ["yes", "no", _BACK],
+                        default="yes" if cfg_now.get("generate_run_log", True) else "no")
+        if run_log == _BACK: return _BACK
+        docx = _pick("Generate .docx in addition to PDF?", ["yes", "no", _BACK],
+                     default="yes" if cfg_now.get("generate_docx", False) else "no")
+        if docx == _BACK: return _BACK
+        return {"generate_run_log": run_log == "yes", "generate_docx": docx == "yes"}
+
+    def _step_stories():
+        console.print("\n[bold]Step 5 — Stories[/bold] [dim](optional extra experiences for tailoring)[/dim]")
+        console.print("[dim]Side projects, consulting, part-time work, achievements not on your resume.[/dim]")
+        existing_stories = storage.load_stories()
+        if existing_stories:
+            console.print(f"\n[dim]Current stories file ({len(existing_stories)} chars):[/dim]")
+            console.print(Panel(existing_stories[:400] + ("…" if len(existing_stories) > 400 else ""), style="dim"))
+            choice = _pick("Edit stories?", ["skip", "yes", _BACK], default="skip")
+            if choice == _BACK: return _BACK
+            if choice == "yes":
+                new_stories = _read_multiline("Paste your updated stories below:")
+                if new_stories:
+                    storage.save_stories(new_stories)
+                    console.print("[green]Stories updated.[/green]")
+        else:
+            choice = _pick("Add stories now?", ["skip", "yes", _BACK], default="skip")
+            if choice == _BACK: return _BACK
+            if choice == "yes":
+                new_stories = _read_multiline("Paste your stories below:")
+                if new_stories:
+                    storage.save_stories(new_stories)
+                    console.print("[green]Stories saved.[/green]")
             else:
-                resume = _read_multiline("Paste your base resume below:")
-    else:
-        source = _pick("Base resume input", ["pdf", "paste"], default="pdf")
-        if source == "pdf":
-            resume = _setup_resume_from_pdf(chosen_model, provider=provider)
+                console.print("[dim]You can add them later — run [bold]applycling setup[/bold] again, or edit [bold]data/stories.md[/bold] directly.[/dim]")
+        return {}
+
+    def _step_linkedin():
+        console.print("\n[bold]Step 6 — LinkedIn profile[/bold] [dim](optional, zero tokens)[/dim]")
+        console.print("[dim]Export as PDF from LinkedIn (Me → Save to PDF) and provide the path.[/dim]")
+        existing_linkedin = storage.load_linkedin_profile()
+        if existing_linkedin:
+            console.print(f"\n[dim]LinkedIn profile already imported ({len(existing_linkedin)} chars).[/dim]")
+            choice = _pick("Re-import?", ["skip", "yes", _BACK], default="skip")
+            if choice == _BACK: return _BACK
+            if choice == "skip": return {}
         else:
-            resume = _read_multiline("Paste your base resume below:")
+            choice = _pick("Import LinkedIn PDF now?", ["yes", "skip", _BACK], default="skip")
+            if choice == _BACK: return _BACK
+            if choice == "skip":
+                console.print("[dim]You can import it later: run [bold]applycling setup[/bold] again.[/dim]")
+                return {}
+        while True:
+            li_path_str = Prompt.ask("LinkedIn PDF path")
+            li_path = Path(li_path_str.strip().strip("'\"").replace("\\ ", " ")).expanduser()
+            if not li_path.exists():
+                console.print(f"[red]File not found:[/red] {li_path}")
+                continue
+            try:
+                with console.status("[cyan]Extracting LinkedIn profile...[/cyan]", spinner="dots"):
+                    li_text = pdf_import.extract_text(li_path)
+                storage.save_linkedin_profile(li_text)
+                console.print(f"[green]LinkedIn profile imported ({len(li_text)} chars).[/green]")
+            except pdf_import.PDFImportError as e:
+                console.print(f"[red]{e}[/red]")
+            return {}
 
-    if not resume:
-        console.print("[red]Empty resume — aborting.[/red]")
-        sys.exit(1)
+    # ---------------------------------------------------------------------------
+    # Run steps in sequence; ← back at any step returns to the previous one
+    # ---------------------------------------------------------------------------
+    step = 0
+    provider = existing_cfg.get("provider", "ollama")
+    chosen_model = existing_cfg.get("model", "")
+    resume = None
+    profile_data = None
+    output_settings = None
 
-    storage.save_resume(resume)
-    storage.save_config({"provider": provider, "model": chosen_model})
-
-    # Collect personal details (stored separately, never passed to the LLM).
-    console.print("\n[bold]Personal details[/bold] [dim](used verbatim in every resume — never rewritten by AI)[/dim]")
-    existing = storage.load_profile() or {}
-    profile = {
-        "name":     Prompt.ask("Full name",       default=existing.get("name", "")),
-        "email":    Prompt.ask("Email",            default=existing.get("email", "")),
-        "phone":    Prompt.ask("Phone",            default=existing.get("phone", "")),
-        "location": Prompt.ask("Location",         default=existing.get("location", "")),
-        "linkedin": Prompt.ask("LinkedIn URL",     default=existing.get("linkedin", "")),
-        "github":   Prompt.ask("GitHub URL",       default=existing.get("github", "")),
-    }
-
-    # Voice, tone, and hard boundaries.
-    console.print("\n[bold]Writing style[/bold] [dim](injected into every tailoring prompt)[/dim]")
-    profile["voice_tone"] = Prompt.ask(
-        "Voice & tone",
-        default=existing.get("voice_tone", "Direct, active voice, outcome-first. Short sentences. No em-dashes, no clichés."),
-    )
-    console.print("\n[bold]Never fabricate[/bold] [dim](hard boundary: the LLM will never invent these)[/dim]")
-    console.print("[dim]Comma-separated list, e.g.: specific tools not in resume, domain experience not evidenced[/dim]")
-    nf_default = ", ".join(existing.get("never_fabricate", []))
-    nf_input = Prompt.ask("Never fabricate", default=nf_default or "specific tools or platforms not listed in resume or stories, domain experience not evidenced")
-    profile["never_fabricate"] = [s.strip() for s in nf_input.split(",") if s.strip()]
-
-    storage.save_profile({k: v for k, v in profile.items() if v})
-
-    # Output settings.
-    existing_cfg = storage.load_config() if storage.CONFIG_PATH.exists() else {}
-    console.print("\n[bold]Output settings[/bold]")
-    generate_run_log = _pick(
-        "Generate run_log.json per package? (timing, tokens, cost)",
-        ["yes", "no"],
-        default="yes" if existing_cfg.get("generate_run_log", True) else "no",
-    ) == "yes"
-    generate_docx = _pick(
-        "Generate .docx files in addition to PDF?",
-        ["yes", "no"],
-        default="yes" if existing_cfg.get("generate_docx", False) else "no",
-    ) == "yes"
-    storage.save_config({"generate_run_log": generate_run_log, "generate_docx": generate_docx, "use_linkedin_profile": True})
-
-    # Stories file — mention it so users know it exists.
-    console.print("\n[bold]Stories[/bold] [dim](optional — extra experiences the tailorer can draw from)[/dim]")
-    console.print(
-        "[dim]Side projects, consulting, part-time work, achievements not on your resume. "
-        "The AI reads this and decides what's relevant for each job.[/dim]"
-    )
-    existing_stories = storage.load_stories()
-    if existing_stories:
-        console.print(f"\n[dim]Current stories file ({len(existing_stories)} chars):[/dim]")
-        preview = existing_stories[:400] + ("…" if len(existing_stories) > 400 else "")
-        console.print(Panel(preview, style="dim"))
-        edit_stories = _pick("Edit stories?", ["skip", "yes"], default="skip")
-        if edit_stories == "yes":
-            new_stories = _read_multiline("Paste your updated stories below:")
-            if new_stories:
-                storage.save_stories(new_stories)
-                console.print("[green]Stories updated.[/green]")
-    else:
-        add_stories = _pick("Add stories now?", ["skip", "yes"], default="skip")
-        if add_stories == "yes":
-            new_stories = _read_multiline("Paste your stories below:")
-            if new_stories:
-                storage.save_stories(new_stories)
-                console.print("[green]Stories saved.[/green]")
-        else:
-            console.print(f"[dim]You can add them later — run [bold]applycling setup[/bold] again, or edit [bold]data/stories.md[/bold] directly in any text editor.[/dim]")
-
-    # LinkedIn profile — optional additional tailoring context.
-    console.print("\n[bold]LinkedIn profile[/bold] [dim](optional — richer context for tailoring, zero tokens)[/dim]")
-    console.print(
-        "[dim]Export your LinkedIn profile as a PDF (Me → Save to PDF) and provide the path.\n"
-        "The text is extracted locally — no LLM call, no network request.[/dim]"
-    )
-    existing_linkedin = storage.load_linkedin_profile()
-    if existing_linkedin:
-        console.print(f"\n[dim]LinkedIn profile already imported ({len(existing_linkedin)} chars).[/dim]")
-        update_li = _pick("LinkedIn profile already imported. Re-import?", ["skip", "yes"], default="skip")
-        if update_li == "yes":
-            existing_linkedin = None  # fall through to import below
-
-    if not existing_linkedin:
-        li_action = _pick("Import LinkedIn PDF now?", ["yes", "skip"], default="skip")
-        if li_action == "yes":
-            while True:
-                li_path_str = Prompt.ask("LinkedIn PDF path")
-                li_path = Path(li_path_str.strip().strip("'\"").replace("\\ ", " ")).expanduser()
-                if not li_path.exists():
-                    console.print(f"[red]File not found:[/red] {li_path}")
-                    continue
-                try:
-                    with console.status("[cyan]Extracting LinkedIn profile...[/cyan]", spinner="dots"):
-                        li_text = pdf_import.extract_text(li_path)
-                    storage.save_linkedin_profile(li_text)
-                    console.print(f"[green]LinkedIn profile imported ({len(li_text)} chars).[/green]")
-                except pdf_import.PDFImportError as e:
-                    console.print(f"[red]{e}[/red]")
-                break
-        else:
-            console.print("[dim]You can import it later: run [bold]applycling setup[/bold] again.[/dim]")
+    while step <= 5:
+        if step == 0:
+            result = _step_provider_model(prev_provider=provider, prev_model=chosen_model)
+            if result == _BACK:
+                step = max(0, step - 1)
+            else:
+                provider, chosen_model = result
+                storage.save_config({"provider": provider, "model": chosen_model})
+                step += 1
+        elif step == 1:
+            result = _step_resume(provider, chosen_model)
+            if result == _BACK:
+                step -= 1
+            else:
+                resume = result
+                storage.save_resume(resume)
+                step += 1
+        elif step == 2:
+            result = _step_profile()
+            if result == _BACK:
+                step -= 1
+            else:
+                profile_data = result
+                storage.save_profile({k: v for k, v in profile_data.items() if v})
+                step += 1
+        elif step == 3:
+            result = _step_output_settings()
+            if result == _BACK:
+                step -= 1
+            else:
+                output_settings = result
+                storage.save_config({**output_settings, "use_linkedin_profile": True})
+                step += 1
+        elif step == 4:
+            result = _step_stories()
+            if result == _BACK:
+                step -= 1
+            else:
+                step += 1
+        elif step == 5:
+            result = _step_linkedin()
+            if result == _BACK:
+                step -= 1
+            else:
+                step += 1
 
     # Ensure Playwright browsers are installed (needed for PDF rendering).
     try:
