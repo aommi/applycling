@@ -287,7 +287,8 @@ def setup() -> None:
 
 @main.command()
 @click.option("--async", "async_mode", is_flag=True, help="Skip input gates. Generate full package without stopping.")
-def add(async_mode: bool) -> None:
+@click.option("--url", "url_arg", default="", help="Job posting URL — skips the URL prompt.")
+def add(async_mode: bool, url_arg: str) -> None:
     """Add a job: tailor a resume + assemble an application package."""
     cfg = _require_config()
     review_mode = cfg.get("review_mode", "interactive")
@@ -305,7 +306,9 @@ def add(async_mode: bool) -> None:
     # Token tracking: list of (step_name, prompt_text, output_text).
     token_steps: list[tuple[str, str, str]] = []
 
-    source_url = Prompt.ask("Job posting URL (leave blank to enter details manually)", default="")
+    source_url = url_arg or (
+        "" if async_mode else Prompt.ask("Job posting URL (leave blank to enter details manually)", default="")
+    )
     title = company = job_description = ""
 
     company_url = ""
@@ -324,16 +327,22 @@ def add(async_mode: bool) -> None:
             job_description = posting.description
             company_url = posting.company_url
             console.print(f"[green]Fetched:[/green] [bold]{title}[/bold] @ [bold]{company}[/bold]")
-            title = Prompt.ask("Job title", default=title)
-            company = Prompt.ask("Company name", default=company)
-            if company_url:
+            if not async_mode:
+                title = Prompt.ask("Job title", default=title)
+                company = Prompt.ask("Company name", default=company)
+                if company_url:
+                    console.print(f"[dim]Company page detected: {company_url}[/dim]")
+                company_url = Prompt.ask("Company page URL (for context)", default=company_url)
+            elif company_url:
                 console.print(f"[dim]Company page detected: {company_url}[/dim]")
-            company_url = Prompt.ask("Company page URL (for context)", default=company_url)
         except Exception as e:
             console.print(f"[yellow]Could not auto-fetch details ({e}) — falling back to manual entry.[/yellow]")
             source_url = ""
 
     if not source_url:
+        if async_mode:
+            console.print("[red]--async requires --url. No URL provided and no fallback in async mode.[/red]")
+            sys.exit(1)
         title = Prompt.ask("Job title")
         company = Prompt.ask("Company name")
         source_url = Prompt.ask("Source URL (optional)", default="")
@@ -344,7 +353,7 @@ def add(async_mode: bool) -> None:
         console.print("[red]Empty job description — aborting.[/red]")
         sys.exit(1)
 
-    want_summary = Prompt.ask(
+    want_summary = True if async_mode else Prompt.ask(
         "Include a profile summary section?", choices=["y", "n"], default="y"
     ) == "y"
 
