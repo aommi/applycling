@@ -40,6 +40,8 @@ def _stream_chat(model: str, prompt: str, provider: str = "ollama") -> Iterator[
         yield from _stream_anthropic(model, prompt)
     elif provider == "google":
         yield from _stream_google(model, prompt)
+    elif provider == "openai":
+        yield from _stream_openai(model, prompt)
     else:
         yield from _stream_ollama(model, prompt)
 
@@ -103,6 +105,35 @@ def _stream_anthropic(model: str, prompt: str) -> Iterator[str]:
                 yield text
     except Exception as e:
         raise LLMError(f"Anthropic error: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# OpenAI
+# ---------------------------------------------------------------------------
+
+def _stream_openai(model: str, prompt: str) -> Iterator[str]:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise LLMError(
+            "OPENAI_API_KEY is not set. Add it to your .env file."
+        )
+    try:
+        import openai
+    except ImportError as e:
+        raise LLMError("openai package is not installed. Run: pip install openai") from e
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        stream = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+        )
+        for chunk in stream:
+            text = chunk.choices[0].delta.content
+            if text:
+                yield text
+    except Exception as e:
+        raise LLMError(f"OpenAI error: {e}") from e
 
 
 # ---------------------------------------------------------------------------

@@ -247,7 +247,7 @@ def setup() -> None:
 
     # Pick provider.
     console.print("\n[bold]LLM provider[/bold]")
-    provider = _pick("Provider", ["ollama", "anthropic", "google"],
+    provider = _pick("Provider", ["ollama", "anthropic", "openai", "google"],
                      default=existing_cfg.get("provider", "ollama"))
 
     # Pick model based on provider.
@@ -275,6 +275,9 @@ def setup() -> None:
     elif provider == "anthropic":
         console.print("[dim]Examples: claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6[/dim]")
         chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "claude-haiku-4-5-20251001"))
+    elif provider == "openai":
+        console.print("[dim]Examples: gpt-4o, gpt-4o-mini, o3-mini[/dim]")
+        chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gpt-4o"))
     else:  # google
         console.print("[dim]Examples: gemini-2.0-flash, gemini-2.5-pro[/dim]")
         chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gemini-2.0-flash"))

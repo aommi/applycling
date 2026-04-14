@@ -27,6 +27,7 @@ For each job URL you provide, applycling:
 - **One of these LLM providers:**
   - **[Ollama](https://ollama.com)** (local, free) — install and pull a model: `ollama pull llama3.2`
   - **Anthropic API key** — for Claude models
+  - **OpenAI API key** — for GPT-4o and o-series models
   - **Google AI Studio API key** — for Gemini models
 
 ---
@@ -45,6 +46,7 @@ For API providers, create a `.env` file in the project root:
 ```bash
 # .env (gitignored — never committed)
 ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 GOOGLE_API_KEY=AIza...
 ```
 
@@ -78,7 +80,7 @@ To use a cloud provider instead of Ollama, edit `data/config.json` after setup:
 }
 ```
 
-Valid providers: `ollama`, `anthropic`, `google`.
+Valid providers: `ollama`, `anthropic`, `openai`, `google`.
 
 ---
 
@@ -193,7 +195,7 @@ Set `use_linkedin_profile: false` in `data/config.json` to disable without delet
 
 | Key | Values | Default |
 |-----|--------|---------|
-| `provider` | `ollama`, `anthropic`, `google` | `ollama` |
+| `provider` | `ollama`, `anthropic`, `openai`, `google` | `ollama` |
 | `model` | Any model name for the provider | (set during setup) |
 | `review_mode` | `interactive`, `async` | `interactive` |
 | `generate_docx` | `true`, `false` | `false` |

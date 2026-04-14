@@ -222,6 +222,14 @@ def fetch_job_posting(url: str, model: str, provider: str = "ollama") -> tuple[J
         client = _genai.Client(api_key=os.environ.get("GOOGLE_API_KEY", ""))
         resp = client.models.generate_content(model=model, contents=prompt)
         text = resp.text.strip()
+    elif provider == "openai":
+        import openai as _openai
+        client = _openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        resp = client.chat.completions.create(
+            model=model, max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.choices[0].message.content.strip()
     else:
         import ollama as _ollama
         response = _ollama.generate(model=model, prompt=prompt, stream=False)

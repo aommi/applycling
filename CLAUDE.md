@@ -82,7 +82,7 @@ Nothing else needs wiring — token counts, run_log, and the terminal breakdown 
 
 | Key | Values | Default |
 |-----|--------|---------|
-| `provider` | `ollama`, `anthropic`, `google` | `ollama` |
+| `provider` | `ollama`, `anthropic`, `openai`, `google` | `ollama` |
 | `model` | any model name for the provider | set during setup |
 | `review_mode` | `interactive`, `async` | `interactive` |
 | `generate_docx` | `true`, `false` | `false` |
