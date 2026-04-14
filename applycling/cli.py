@@ -256,63 +256,60 @@ def setup() -> None:
     except storage.StorageError:
         pass
 
-    # Pick provider.
-    console.print("\n[bold]LLM provider[/bold]")
-    provider = _pick("Provider", ["ollama", "anthropic", "openai", "google"],
-                     default=existing_cfg.get("provider", "ollama"))
+    # Pick provider + model (looped so user can go back from model to provider).
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    _BACK = "← back"
+    provider = ""
+    chosen_model = ""
+    while not chosen_model:
+        console.print("\n[bold]LLM provider[/bold]")
+        provider = _pick("Provider", ["ollama", "anthropic", "openai", "google"],
+                         default=existing_cfg.get("provider", "ollama"))
 
-    # Pick model based on provider.
-    if provider == "ollama":
-        try:
-            models = llm.get_available_models()
-        except llm.LLMError as e:
-            console.print(f"[red]{e}[/red]")
-            sys.exit(1)
-        if not models:
-            console.print(
-                "[red]No Ollama models installed.[/red] Try: "
-                "[bold]ollama pull llama3.2[/bold]"
-            )
-            sys.exit(1)
-        chosen_model = _pick("Pick a model", models,
-                             default=existing_cfg.get("model", models[0]))
-    elif provider == "anthropic":
-        from dotenv import load_dotenv
-        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-        try:
-            import anthropic as _anthropic
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if api_key:
+        if provider == "ollama":
+            try:
+                models = llm.get_available_models()
+            except llm.LLMError as e:
+                console.print(f"[red]{e}[/red]")
+                sys.exit(1)
+            if not models:
+                console.print(
+                    "[red]No Ollama models installed.[/red] Try: "
+                    "[bold]ollama pull llama3.2[/bold]"
+                )
+                sys.exit(1)
+        elif provider == "anthropic":
+            try:
+                import anthropic as _anthropic
+                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+                if not api_key:
+                    raise ValueError("no key")
                 _client = _anthropic.Anthropic(api_key=api_key)
                 models = [m.id for m in _client.models.list().data]
-            else:
-                raise ValueError("no key")
-        except Exception:
-            models = ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"]
-            console.print("[dim]Could not fetch models — showing defaults.[/dim]")
-        chosen_model = _pick("Pick a model", models,
-                             default=existing_cfg.get("model", models[0]))
-    elif provider == "openai":
-        from dotenv import load_dotenv
-        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-        try:
-            import openai as _openai
-            api_key = os.environ.get("OPENAI_API_KEY", "")
-            if api_key:
+            except Exception:
+                models = ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"]
+                console.print("[dim]Could not fetch models — showing defaults.[/dim]")
+        elif provider == "openai":
+            try:
+                import openai as _openai
+                api_key = os.environ.get("OPENAI_API_KEY", "")
+                if not api_key:
+                    raise ValueError("no key")
                 _client = _openai.OpenAI(api_key=api_key)
                 all_models = [m.id for m in _client.models.list().data]
-                # Filter to chat-capable models only
                 models = sorted([m for m in all_models if m.startswith(("gpt-", "o1", "o3", "o4"))])
-            else:
-                raise ValueError("no key")
-        except Exception:
-            models = ["gpt-4o", "gpt-4o-mini", "o3-mini"]
-            console.print("[dim]Could not fetch models — showing defaults.[/dim]")
-        chosen_model = _pick("Pick a model", models,
-                             default=existing_cfg.get("model", models[0]))
-    else:  # google
-        console.print("[dim]Examples: gemini-2.0-flash, gemini-2.5-pro[/dim]")
-        chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gemini-2.0-flash"))
+            except Exception:
+                models = ["gpt-4o", "gpt-4o-mini", "o3-mini"]
+                console.print("[dim]Could not fetch models — showing defaults.[/dim]")
+        else:  # google — free-text entry, no dynamic list
+            chosen_model = Prompt.ask("Model name", default=existing_cfg.get("model", "gemini-2.0-flash"))
+            break
+
+        selection = _pick("Pick a model", [_BACK] + models,
+                          default=existing_cfg.get("model", models[0]) if existing_cfg.get("model") in models else models[0])
+        if selection != _BACK:
+            chosen_model = selection
 
     # Pick how to provide the base resume.
     console.print()
