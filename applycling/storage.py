@@ -40,7 +40,15 @@ def load_resume() -> str:
 
 def save_config(config: dict[str, Any]) -> None:
     _ensure_dirs()
-    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    # Merge into existing config so keys like provider/generate_run_log are preserved.
+    existing: dict[str, Any] = {}
+    if CONFIG_PATH.exists():
+        try:
+            existing = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    existing.update(config)
+    CONFIG_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
 
 def load_config() -> dict[str, Any]:
@@ -112,6 +120,11 @@ def load_stories() -> str | None:
         return None
     text = STORIES_PATH.read_text(encoding="utf-8").strip()
     return text or None
+
+
+def save_stories(text: str) -> None:
+    """Write stories to data/stories.md."""
+    STORIES_PATH.write_text(text.strip(), encoding="utf-8")
 
 
 def update_job_status(job_id: str, status: str) -> dict[str, Any]:

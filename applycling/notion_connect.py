@@ -60,11 +60,68 @@ def _extract_page_id(url_or_id: str) -> str:
     return f"{raw[0:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:32]}"
 
 
+def _check_existing_connection() -> bool:
+    """If notion.json exists, show status and ask what to do. Returns True if user wants to reconnect."""
+    existing = notion_store.load_config()
+    if not existing:
+        return True  # No existing config — proceed with full setup.
+
+    database_id = existing.get("database_id", "?")
+    parent_page_id = existing.get("parent_page_id", "?")
+
+    # Try a quick ping to confirm the connection still works.
+    status = "[yellow]unchecked[/yellow]"
+    db_name = ""
+    page_name = ""
+    try:
+        from notion_client import Client
+        client = Client(auth=existing.get("secret", ""))
+
+        db = client.databases.retrieve(database_id=database_id)
+        db_title = db.get("title", [])
+        db_name = db_title[0]["plain_text"] if db_title else ""
+
+        page = client.pages.retrieve(page_id=parent_page_id)
+        props = page.get("properties", {})
+        title_prop = next((v for v in props.values() if v.get("type") == "title"), None)
+        if title_prop:
+            title_parts = title_prop.get("title", [])
+            page_name = title_parts[0]["plain_text"] if title_parts else ""
+
+        status = "[green]connected[/green]"
+    except Exception as e:
+        status = f"[red]error — {e}[/red]"
+
+    db_line = f"  Database:       [bold]{db_name}[/bold] [dim]({database_id})[/dim]" if db_name else f"  Database id:    [bold]{database_id}[/bold]"
+    page_line = f"  Parent page:    [bold]{page_name}[/bold] [dim]({parent_page_id})[/dim]" if page_name else f"  Parent page id: [bold]{parent_page_id}[/bold]"
+
+    console.print(
+        Panel.fit(
+            f"Notion is already configured.\n\n"
+            f"{db_line}\n"
+            f"{page_line}\n"
+            f"  Status:         {status}",
+            style="cyan",
+        )
+    )
+
+    action = Prompt.ask(
+        "What would you like to do?",
+        choices=["done", "reconnect"],
+        default="done",
+    )
+    return action == "reconnect"
+
+
 def run() -> None:
     """Interactive Notion connect flow. Called from `applycling notion connect`."""
     console.print(Panel.fit("[bold]applycling — Notion connect[/bold]", style="cyan"))
+
+    if not _check_existing_connection():
+        return  # User confirmed existing connection — nothing to do.
+
     console.print(
-        "This wizard will create a Job Tracker database in your Notion workspace.\n"
+        "\nThis wizard will create a Job Tracker database in your Notion workspace.\n"
     )
     console.print(
         "[dim]Before you continue:[/dim]\n"
