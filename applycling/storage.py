@@ -14,6 +14,7 @@ JOBS_PATH = DATA_DIR / "jobs.json"
 CONFIG_PATH = DATA_DIR / "config.json"
 PROFILE_PATH = DATA_DIR / "profile.json"
 STORIES_PATH = DATA_DIR / "stories.md"
+LINKEDIN_PROFILE_PATH = DATA_DIR / "linkedin_profile.md"
 
 
 def _ensure_dirs() -> None:
@@ -125,6 +126,20 @@ def load_stories() -> str | None:
 def save_stories(text: str) -> None:
     """Write stories to data/stories.md."""
     STORIES_PATH.write_text(text.strip(), encoding="utf-8")
+
+
+def load_linkedin_profile() -> str | None:
+    """Return contents of data/linkedin_profile.md, or None if not set."""
+    if not LINKEDIN_PROFILE_PATH.exists():
+        return None
+    text = LINKEDIN_PROFILE_PATH.read_text(encoding="utf-8").strip()
+    return text or None
+
+
+def save_linkedin_profile(text: str) -> None:
+    """Write LinkedIn profile text to data/linkedin_profile.md."""
+    _ensure_dirs()
+    LINKEDIN_PROFILE_PATH.write_text(text.strip(), encoding="utf-8")
 
 
 def update_job_status(job_id: str, status: str) -> dict[str, Any]:

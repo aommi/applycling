@@ -170,6 +170,7 @@ def tailor_resume(
     strategy: str | None = None,
     voice_tone: str | None = None,
     never_fabricate: list[str] | None = None,
+    linkedin_profile: str | None = None,
     provider: str = "ollama",
 ) -> Iterator[str]:
     stories_section = ""
@@ -178,6 +179,12 @@ def tailor_resume(
             "\n- You have been given CANDIDATE STORIES below. "
             "Draw from these only when they genuinely strengthen this application for this specific role. "
             "Omit anything that isn't relevant."
+        )
+    if linkedin_profile:
+        stories_section += (
+            "\n- You have been given the candidate's LINKEDIN PROFILE below. "
+            "It may contain fuller descriptions, older roles, or additional context not in the resume. "
+            "Draw from it only where it genuinely adds signal for this specific role."
         )
     voice_tone_section = ""
     if voice_tone:
@@ -197,6 +204,8 @@ def tailor_resume(
         prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
     if stories:
         prompt += f"\n\n=== CANDIDATE STORIES (draw from when relevant) ===\n{stories}\n"
+    if linkedin_profile:
+        prompt += f"\n\n=== LINKEDIN PROFILE (draw from when relevant) ===\n{linkedin_profile}\n"
     yield from _stream_chat(model, prompt, provider)
 
 

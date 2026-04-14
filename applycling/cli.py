@@ -370,7 +370,7 @@ def setup() -> None:
         choices=["yes", "no"],
         default="yes" if existing_cfg.get("generate_docx", False) else "no",
     ) == "yes"
-    storage.save_config({"generate_run_log": generate_run_log, "generate_docx": generate_docx})
+    storage.save_config({"generate_run_log": generate_run_log, "generate_docx": generate_docx, "use_linkedin_profile": True})
 
     # Stories file — mention it so users know it exists.
     console.print("\n[bold]Stories[/bold] [dim](optional — extra experiences the tailorer can draw from)[/dim]")
@@ -400,6 +400,41 @@ def setup() -> None:
                 console.print("[green]Stories saved.[/green]")
         else:
             console.print(f"[dim]You can add them later: edit [bold]data/stories.md[/bold] in the project folder.[/dim]")
+
+    # LinkedIn profile — optional additional tailoring context.
+    console.print("\n[bold]LinkedIn profile[/bold] [dim](optional — richer context for tailoring, zero tokens)[/dim]")
+    console.print(
+        "[dim]Export your LinkedIn profile as a PDF (Me → Save to PDF) and provide the path.\n"
+        "The text is extracted locally — no LLM call, no network request.[/dim]"
+    )
+    existing_linkedin = storage.load_linkedin_profile()
+    if existing_linkedin:
+        console.print(f"\n[dim]LinkedIn profile already imported ({len(existing_linkedin)} chars).[/dim]")
+        update_li = Prompt.ask("Re-import?", choices=["yes", "skip"], default="skip")
+        if update_li == "yes":
+            existing_linkedin = None  # fall through to import below
+
+    if not existing_linkedin:
+        li_action = Prompt.ask(
+            "Import LinkedIn PDF now?", choices=["yes", "skip"], default="skip"
+        )
+        if li_action == "yes":
+            while True:
+                li_path_str = Prompt.ask("LinkedIn PDF path")
+                li_path = Path(li_path_str.strip().strip("'\"").replace("\\ ", " ")).expanduser()
+                if not li_path.exists():
+                    console.print(f"[red]File not found:[/red] {li_path}")
+                    continue
+                try:
+                    with console.status("[cyan]Extracting LinkedIn profile...[/cyan]", spinner="dots"):
+                        li_text = pdf_import.extract_text(li_path)
+                    storage.save_linkedin_profile(li_text)
+                    console.print(f"[green]LinkedIn profile imported ({len(li_text)} chars).[/green]")
+                except pdf_import.PDFImportError as e:
+                    console.print(f"[red]{e}[/red]")
+                break
+        else:
+            console.print("[dim]You can import it later: run [bold]applycling setup[/bold] again.[/dim]")
 
     # Ensure Playwright browsers are installed (needed for PDF rendering).
     try:
@@ -453,6 +488,9 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
     provider = provider_arg or cfg.get("provider", "ollama")
     profile = storage.load_profile()
     stories = storage.load_stories()
+    linkedin_profile = storage.load_linkedin_profile() if cfg.get("use_linkedin_profile", True) else None
+    if linkedin_profile:
+        console.print("[dim]LinkedIn profile found — will be considered during tailoring.[/dim]")
 
     # Run tracking.
     run_id = str(_uuid.uuid4())
@@ -592,6 +630,8 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
         _tailor_prompt += f"\n\n=== POSITIONING STRATEGY (follow this closely) ===\n{strategy}\n"
     if stories:
         _tailor_prompt += f"\n\n=== CANDIDATE STORIES (draw from when relevant) ===\n{stories}\n"
+    if linkedin_profile:
+        _tailor_prompt += f"\n\n=== LINKEDIN PROFILE (draw from when relevant) ===\n{linkedin_profile}\n"
     _s = _Step("resume_tailor", step_logs, output_file="resume.md")
     _s.prompt_text = _tailor_prompt
     try:
@@ -601,6 +641,7 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
                 stories=stories, strategy=strategy,
                 voice_tone=profile.get("voice_tone") if profile else None,
                 never_fabricate=profile.get("never_fabricate") if profile else None,
+                linkedin_profile=linkedin_profile,
                 provider=provider,
             ):
                 _s.collect(chunk)

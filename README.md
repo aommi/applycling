@@ -140,6 +140,7 @@ applycling/
 │   ├── config.json      # model, provider, review_mode, generate_docx
 │   ├── profile.json     # name, contact, voice_tone, never_fabricate
 │   ├── stories.md       # optional: extra experiences the tailorer can draw from
+│   ├── linkedin_profile.md  # optional: LinkedIn profile PDF export text
 │   └── notion.json      # Notion integration credentials (if connected)
 ├── output/
 │   └── {company}-{title}-{date}/
@@ -169,6 +170,14 @@ Built first commercial product: an inventory system for an appliance store.
 Sold to multiple shops via word of mouth.
 ```
 
+### `data/linkedin_profile.md`
+
+Optional file. Import your LinkedIn profile as additional context for resume tailoring. The tailorer draws from it when it contains fuller role descriptions, older experiences, or skills not captured in your base resume.
+
+To import: run `applycling setup` and follow the LinkedIn import prompt (export your profile as PDF from LinkedIn → Settings → Data Privacy → Get a copy of your data, then select **PDF** from your profile page).
+
+Set `use_linkedin_profile: false` in `data/config.json` to disable without deleting the file.
+
 ### `data/config.json`
 
 ```json
@@ -177,7 +186,8 @@ Sold to multiple shops via word of mouth.
   "provider": "anthropic",
   "review_mode": "interactive",
   "generate_docx": false,
-  "generate_run_log": true
+  "generate_run_log": true,
+  "use_linkedin_profile": true
 }
 ```
 
@@ -188,6 +198,7 @@ Sold to multiple shops via word of mouth.
 | `review_mode` | `interactive`, `async` | `interactive` |
 | `generate_docx` | `true`, `false` | `false` |
 | `generate_run_log` | `true`, `false` | `true` |
+| `use_linkedin_profile` | `true`, `false` | `true` |
 
 ---
 
