@@ -133,6 +133,32 @@ Each refine run archives the previous artifacts to a `v1/`, `v2/`, ... subfolder
 - `--only` without `--cascade`: only the specified artifacts are regenerated.
 - `--only` with `--cascade`: specified artifacts + their downstream dependencies (resume → brief, cover letter, email; cover letter → email).
 
+### `applycling critique <job_id> [--model MODEL] [--provider PROVIDER]`
+
+Senior recruiter review of a complete application package.
+
+```bash
+applycling critique job_015               # uses strongest model for your provider
+applycling critique job_015 --model gpt-4o --provider openai
+```
+
+Reads `resume.md`, `cover_letter.md`, `positioning_brief.md`, and `strategy.md` from the package folder and evaluates them across 6 dimensions:
+
+1. **First impression** — what a recruiter sees in the first 6-second scan
+2. **Positioning** — does the narrative match what the role actually needs?
+3. **Evidence gaps** — claims without metrics or outcomes
+4. **ATS risks** — missing keywords, formatting issues
+5. **Cover letter** — does it add signal, or just repeat the resume?
+6. **Red flags** — anything that would make a recruiter hesitate
+
+Each finding includes the specific fix. Ends with a **Priority fixes** section: the top 3 changes ordered by impact.
+
+Saves `critique.md` to the package folder. Read-only — never modifies existing artifacts.
+
+**Model default:** automatically upgrades to the strongest model for your provider (`claude-opus-4-6`, `gpt-4o`, `gemini-2.5-pro`). Override with `--model`. For Ollama, uses your configured model.
+
+After a strong `applycling add` run (ATS score ≥ 80), the CLI will suggest running `critique` automatically.
+
 ### `applycling list`
 
 Show all tracked jobs in a table with status.
