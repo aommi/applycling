@@ -176,6 +176,7 @@ _VISION_PROMPT = (
     "Extract all text from this image. Output only the raw extracted text, "
     "preserving the original structure (paragraphs, lists, etc.). "
     "No commentary, no preamble."
+    " If you can confidently infer, add some context what is this text, (e.g. it's slack message, a linkedin message, an email) from who etc."
 )
 
 
