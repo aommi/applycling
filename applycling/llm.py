@@ -13,6 +13,10 @@ from .prompts import (
     FORMAT_RESUME_PROMPT,
     POSITIONING_BRIEF_PROMPT,
     PROFILE_SUMMARY_PROMPT,
+    REFINE_COVER_LETTER_PROMPT,
+    REFINE_EMAIL_INMAIL_PROMPT,
+    REFINE_POSITIONING_BRIEF_PROMPT,
+    REFINE_RESUME_PROMPT,
     ROLE_INTEL_PROMPT,
     TAILOR_RESUME_PROMPT,
 )
@@ -338,4 +342,66 @@ def format_resume(
     resume: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
     prompt = FORMAT_RESUME_PROMPT.format(resume=resume)
+    yield from _stream_chat(model, prompt, provider)
+
+
+def refine_resume(
+    resume: str,
+    job_description: str,
+    feedback: str,
+    model: str,
+    provider: str = "ollama",
+) -> Iterator[str]:
+    prompt = REFINE_RESUME_PROMPT.format(
+        feedback=feedback,
+        resume=resume,
+        job_description=job_description,
+    )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def refine_cover_letter(
+    cover_letter: str,
+    role_intel: str,
+    feedback: str,
+    model: str,
+    provider: str = "ollama",
+) -> Iterator[str]:
+    prompt = REFINE_COVER_LETTER_PROMPT.format(
+        feedback=feedback,
+        cover_letter=cover_letter,
+        role_intel=role_intel,
+    )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def refine_positioning_brief(
+    brief: str,
+    resume: str,
+    role_intel: str,
+    feedback: str,
+    model: str,
+    provider: str = "ollama",
+) -> Iterator[str]:
+    prompt = REFINE_POSITIONING_BRIEF_PROMPT.format(
+        feedback=feedback,
+        resume=resume,
+        brief=brief,
+        role_intel=role_intel,
+    )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def refine_email_inmail(
+    email_inmail: str,
+    role_intel: str,
+    feedback: str,
+    model: str,
+    provider: str = "ollama",
+) -> Iterator[str]:
+    prompt = REFINE_EMAIL_INMAIL_PROMPT.format(
+        feedback=feedback,
+        email_inmail=email_inmail,
+        role_intel=role_intel,
+    )
     yield from _stream_chat(model, prompt, provider)

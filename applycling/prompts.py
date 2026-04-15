@@ -261,6 +261,91 @@ Output ONLY the reformatted markdown. No preamble, no commentary.
 {resume}
 """
 
+REFINE_RESUME_PROMPT = """You are refining an already-tailored resume based on specific feedback. Do NOT start from scratch.
+
+Apply ONLY the changes implied by the feedback. Every bullet, role, and section that is not mentioned in the feedback must stay exactly as written. Preserve all keywords, quantified results, and framing choices that are not explicitly targeted.
+
+**Rules:**
+- Make only the changes the feedback asks for.
+- Do not "improve" unrelated sections while you're in there.
+- Do not include a name, contact info, or profile summary — those are added separately.
+- No em-dashes. No double hyphens. No filler ("passionate about", "dynamic", etc.).
+- Maintain reverse chronological order within sections.
+- Output ONLY the resume body markdown. No preamble, no commentary, no tailoring log.
+
+=== FEEDBACK ===
+{feedback}
+
+=== EXISTING TAILORED RESUME ===
+{resume}
+
+=== JOB DESCRIPTION (for context — do not re-tailor from scratch) ===
+{job_description}
+"""
+
+REFINE_COVER_LETTER_PROMPT = """You are refining an already-written cover letter based on specific feedback. Do NOT rewrite from scratch.
+
+Apply ONLY the changes the feedback asks for. Every sentence not mentioned in the feedback must stay exactly as written.
+
+**Rules:**
+- Do not add a "Dear Hiring Manager" or sign-off — those are handled by the template.
+- No em-dashes. No double hyphens. No filler openers ("I am writing to express...").
+- Match the tone already established in the existing letter.
+- Output ONLY the cover letter body. No preamble, no commentary.
+
+=== FEEDBACK ===
+{feedback}
+
+=== EXISTING COVER LETTER ===
+{cover_letter}
+
+=== ROLE INTEL (for context) ===
+{role_intel}
+"""
+
+REFINE_POSITIONING_BRIEF_PROMPT = """You are updating a positioning brief to reflect changes made to the tailored resume.
+
+The resume has been refined. Update the positioning brief so it accurately describes the current resume — specifically the positioning decisions, application strength, and ATS score sections. Keep all sections that don't need updating exactly as they are.
+
+**Rules:**
+- Do not regenerate sections that are unaffected by the resume changes.
+- Keep the same 6-section structure: Role summary, Positioning decisions, Application strength, Gap prep, ATS score (after).
+- Update ATS score only if keywords changed.
+- Output the full updated brief in the same Markdown format.
+
+=== FEEDBACK APPLIED TO RESUME ===
+{feedback}
+
+=== UPDATED TAILORED RESUME ===
+{resume}
+
+=== EXISTING POSITIONING BRIEF ===
+{brief}
+
+=== ROLE INTEL (for context) ===
+{role_intel}
+"""
+
+REFINE_EMAIL_INMAIL_PROMPT = """You are refining an application email and LinkedIn InMail based on specific feedback. Do NOT rewrite from scratch.
+
+Apply ONLY the changes the feedback asks for. Keep everything else exactly as written.
+
+**Rules:**
+- Maintain both sections: ## Application email and ## LinkedIn InMail.
+- No networking fluff. No "would love to pick your brain." Direct and specific.
+- Output both sections. No preamble, no commentary.
+
+=== FEEDBACK ===
+{feedback}
+
+=== EXISTING EMAIL + INMAIL ===
+{email_inmail}
+
+=== ROLE INTEL (for context) ===
+{role_intel}
+"""
+
+
 PDF_RESUME_CLEANUP_PROMPT = """You are an expert at converting messy PDF-extracted resume text into clean Markdown.
 
 The text below was extracted from a PDF resume using a text extraction library. It may have:

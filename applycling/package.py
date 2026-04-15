@@ -47,6 +47,7 @@ def assemble(
     positioning_brief: Optional[str] = None,
     cover_letter: Optional[str] = None,
     email_inmail: Optional[str] = None,
+    job_description: Optional[str] = None,
     generate_docx: bool = False,
     run_log: Optional[dict] = None,
     model: Optional[str] = None,
@@ -117,6 +118,15 @@ def assemble(
             f"# Outreach — {job.title} @ {job.company}\n\n{email_inmail}\n",
             encoding="utf-8",
         )
+
+    if job_description:
+        (folder / "job_description.md").write_text(
+            f"# Job Description — {job.title} @ {job.company}\n\n{job_description}\n",
+            encoding="utf-8",
+        )
+
+    # Create intel/ subfolder for interview prep notes (populated later via refine --intel).
+    (folder / "intel").mkdir(exist_ok=True)
 
     # Manifest. Useful for the autopilot agent later, and for humans now.
     manifest = {
