@@ -26,11 +26,12 @@ def _slugify(value: str) -> str:
     return value.strip("-") or "untitled"
 
 
-def folder_name(company: str, title: str, date: Optional[str] = None, model: Optional[str] = None) -> str:
-    """Return the canonical {company}-{title}-{date}[-{model}] folder name."""
+def folder_name(company: str, title: str, date: Optional[str] = None, model: Optional[str] = None, job_id: Optional[str] = None) -> str:
+    """Return the canonical {job_id}-{company}-{title}-{date}[-{model}] folder name."""
     if date is None:
         date = dt.date.today().isoformat()
-    base = f"{_slugify(company)}-{_slugify(title)}-{date}"
+    prefix = f"{job_id}-" if job_id else ""
+    base = f"{prefix}{_slugify(company)}-{_slugify(title)}-{date}"
     if model:
         return f"{base}-{_slugify(model)}"
     return base
@@ -64,7 +65,7 @@ def assemble(
     base = (output_root or OUTPUT_DIR).resolve()
     base.mkdir(parents=True, exist_ok=True)
 
-    name = folder_name(job.company, job.title, job.date_added.split("T")[0] if job.date_added else None, model=model)
+    name = folder_name(job.company, job.title, job.date_added.split("T")[0] if job.date_added else None, model=model, job_id=job.id or None)
     folder = base / name
     folder.mkdir(parents=True, exist_ok=True)
 

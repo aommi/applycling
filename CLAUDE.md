@@ -88,6 +88,7 @@ Nothing else needs wiring — token counts, run_log, and the terminal breakdown 
 | `generate_docx` | `true`, `false` | `false` |
 | `generate_run_log` | `true`, `false` | `true` |
 | `use_linkedin_profile` | `true`, `false` | `true` |
+| `output_dir` | any local path, supports `~` | `./output` |
 
 `storage.save_config()` merges into the existing config — it never overwrites unrelated keys.
 

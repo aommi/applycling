@@ -357,7 +357,19 @@ def setup() -> None:
         docx = _pick("Generate .docx in addition to PDF?", ["yes", "no", _BACK],
                      default="yes" if cfg_now.get("generate_docx", False) else "no")
         if docx == _BACK: return _BACK
-        return {"generate_run_log": run_log == "yes", "generate_docx": docx == "yes"}
+        existing_output_dir = cfg_now.get("output_dir", "")
+        console.print(
+            "\n[dim]Where should application packages be saved?[/dim]\n"
+            "[dim]Leave blank for the default (./output inside this project).[/dim]\n"
+            "[dim]Paste a Google Drive, iCloud, or Dropbox path to sync automatically.[/dim]"
+        )
+        if existing_output_dir:
+            console.print(f"[dim]Current: {existing_output_dir}[/dim]")
+        output_dir = Prompt.ask("Output directory", default=existing_output_dir or "").strip()
+        result = {"generate_run_log": run_log == "yes", "generate_docx": docx == "yes"}
+        if output_dir:
+            result["output_dir"] = output_dir
+        return result
 
     def _step_stories():
         console.print("\n[bold]Step 5 — Stories[/bold] [dim](optional extra experiences for tailoring)[/dim]")
@@ -859,6 +871,7 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
             "[cyan]Rendering HTML + PDF and assembling package...[/cyan]",
             spinner="dots",
         ):
+            output_root = Path(cfg["output_dir"]).expanduser() if cfg.get("output_dir") else None
             folder = package.assemble(
                 job, tailored, fit_summary,
                 strategy=strategy or None,
@@ -869,6 +882,7 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
                 generate_docx=cfg.get("generate_docx", False),
                 run_log=run_log if cfg.get("generate_run_log", True) else None,
                 model=model_arg or None,
+                output_root=output_root,
             )
     except Exception as e:
         console.print(f"[red]Package assembly failed:[/red] {e}")
