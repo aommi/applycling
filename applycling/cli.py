@@ -1304,11 +1304,17 @@ _INTEL_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}
 _INTEL_TEXT_EXTS = {".md", ".txt", ".text"}
 
 
-def _read_intel_folder(folder: Path) -> tuple[str, list[str]]:
+def _read_intel_folder(
+    folder: Path,
+    vision_model: str = "",
+    vision_provider: str = "",
+) -> tuple[str, list[str]]:
     """Read all files from intel/ subfolder.
 
     Returns (combined_text, warnings). Warnings are shown to the user for
     unreadable or unsupported files — nothing fails silently.
+
+    If vision_model is set, image files are processed via the vision LLM.
     """
     intel_dir = folder / "intel"
     if not intel_dir.exists():
@@ -1323,15 +1329,38 @@ def _read_intel_folder(folder: Path) -> tuple[str, list[str]]:
         ext = f.suffix.lower()
 
         if ext in _INTEL_IMAGE_EXTS:
-            warnings.append(
-                f"{f.name}: image files are not supported — export as PDF or paste content into a .md file."
-            )
+            if vision_model:
+                try:
+                    text = llm.extract_image_text(f, vision_model, vision_provider)
+                    if text.strip():
+                        parts.append(f"--- {f.name} (extracted via {vision_model}) ---\n{text.strip()}")
+                    else:
+                        warnings.append(f"{f.name}: vision model returned empty text.")
+                except llm.LLMError as e:
+                    warnings.append(f"{f.name}: vision extraction failed ({e}).")
+            else:
+                warnings.append(
+                    f"{f.name}: image file skipped — set intel_vision_model and intel_vision_provider "
+                    f"in data/config.json to enable image extraction."
+                )
         elif ext == ".pdf":
             try:
                 from . import pdf_import
                 text = pdf_import.extract_text(f)
                 if text.strip():
                     parts.append(f"--- {f.name} ---\n{text.strip()}")
+                elif vision_model:
+                    # Text extraction empty — try vision as fallback for scanned PDFs.
+                    try:
+                        # Convert first page to image not feasible without heavy deps,
+                        # so just warn with a more specific message.
+                        warnings.append(
+                            f"{f.name}: PDF appears to be image-only. "
+                            f"Vision extraction for PDFs is not yet supported — "
+                            f"screenshot the relevant pages and drop them in intel/ as .png/.jpg."
+                        )
+                    except Exception:
+                        pass
                 else:
                     warnings.append(f"{f.name}: PDF extracted but appears to be empty or image-only — try exporting as text.")
             except Exception as e:
@@ -1346,7 +1375,7 @@ def _read_intel_folder(folder: Path) -> tuple[str, list[str]]:
             except Exception as e:
                 warnings.append(f"{f.name}: could not read file ({e}).")
         else:
-            warnings.append(f"{f.name}: unsupported file type ({ext}) — supported: .pdf, .md, .txt.")
+            warnings.append(f"{f.name}: unsupported file type ({ext}) — supported: .pdf, .md, .txt, images (with vision model).")
 
     return "\n\n".join(parts), warnings
 
@@ -1420,7 +1449,11 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
 
     # Collect intel: intel/ folder + Notion page notes.
     intel_parts: list[str] = []
-    intel_folder_text, intel_warnings = _read_intel_folder(folder)
+    _vision_model = cfg.get("intel_vision_model", "")
+    _vision_provider = cfg.get("intel_vision_provider", provider) if _vision_model else ""
+    intel_folder_text, intel_warnings = _read_intel_folder(
+        folder, vision_model=_vision_model, vision_provider=_vision_provider,
+    )
 
     # Print warnings first so they stand out.
     for w in intel_warnings:
@@ -1435,12 +1468,18 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
 
     intel_dir = folder / "intel"
     intel_files = [f for f in sorted(intel_dir.iterdir()) if not f.is_dir()] if intel_dir.exists() else []
-    loaded_files = [f for f in intel_files if f.suffix.lower() in {".pdf"} | _INTEL_TEXT_EXTS]
+    _processable_exts = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if _vision_model else set())
+    loaded_files = [f for f in intel_files if f.suffix.lower() in _processable_exts]
     skipped_files = [f for f in intel_files if f not in loaded_files]
+
+    if _vision_model:
+        console.print(f"[dim]  {'vision model':<28} {_vision_model} ({_vision_provider})[/dim]")
 
     if loaded_files:
         for f in loaded_files:
-            console.print(f"[dim]  {'intel/' + f.name:<28} ✓[/dim]")
+            label = "intel/" + f.name
+            note = " (vision)" if f.suffix.lower() in _INTEL_IMAGE_EXTS else ""
+            console.print(f"[dim]  {label:<28} ✓{note}[/dim]")
     else:
         console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here for richer prep[/dim]")
     for f in skipped_files:

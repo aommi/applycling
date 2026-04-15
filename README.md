@@ -166,9 +166,20 @@ Context loaded for prep:
 ```
 
 **Intel feeding** — drop files into the `intel/` subfolder inside the job's package folder before running `prep`:
-- Supported: `.pdf` (text-based), `.md`, `.txt`
-- Not supported: image files (`.png`, `.jpg`, etc.) — export as PDF or paste content into a `.md` file instead. A warning is shown for any file that can't be read.
-- If using Notion: add research notes directly to the job's Notion page — `prep` reads the page body automatically.
+- **Text files:** `.pdf` (text-based), `.md`, `.txt` — always supported.
+- **Images:** `.png`, `.jpg`, `.webp`, etc. — supported when a vision model is configured. Screenshots of Slack messages, LinkedIn DMs, recruiter emails all work.
+- **Notion notes:** if connected, `prep` reads the job's Notion page body automatically.
+- A warning is shown for any file that can't be read — nothing fails silently.
+
+**Image extraction** — to enable, add to `data/config.json`:
+```json
+{
+  "intel_vision_model": "llava",
+  "intel_vision_provider": "ollama"
+}
+```
+
+`intel_vision_provider` defaults to your configured provider if omitted. Any vision-capable model works: `llava`, `llama3.2-vision`, `moondream` (Ollama); or your cloud model (`claude-sonnet-4-6`, `gpt-4o`, `gemini-2.0-flash`) which all support vision natively. Without this config, images are skipped with a hint.
 
 Saves `interview_prep.md` to the package folder.
 
@@ -311,6 +322,8 @@ Set `use_linkedin_profile: false` in `data/config.json` to disable without delet
 | `output_dir` | Any local path (supports `~`) | `./output` |
 | `ats_hint_threshold` | Integer 0–100 | `80` |
 | `critique_models` | `{"anthropic": "...", "openai": "...", "google": "..."}` | see below |
+| `intel_vision_model` | any vision-capable model name | not set (images skipped) |
+| `intel_vision_provider` | `ollama`, `anthropic`, `openai`, `google` | same as `provider` |
 | `critique_models_reviewed_at` | ISO date string | set on first `add` run — update manually to dismiss the staleness nudge |
 
 ---

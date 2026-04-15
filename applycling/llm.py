@@ -169,6 +169,113 @@ def _stream_google(model: str, prompt: str) -> Iterator[str]:
 
 
 # ---------------------------------------------------------------------------
+# Vision — extract text from images
+# ---------------------------------------------------------------------------
+
+_VISION_PROMPT = (
+    "Extract all text from this image. Output only the raw extracted text, "
+    "preserving the original structure (paragraphs, lists, etc.). "
+    "No commentary, no preamble."
+)
+
+
+def extract_image_text(image_path: Path, model: str, provider: str = "ollama") -> str:
+    """Extract text from an image file using a vision-capable model.
+
+    Returns the extracted text. Raises LLMError if the model or provider
+    doesn't support vision or the call fails.
+    """
+    import base64
+    data = image_path.read_bytes()
+    b64 = base64.b64encode(data).decode("utf-8")
+    suffix = image_path.suffix.lower().lstrip(".")
+    mime_map = {"jpg": "jpeg", "tiff": "tiff"}
+    mime = f"image/{mime_map.get(suffix, suffix)}"
+
+    if provider == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise LLMError("ANTHROPIC_API_KEY is not set.")
+        try:
+            import anthropic
+        except ImportError as e:
+            raise LLMError("anthropic package is not installed.") from e
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+                    {"type": "text", "text": _VISION_PROMPT},
+                ],
+            }],
+        )
+        return resp.content[0].text
+
+    if provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise LLMError("OPENAI_API_KEY is not set.")
+        try:
+            import openai
+        except ImportError as e:
+            raise LLMError("openai package is not installed.") from e
+        client = openai.OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                    {"type": "text", "text": _VISION_PROMPT},
+                ],
+            }],
+        )
+        return resp.choices[0].message.content
+
+    if provider == "google":
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise LLMError("GOOGLE_API_KEY is not set.")
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as e:
+            raise LLMError("google-genai package is not installed.") from e
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=model,
+            contents=[
+                types.Part.from_bytes(data=data, mime_type=mime),
+                _VISION_PROMPT,
+            ],
+        )
+        return resp.text
+
+    # Ollama
+    try:
+        import ollama
+    except ImportError as e:
+        raise LLMError("ollama package is not installed.") from e
+    try:
+        resp = ollama.chat(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": _VISION_PROMPT,
+                "images": [b64],
+            }],
+        )
+        if isinstance(resp, dict):
+            return resp.get("message", {}).get("content", "")
+        return getattr(resp.message, "content", "") or ""
+    except Exception as e:
+        raise LLMError(f"Ollama vision error: {e}") from e
+
+
+# ---------------------------------------------------------------------------
 # Model listing
 # ---------------------------------------------------------------------------
 
