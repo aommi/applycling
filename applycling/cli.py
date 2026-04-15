@@ -1300,31 +1300,55 @@ _PREP_STAGE_LABELS = {
 }
 
 
-def _read_intel_folder(folder: Path) -> str:
-    """Read all files from intel/ subfolder. PDFs via pypdf, text/md directly."""
+_INTEL_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}
+_INTEL_TEXT_EXTS = {".md", ".txt", ".text"}
+
+
+def _read_intel_folder(folder: Path) -> tuple[str, list[str]]:
+    """Read all files from intel/ subfolder.
+
+    Returns (combined_text, warnings). Warnings are shown to the user for
+    unreadable or unsupported files — nothing fails silently.
+    """
     intel_dir = folder / "intel"
     if not intel_dir.exists():
-        return ""
+        return "", []
+
     parts: list[str] = []
+    warnings: list[str] = []
+
     for f in sorted(intel_dir.iterdir()):
         if f.is_dir():
             continue
-        if f.suffix.lower() == ".pdf":
+        ext = f.suffix.lower()
+
+        if ext in _INTEL_IMAGE_EXTS:
+            warnings.append(
+                f"{f.name}: image files are not supported — export as PDF or paste content into a .md file."
+            )
+        elif ext == ".pdf":
             try:
                 from . import pdf_import
                 text = pdf_import.extract_text(f)
-                if text:
-                    parts.append(f"--- {f.name} ---\n{text}")
-            except Exception:
-                pass
-        elif f.suffix.lower() in (".md", ".txt", ".text"):
+                if text.strip():
+                    parts.append(f"--- {f.name} ---\n{text.strip()}")
+                else:
+                    warnings.append(f"{f.name}: PDF extracted but appears to be empty or image-only — try exporting as text.")
+            except Exception as e:
+                warnings.append(f"{f.name}: could not read PDF ({e}).")
+        elif ext in _INTEL_TEXT_EXTS:
             try:
                 text = f.read_text(encoding="utf-8").strip()
                 if text:
                     parts.append(f"--- {f.name} ---\n{text}")
-            except Exception:
-                pass
-    return "\n\n".join(parts)
+                else:
+                    warnings.append(f"{f.name}: file is empty.")
+            except Exception as e:
+                warnings.append(f"{f.name}: could not read file ({e}).")
+        else:
+            warnings.append(f"{f.name}: unsupported file type ({ext}) — supported: .pdf, .md, .txt.")
+
+    return "\n\n".join(parts), warnings
 
 
 @main.command()
@@ -1396,17 +1420,40 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
 
     # Collect intel: intel/ folder + Notion page notes.
     intel_parts: list[str] = []
-    intel_folder_text = _read_intel_folder(folder)
-    if intel_folder_text:
-        intel_parts.append(intel_folder_text)
-        console.print(f"[dim]Intel folder: found files in intel/[/dim]")
+    intel_folder_text, intel_warnings = _read_intel_folder(folder)
+
+    # Print warnings first so they stand out.
+    for w in intel_warnings:
+        console.print(f"[yellow]Intel warning:[/yellow] {w}")
+
+    # Build a context summary table.
+    console.print("\n[dim]Context loaded for prep:[/dim]")
+    console.print(f"[dim]  {'resume.md':<28} ✓[/dim]")
+    console.print(f"[dim]  {'job description':<28} ✓[/dim]")
+    console.print(f"[dim]  {'role intel / strategy':<28} {'✓' if strategy else '—'}[/dim]")
+    console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief_text else '—'}[/dim]")
+
+    intel_dir = folder / "intel"
+    intel_files = [f for f in sorted(intel_dir.iterdir()) if not f.is_dir()] if intel_dir.exists() else []
+    loaded_files = [f for f in intel_files if f.suffix.lower() in {".pdf"} | _INTEL_TEXT_EXTS]
+    skipped_files = [f for f in intel_files if f not in loaded_files]
+
+    if loaded_files:
+        for f in loaded_files:
+            console.print(f"[dim]  {'intel/' + f.name:<28} ✓[/dim]")
     else:
-        console.print("[dim]Intel folder: empty — drop research files into intel/ for richer prep.[/dim]")
+        console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here for richer prep[/dim]")
+    for f in skipped_files:
+        console.print(f"[dim]  {'intel/' + f.name:<28} ✗ (skipped — see warning above)[/dim]")
 
     notion_notes = store.load_job_notes(job_id)
+    console.print(f"[dim]  {'Notion page notes':<28} {'✓' if notion_notes else '— (not connected or empty)'}[/dim]")
+    console.print()
+
+    if intel_folder_text:
+        intel_parts.append(intel_folder_text)
     if notion_notes:
         intel_parts.append(f"--- Notion page notes ---\n{notion_notes}")
-        console.print("[dim]Notion page notes: loaded.[/dim]")
 
     intel_combined = "\n\n".join(intel_parts)
 
