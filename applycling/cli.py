@@ -1009,12 +1009,12 @@ def _parse_refine_only(only_str: str) -> list[str]:
 @click.option(
     "--only", default="",
     help="Comma-separated artifacts to regenerate: resume, cover-letter, brief, email. "
-         "Default: all that exist. Cascade applies unless --no-cascade.",
+         "Default: all that exist. No cascade when --only is used unless --cascade is also passed.",
 )
-@click.option("--no-cascade", "no_cascade", is_flag=True, help="Skip cascade — only regenerate what --only specifies.")
+@click.option("--cascade", "cascade", is_flag=True, help="When used with --only, also regenerate downstream artifacts.")
 @click.option("--model", "model_arg", default="", help="Override model for this run.")
 @click.option("--provider", "provider_arg", default="", help="Override provider for this run.")
-def refine(job_id: str, feedback: str, only: str, no_cascade: bool, model_arg: str, provider_arg: str) -> None:
+def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str, provider_arg: str) -> None:
     """Iterate on an existing application package with feedback."""
     cfg = _require_config()
     model = model_arg or cfg.get("model")
@@ -1087,9 +1087,9 @@ def refine(job_id: str, feedback: str, only: str, no_cascade: bool, model_arg: s
         if existing_email:
             explicit.append("email")
 
-    # Apply cascade (unless suppressed).
+    # Apply cascade: always when no --only; only when --cascade is explicitly passed with --only.
     in_scope: list[str] = list(explicit)
-    if not no_cascade:
+    if not only or cascade:
         for artifact in list(explicit):
             for downstream in _DOWNSTREAM.get(artifact, []):
                 if downstream not in in_scope:
