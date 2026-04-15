@@ -366,6 +366,9 @@ def setup() -> None:
         if existing_output_dir:
             console.print(f"[dim]Current: {existing_output_dir}[/dim]")
         output_dir = Prompt.ask("Output directory", default=existing_output_dir or "").strip()
+        if not output_dir:
+            default_path = existing_output_dir or str(package.OUTPUT_DIR)
+            console.print(f"[dim]Packages will be saved to: {default_path}[/dim]")
         result = {"generate_run_log": run_log == "yes", "generate_docx": docx == "yes"}
         if output_dir:
             result["output_dir"] = output_dir
@@ -381,6 +384,7 @@ def setup() -> None:
             choice = _pick("Edit stories?", ["skip", "yes", _BACK], default="skip")
             if choice == _BACK: return _BACK
             if choice == "yes":
+                console.print("[dim]Type [bold]---[/bold] immediately (no content) to skip and keep existing stories.[/dim]")
                 new_stories = _read_multiline("Paste your updated stories below:")
                 if new_stories:
                     storage.save_stories(new_stories)
@@ -389,10 +393,13 @@ def setup() -> None:
             choice = _pick("Add stories now?", ["skip", "yes", _BACK], default="skip")
             if choice == _BACK: return _BACK
             if choice == "yes":
+                console.print("[dim]Type [bold]---[/bold] immediately (no content) to skip — you can add them later via [bold]applycling setup[/bold] or [bold]data/stories.md[/bold].[/dim]")
                 new_stories = _read_multiline("Paste your stories below:")
                 if new_stories:
                     storage.save_stories(new_stories)
                     console.print("[green]Stories saved.[/green]")
+                else:
+                    console.print("[dim]No stories saved. Add them later via [bold]applycling setup[/bold] or edit [bold]data/stories.md[/bold] directly.[/dim]")
             else:
                 console.print("[dim]You can add them later — run [bold]applycling setup[/bold] again, or edit [bold]data/stories.md[/bold] directly.[/dim]")
         return {}
@@ -412,9 +419,13 @@ def setup() -> None:
             if choice == "skip":
                 console.print("[dim]You can import it later: run [bold]applycling setup[/bold] again.[/dim]")
                 return {}
+        console.print("[dim]Leave blank to skip and import later via [bold]applycling setup[/bold].[/dim]")
         while True:
-            li_path_str = Prompt.ask("LinkedIn PDF path")
-            li_path = Path(li_path_str.strip().strip("'\"").replace("\\ ", " ")).expanduser()
+            li_path_str = Prompt.ask("LinkedIn PDF path", default="").strip()
+            if not li_path_str:
+                console.print("[dim]Skipped. You can import later via [bold]applycling setup[/bold].[/dim]")
+                return {}
+            li_path = Path(li_path_str.strip("'\"").replace("\\ ", " ")).expanduser()
             if not li_path.exists():
                 console.print(f"[red]File not found:[/red] {li_path}")
                 continue
