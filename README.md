@@ -150,9 +150,25 @@ For each stage, generates:
 - **Talk tracks** — a suggested answer for each question using a real example from the resume
 - **"Why me" narrative** — tailored to what that specific interviewer cares about
 
-**Intel feeding** — the richer the context, the better the prep:
-- Drop research files into the `intel/` subfolder inside the job's package folder (Glassdoor notes, recruiter call notes, company research PDFs, connection intel). Supported: `.md`, `.txt`, plain text PDFs.
-- If using Notion: add notes directly to the job's Notion page — `prep` reads the page body automatically.
+**Prep works without any intel** — resume, JD, and role intel are enough to generate questions and talk tracks. Intel files just make it richer.
+
+Before running, `prep` prints a full context summary so you know exactly what was loaded:
+
+```
+Context loaded for prep:
+  resume.md                    ✓
+  job description              ✓
+  role intel / strategy        ✓
+  positioning brief            ✓
+  intel/glassdoor_notes.md     ✓
+  intel/recruiter_call.pdf     ✓
+  Notion page notes            ✓
+```
+
+**Intel feeding** — drop files into the `intel/` subfolder inside the job's package folder before running `prep`:
+- Supported: `.pdf` (text-based), `.md`, `.txt`
+- Not supported: image files (`.png`, `.jpg`, etc.) — export as PDF or paste content into a `.md` file instead. A warning is shown for any file that can't be read.
+- If using Notion: add research notes directly to the job's Notion page — `prep` reads the page body automatically.
 
 Saves `interview_prep.md` to the package folder.
 
@@ -230,15 +246,21 @@ applycling/
 │   ├── linkedin_profile.md  # optional: LinkedIn profile PDF export text
 │   └── notion.json      # Notion integration credentials (if connected)
 ├── output/
-│   └── {company}-{title}-{date}/
+│   └── {job_id}-{company}-{title}-{date}/
 │       ├── resume.md / .html / .pdf / .docx
 │       ├── cover_letter.md / .html / .pdf / .docx
 │       ├── positioning_brief.md
-│       ├── strategy.md (role intel output)
+│       ├── strategy.md          (role intel)
+│       ├── job_description.md
 │       ├── email_inmail.md
 │       ├── fit_summary.md
 │       ├── company_context.md
-│       └── job.json (manifest)
+│       ├── critique.md          (applycling critique — on demand)
+│       ├── interview_prep.md    (applycling prep — on demand)
+│       ├── intel/               (drop research files here before running prep)
+│       ├── v1/ v2/ ...          (previous versions archived by applycling refine)
+│       ├── job.json             (manifest)
+│       └── run_log.json
 └── .env                 # API keys (gitignored)
 ```
 
