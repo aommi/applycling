@@ -969,9 +969,9 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
             if _days_since >= 90:
                 console.print(
                     f"\n[yellow]Heads up:[/yellow] [dim]It's been {_days_since} days since critique models were last reviewed.\n"
-                    f"Consider checking if newer models are available and update [bold]critique_models[/bold] in data/config.json.[/dim]"
+                    f"Consider checking if newer models are available and update [bold]critique_models[/bold] in data/config.json.\n"
+                    f"To dismiss: set [bold]critique_models_reviewed_at[/bold] to today in data/config.json.[/dim]"
                 )
-                storage.save_config({"critique_models_reviewed_at": _today.isoformat()})
         except ValueError:
             storage.save_config({"critique_models_reviewed_at": _today.isoformat()})
 

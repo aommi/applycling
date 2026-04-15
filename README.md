@@ -264,7 +264,7 @@ Set `use_linkedin_profile: false` in `data/config.json` to disable without delet
 | `output_dir` | Any local path (supports `~`) | `./output` |
 | `ats_hint_threshold` | Integer 0–100 | `80` |
 | `critique_models` | `{"anthropic": "...", "openai": "...", "google": "..."}` | see below |
-| `critique_models_reviewed_at` | ISO date string, auto-managed | set on first `add` run |
+| `critique_models_reviewed_at` | ISO date string | set on first `add` run — update manually to dismiss the staleness nudge |
 
 ---
 
