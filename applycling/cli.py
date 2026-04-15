@@ -957,6 +957,24 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
                 f"  applycling refine {job.id:<14} → iterate with your own feedback[/dim]"
             )
 
+    # Critique models staleness check — nudge once every 90 days.
+    _reviewed = cfg.get("critique_models_reviewed_at")
+    _today = _dt.date.today()
+    if not _reviewed:
+        # First run — stamp today, no nudge yet.
+        storage.save_config({"critique_models_reviewed_at": _today.isoformat()})
+    else:
+        try:
+            _days_since = (_today - _dt.date.fromisoformat(_reviewed)).days
+            if _days_since >= 90:
+                console.print(
+                    f"\n[yellow]Heads up:[/yellow] [dim]It's been {_days_since} days since critique models were last reviewed.\n"
+                    f"Consider checking if newer models are available and update [bold]critique_models[/bold] in data/config.json.[/dim]"
+                )
+                storage.save_config({"critique_models_reviewed_at": _today.isoformat()})
+        except ValueError:
+            storage.save_config({"critique_models_reviewed_at": _today.isoformat()})
+
 
 # ---------- refine ----------
 
