@@ -943,6 +943,19 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
             f"  API cost estimate:\n{cost_lines}[/dim]"
         )
 
+    # ATS score hint — extract score from strategy and suggest next steps.
+    import re as _re
+    _ats_match = _re.search(r"ATS match score.*?(\d{2,3})\s*(?:/\s*100|%|out of)", strategy, flags=_re.IGNORECASE)
+    if _ats_match:
+        _ats_score = int(_ats_match.group(1))
+        if _ats_score >= 80:
+            console.print(
+                f"\n[dim]ATS score: {_ats_score}/100 — strong match.\n"
+                f"Consider:\n"
+                f"  applycling critique {job.id:<12} → recruiter review (uses a stronger model)\n"
+                f"  applycling refine {job.id:<14} → iterate with your own feedback[/dim]"
+            )
+
 
 # ---------- refine ----------
 
@@ -1255,6 +1268,118 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
 
     console.print(f"\n[green]Refined:[/green] [bold]{folder}[/bold]")
     console.print(f"[dim]Previous version archived to [bold]{v_folder.name}/[/bold][/dim]")
+
+
+# ---------- critique ----------
+
+# Strongest model per provider — critique warrants maximum judgment.
+_CRITIQUE_MODELS: dict[str, str] = {
+    "anthropic": "claude-opus-4-6",
+    "openai": "gpt-4o",
+    "google": "gemini-2.5-pro",
+}
+
+
+@main.command()
+@click.argument("job_id")
+@click.option("--model", "model_arg", default="", help="Override model (default: strongest for your provider).")
+@click.option("--provider", "provider_arg", default="", help="Override provider.")
+def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
+    """Senior recruiter review of a complete application package."""
+    cfg = _require_config()
+    provider = provider_arg or cfg.get("provider", "ollama")
+    # Default to strongest model for the provider; fall back to configured model.
+    model = model_arg or _CRITIQUE_MODELS.get(provider) or cfg.get("model")
+    if not model:
+        console.print("[red]No model in config.[/red] Run setup again.")
+        sys.exit(1)
+
+    store = get_store()
+    try:
+        job = store.load_job(job_id)
+    except TrackerError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not job.package_folder:
+        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
+        sys.exit(1)
+
+    folder = Path(job.package_folder)
+    if not folder.exists():
+        console.print(f"[red]Package folder not found:[/red] {folder}")
+        sys.exit(1)
+
+    console.print(
+        Panel.fit(
+            f"[bold]Critique[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
+            f"[dim]Model: {model} ({provider})[/dim]",
+            style="cyan",
+        )
+    )
+
+    def _read(fname: str) -> str:
+        p = folder / fname
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    resume = _read("resume.md")
+    cover_letter_text = _read("cover_letter.md")
+    strategy = _read("strategy.md")
+    positioning_brief_text = _read("positioning_brief.md")
+    job_description = _read("job_description.md") or strategy
+
+    if not resume:
+        console.print("[red]resume.md not found in package folder.[/red]")
+        sys.exit(1)
+    if not job_description:
+        console.print("[red]No job description or strategy found in package folder.[/red]")
+        sys.exit(1)
+
+    step_logs: list[dict] = []
+    _s = _Step("critique", step_logs, output_file="critique.md")
+    _s.prompt_text = prompts.CRITIQUE_PROMPT.format(
+        job_description=job_description,
+        resume=resume,
+        cover_letter=cover_letter_text or "(not provided)",
+        role_intel=strategy,
+        positioning_brief=positioning_brief_text or "(not provided)",
+    )
+    try:
+        with _s, console.status("[cyan]Running recruiter critique...[/cyan]", spinner="dots"):
+            for chunk in llm.critique(
+                job_description, resume, strategy, model,
+                cover_letter=cover_letter_text,
+                positioning_brief=positioning_brief_text,
+                provider=provider,
+            ):
+                _s.collect(chunk)
+    except llm.LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    critique_text = _clean_llm_output(_s.output)
+    if not critique_text:
+        console.print("[yellow]Critique came back empty.[/yellow]")
+        sys.exit(1)
+
+    out_path = folder / "critique.md"
+    out_path.write_text(
+        f"# Critique — {job.title} @ {job.company}\n\n{critique_text}\n",
+        encoding="utf-8",
+    )
+
+    console.print()
+    console.print(Panel(critique_text, title="[bold]Recruiter Critique[/bold]", style="magenta"))
+    console.print(f"\n[green]Saved:[/green] {out_path}")
+
+    try:
+        import tiktoken as _tiktoken
+        _enc = _tiktoken.get_encoding("cl100k_base")
+        _in = len(_enc.encode(_s.prompt_text))
+        _out = len(_enc.encode(_s.output))
+        console.print(f"[dim]Tokens: {_in:,} in + {_out:,} out  [{_s.duration}s][/dim]")
+    except Exception:
+        pass
 
 
 # ---------- list / view / status ----------

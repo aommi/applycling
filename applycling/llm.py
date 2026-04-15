@@ -9,6 +9,7 @@ from typing import Iterator
 from .prompts import (
     APPLICATION_EMAIL_PROMPT,
     COVER_LETTER_PROMPT,
+    CRITIQUE_PROMPT,
     FIT_SUMMARY_PROMPT,
     FORMAT_RESUME_PROMPT,
     POSITIONING_BRIEF_PROMPT,
@@ -388,6 +389,25 @@ def refine_positioning_brief(
         resume=resume,
         brief=brief,
         role_intel=role_intel,
+    )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def critique(
+    job_description: str,
+    resume: str,
+    role_intel: str,
+    model: str,
+    cover_letter: str = "",
+    positioning_brief: str = "",
+    provider: str = "ollama",
+) -> Iterator[str]:
+    prompt = CRITIQUE_PROMPT.format(
+        job_description=job_description,
+        resume=resume,
+        cover_letter=cover_letter or "(not provided)",
+        role_intel=role_intel,
+        positioning_brief=positioning_brief or "(not provided)",
     )
     yield from _stream_chat(model, prompt, provider)
 
