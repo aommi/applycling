@@ -111,6 +111,28 @@ The flow:
 4. Resume, cover letter, email/InMail, positioning brief generated
 5. Package assembled and tracked
 
+### `applycling refine <job_id> [--only ARTIFACTS] [--cascade] [-f FEEDBACK] [--model MODEL] [--provider PROVIDER]`
+
+Iterate on an existing application package with feedback, without re-running the full pipeline.
+
+```bash
+applycling refine job_015                                      # prompts for feedback, refines all artifacts
+applycling refine job_015 -f "tighten the EA bullets"          # refine all artifacts with this feedback
+applycling refine job_015 --only resume -f "lead with data platform work"   # resume only, no cascade
+applycling refine job_015 --only resume --cascade -f "..."     # resume + downstream (brief, cover letter, email)
+applycling refine job_015 --only cover-letter -f "paragraph 3 is too generic"
+applycling refine job_015 --model claude-sonnet-4-6 --provider anthropic -f "..."
+```
+
+`--only` accepts comma-separated artifact names: `resume`, `cover-letter` (aliases: `cl`), `brief` (alias: `positioning-brief`), `email` (alias: `inmail`).
+
+Each refine run archives the previous artifacts to a `v1/`, `v2/`, ... subfolder before writing new ones, so nothing is ever lost.
+
+**Cascade behaviour:**
+- No `--only`: all artifacts that exist are regenerated (cascade not needed).
+- `--only` without `--cascade`: only the specified artifacts are regenerated.
+- `--only` with `--cascade`: specified artifacts + their downstream dependencies (resume → brief, cover letter, email; cover letter → email).
+
 ### `applycling list`
 
 Show all tracked jobs in a table with status.
