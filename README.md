@@ -155,7 +155,19 @@ Each finding includes the specific fix. Ends with a **Priority fixes** section: 
 
 Saves `critique.md` to the package folder. Read-only — never modifies existing artifacts.
 
-**Model default:** automatically upgrades to the strongest model for your provider (`claude-opus-4-6`, `gpt-4o`, `gemini-2.5-pro`). Override with `--model`. For Ollama, uses your configured model.
+**Model default:** automatically upgrades to the strongest model for your provider. Built-in defaults: `claude-opus-4-6` (Anthropic), `gpt-4o` (OpenAI), `gemini-2.5-pro` (Google). For Ollama, uses your configured model.
+
+Override per-provider in `config.json` — only the providers you specify are overridden; others keep the built-in default:
+```json
+{
+  "critique_models": {
+    "anthropic": "claude-opus-5",
+    "google": "gemini-3-ultra"
+  }
+}
+```
+
+Override for a single run with `--model`.
 
 After a strong `applycling add` run (ATS score ≥ 80), the CLI will suggest running `critique` automatically.
 
@@ -251,6 +263,7 @@ Set `use_linkedin_profile: false` in `data/config.json` to disable without delet
 | `use_linkedin_profile` | `true`, `false` | `true` |
 | `output_dir` | Any local path (supports `~`) | `./output` |
 | `ats_hint_threshold` | Integer 0–100 | `80` |
+| `critique_models` | `{"anthropic": "...", "openai": "...", "google": "..."}` | see below |
 
 ---
 

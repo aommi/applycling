@@ -1290,7 +1290,9 @@ def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
     cfg = _require_config()
     provider = provider_arg or cfg.get("provider", "ollama")
     # Default to strongest model for the provider; fall back to configured model.
-    strongest = _CRITIQUE_MODELS.get(provider)
+    # config.json "critique_models" overrides the hardcoded dict per provider.
+    _effective_models = {**_CRITIQUE_MODELS, **cfg.get("critique_models", {})}
+    strongest = _effective_models.get(provider)
     model = model_arg or strongest or cfg.get("model")
     if not model:
         console.print("[red]No model in config.[/red] Run setup again.")
