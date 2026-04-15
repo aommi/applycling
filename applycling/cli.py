@@ -946,9 +946,10 @@ def add(async_mode: bool, url_arg: str, model_arg: str, provider_arg: str) -> No
     # ATS score hint — extract score from strategy and suggest next steps.
     import re as _re
     _ats_match = _re.search(r"ATS match score.*?(\d{2,3})\s*(?:/\s*100|%|out of)", strategy, flags=_re.IGNORECASE)
+    _ats_threshold = int(cfg.get("ats_hint_threshold", 80))
     if _ats_match:
         _ats_score = int(_ats_match.group(1))
-        if _ats_score >= 80:
+        if _ats_score >= _ats_threshold:
             console.print(
                 f"\n[dim]ATS score: {_ats_score}/100 — strong match.\n"
                 f"Consider:\n"
@@ -1289,10 +1290,13 @@ def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
     cfg = _require_config()
     provider = provider_arg or cfg.get("provider", "ollama")
     # Default to strongest model for the provider; fall back to configured model.
-    model = model_arg or _CRITIQUE_MODELS.get(provider) or cfg.get("model")
+    strongest = _CRITIQUE_MODELS.get(provider)
+    model = model_arg or strongest or cfg.get("model")
     if not model:
         console.print("[red]No model in config.[/red] Run setup again.")
         sys.exit(1)
+    if not model_arg and not strongest:
+        console.print(f"[dim]No stronger model known for {provider} — using configured model: {model}[/dim]")
 
     store = get_store()
     try:

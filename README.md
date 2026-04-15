@@ -250,6 +250,7 @@ Set `use_linkedin_profile: false` in `data/config.json` to disable without delet
 | `generate_run_log` | `true`, `false` | `true` |
 | `use_linkedin_profile` | `true`, `false` | `true` |
 | `output_dir` | Any local path (supports `~`) | `./output` |
+| `ats_hint_threshold` | Integer 0–100 | `80` |
 
 ---
 
