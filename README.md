@@ -133,6 +133,31 @@ Each refine run archives the previous artifacts to a `v1/`, `v2/`, ... subfolder
 - `--only` without `--cascade`: only the specified artifacts are regenerated.
 - `--only` with `--cascade`: specified artifacts + their downstream dependencies (resume → brief, cover letter, email; cover letter → email).
 
+### `applycling prep <job_id> [--stage STAGE] [--model MODEL] [--provider PROVIDER]`
+
+Generate stage-specific interview prep for a job. Run this when you get the interview call — not part of `applycling add`.
+
+```bash
+applycling prep job_015                        # all 4 stages
+applycling prep job_015 --stage recruiter      # recruiter screen only
+applycling prep job_015 --stage hiring-manager
+applycling prep job_015 --stage technical
+applycling prep job_015 --stage executive
+```
+
+For each stage, generates:
+- **Likely questions** — 5-7 questions tied to this specific JD and the candidate's gaps
+- **Talk tracks** — a suggested answer for each question using a real example from the resume
+- **"Why me" narrative** — tailored to what that specific interviewer cares about
+
+**Intel feeding** — the richer the context, the better the prep:
+- Drop research files into the `intel/` subfolder inside the job's package folder (Glassdoor notes, recruiter call notes, company research PDFs, connection intel). Supported: `.md`, `.txt`, plain text PDFs.
+- If using Notion: add notes directly to the job's Notion page — `prep` reads the page body automatically.
+
+Saves `interview_prep.md` to the package folder.
+
+---
+
 ### `applycling critique <job_id> [--model MODEL] [--provider PROVIDER]`
 
 Senior recruiter review of a complete application package.
