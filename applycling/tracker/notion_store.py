@@ -259,6 +259,25 @@ class NotionStore(TrackerStore):
             raise TrackerError(f"No job found with id '{job_id}'.")
         return self._page_to_job(page)
 
+    def load_job_notes(self, job_id: str) -> str:
+        """Read the Notion page body for a job and return it as plain text."""
+        page = self._find_page_by_id(job_id)
+        if page is None:
+            return ""
+        try:
+            resp = self.client.blocks.children.list(page["id"], page_size=100)
+            lines: list[str] = []
+            for block in resp.get("results", []):
+                btype = block.get("type", "")
+                content = block.get(btype, {})
+                rt = content.get("rich_text", [])
+                text = "".join(part.get("plain_text", "") for part in rt).strip()
+                if text:
+                    lines.append(text)
+            return "\n\n".join(lines)
+        except Exception:
+            return ""
+
     def update_job(self, job_id: str, **fields: Any) -> Job:
         invalid = set(fields) - ALLOWED_UPDATE_FIELDS
         if invalid:

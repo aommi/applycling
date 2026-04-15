@@ -10,6 +10,7 @@ from .prompts import (
     APPLICATION_EMAIL_PROMPT,
     COVER_LETTER_PROMPT,
     CRITIQUE_PROMPT,
+    INTERVIEW_PREP_PROMPT,
     FIT_SUMMARY_PROMPT,
     FORMAT_RESUME_PROMPT,
     POSITIONING_BRIEF_PROMPT,
@@ -389,6 +390,28 @@ def refine_positioning_brief(
         resume=resume,
         brief=brief,
         role_intel=role_intel,
+    )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def interview_prep(
+    job_description: str,
+    resume: str,
+    role_intel: str,
+    model: str,
+    positioning_brief: str = "",
+    intel: str = "",
+    stages: str = "recruiter screen, hiring manager deep-dive, technical, executive",
+    provider: str = "ollama",
+) -> Iterator[str]:
+    intel_section = f"\n=== ADDITIONAL INTEL ===\n{intel}\n" if intel else ""
+    prompt = INTERVIEW_PREP_PROMPT.format(
+        stages=stages,
+        job_description=job_description,
+        resume=resume,
+        role_intel=role_intel,
+        positioning_brief=positioning_brief or "(not provided)",
+        intel_section=intel_section,
     )
     yield from _stream_chat(model, prompt, provider)
 

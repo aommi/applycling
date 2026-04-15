@@ -107,6 +107,12 @@ class TrackerStore(ABC):
         any field is not in `ALLOWED_UPDATE_FIELDS`.
         """
 
+    def load_job_notes(self, job_id: str) -> str:
+        """Return free-text notes attached to a job (e.g. Notion page body).
+        Default: returns empty string. Override in backends that support notes.
+        """
+        return ""
+
 
 def get_store() -> TrackerStore:
     """Return the configured tracker store.

@@ -1289,6 +1289,176 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     console.print(f"[dim]Previous version archived to [bold]{v_folder.name}/[/bold][/dim]")
 
 
+# ---------- prep ----------
+
+_PREP_STAGES = ("recruiter", "hiring-manager", "technical", "executive")
+_PREP_STAGE_LABELS = {
+    "recruiter": "recruiter screen",
+    "hiring-manager": "hiring manager deep-dive",
+    "technical": "technical",
+    "executive": "executive",
+}
+
+
+def _read_intel_folder(folder: Path) -> str:
+    """Read all files from intel/ subfolder. PDFs via pypdf, text/md directly."""
+    intel_dir = folder / "intel"
+    if not intel_dir.exists():
+        return ""
+    parts: list[str] = []
+    for f in sorted(intel_dir.iterdir()):
+        if f.is_dir():
+            continue
+        if f.suffix.lower() == ".pdf":
+            try:
+                from . import pdf_import
+                text = pdf_import.extract_text(f)
+                if text:
+                    parts.append(f"--- {f.name} ---\n{text}")
+            except Exception:
+                pass
+        elif f.suffix.lower() in (".md", ".txt", ".text"):
+            try:
+                text = f.read_text(encoding="utf-8").strip()
+                if text:
+                    parts.append(f"--- {f.name} ---\n{text}")
+            except Exception:
+                pass
+    return "\n\n".join(parts)
+
+
+@main.command()
+@click.argument("job_id")
+@click.option(
+    "--stage", "stage_arg", default="",
+    help=f"Focus on one stage: {', '.join(_PREP_STAGES)}. Default: all stages.",
+)
+@click.option("--model", "model_arg", default="", help="Override model for this run.")
+@click.option("--provider", "provider_arg", default="", help="Override provider.")
+def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None:
+    """Generate stage-specific interview prep for a job."""
+    cfg = _require_config()
+    model = model_arg or cfg.get("model")
+    if not model:
+        console.print("[red]No model in config.[/red] Run setup again.")
+        sys.exit(1)
+    provider = provider_arg or cfg.get("provider", "ollama")
+
+    store = get_store()
+    try:
+        job = store.load_job(job_id)
+    except TrackerError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not job.package_folder:
+        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
+        sys.exit(1)
+
+    folder = Path(job.package_folder)
+    if not folder.exists():
+        console.print(f"[red]Package folder not found:[/red] {folder}")
+        sys.exit(1)
+
+    # Resolve stages.
+    if stage_arg:
+        key = stage_arg.lower().strip()
+        if key not in _PREP_STAGE_LABELS:
+            console.print(f"[red]Unknown stage '{stage_arg}'.[/red] Valid: {', '.join(_PREP_STAGES)}")
+            sys.exit(1)
+        stages_str = _PREP_STAGE_LABELS[key]
+    else:
+        stages_str = ", ".join(_PREP_STAGE_LABELS.values())
+
+    console.print(
+        Panel.fit(
+            f"[bold]Interview Prep[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
+            f"[dim]Stages: {stages_str}[/dim]",
+            style="cyan",
+        )
+    )
+
+    def _read(fname: str) -> str:
+        p = folder / fname
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    resume = _read("resume.md")
+    strategy = _read("strategy.md")
+    positioning_brief_text = _read("positioning_brief.md")
+    job_description = _read("job_description.md") or strategy
+
+    if not resume:
+        console.print("[red]resume.md not found in package folder.[/red]")
+        sys.exit(1)
+    if not job_description:
+        console.print("[red]No job description or strategy found in package folder.[/red]")
+        sys.exit(1)
+
+    # Collect intel: intel/ folder + Notion page notes.
+    intel_parts: list[str] = []
+    intel_folder_text = _read_intel_folder(folder)
+    if intel_folder_text:
+        intel_parts.append(intel_folder_text)
+        console.print(f"[dim]Intel folder: found files in intel/[/dim]")
+    else:
+        console.print("[dim]Intel folder: empty — drop research files into intel/ for richer prep.[/dim]")
+
+    notion_notes = store.load_job_notes(job_id)
+    if notion_notes:
+        intel_parts.append(f"--- Notion page notes ---\n{notion_notes}")
+        console.print("[dim]Notion page notes: loaded.[/dim]")
+
+    intel_combined = "\n\n".join(intel_parts)
+
+    step_logs: list[dict] = []
+    _s = _Step("interview_prep", step_logs, output_file="interview_prep.md")
+    _s.prompt_text = prompts.INTERVIEW_PREP_PROMPT.format(
+        stages=stages_str,
+        job_description=job_description,
+        resume=resume,
+        role_intel=strategy,
+        positioning_brief=positioning_brief_text or "(not provided)",
+        intel_section=f"\n=== ADDITIONAL INTEL ===\n{intel_combined}\n" if intel_combined else "",
+    )
+    try:
+        with _s, console.status("[cyan]Generating interview prep...[/cyan]", spinner="dots"):
+            for chunk in llm.interview_prep(
+                job_description, resume, strategy, model,
+                positioning_brief=positioning_brief_text,
+                intel=intel_combined,
+                stages=stages_str,
+                provider=provider,
+            ):
+                _s.collect(chunk)
+    except llm.LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    prep_text = _clean_llm_output(_s.output)
+    if not prep_text:
+        console.print("[yellow]Prep came back empty.[/yellow]")
+        sys.exit(1)
+
+    out_path = folder / "interview_prep.md"
+    out_path.write_text(
+        f"# Interview Prep — {job.title} @ {job.company}\n\n{prep_text}\n",
+        encoding="utf-8",
+    )
+
+    console.print()
+    console.print(Panel(prep_text, title="[bold]Interview Prep[/bold]", style="green"))
+    console.print(f"\n[green]Saved:[/green] {out_path}")
+
+    try:
+        import tiktoken as _tiktoken
+        _enc = _tiktoken.get_encoding("cl100k_base")
+        _in = len(_enc.encode(_s.prompt_text))
+        _out = len(_enc.encode(_s.output))
+        console.print(f"[dim]Tokens: {_in:,} in + {_out:,} out  [{_s.duration}s][/dim]")
+    except Exception:
+        pass
+
+
 # ---------- critique ----------
 
 # Strongest model per provider — critique warrants maximum judgment.
