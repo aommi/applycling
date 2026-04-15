@@ -189,8 +189,7 @@ Set `use_linkedin_profile: false` in `data/config.json` to disable without delet
   "review_mode": "interactive",
   "generate_docx": false,
   "generate_run_log": true,
-  "use_linkedin_profile": true,
-  "output_dir": "~/Google Drive/My Drive/applycling"
+  "use_linkedin_profile": true
 }
 ```
 
