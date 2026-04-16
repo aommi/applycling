@@ -2,22 +2,33 @@
 
 > Your clingy job-search companion. We won't leave you alone until you land your next role.
 
-A CLI that tailors your resume, writes cover letters, and builds complete application packages for each job you apply to. Supports **local Ollama models**, **Anthropic (Claude)**, and **Google AI Studio (Gemini)**.
+A CLI that tailors your resume, writes cover letters, and builds complete application packages for each job you apply to. Supports **local Ollama models**, **Anthropic (Claude)**, **OpenAI (GPT-4o)**, and **Google AI Studio (Gemini)**.
+
+It never fabricates. Every bullet, claim, and date comes from what you actually gave it — your resume, your stories, your voice. The LLM tailors and positions; it does not invent.
+
+Getting started is fast — `applycling setup` walks you through everything interactively, so you go from zero to your first full application package without touching a config file.
 
 ---
 
 ## What it does
 
-For each job URL you provide, applycling:
+Run `applycling add` with a job URL and get a complete package:
 
 1. **Scrapes the job posting** (structured data first, LLM fallback) and optionally the company page.
 2. **Runs Role Intel** — extracts the unique 20% signal from the JD, identifies the niche, scores ATS keyword coverage, flags gaps.
 3. **Tailors your resume** — recruiter-first, outcome-first, ATS-optimized. Uses your voice/tone and draws from your stories file when relevant.
 4. **Writes a cover letter** — 5-paragraph structure matched to the company's tone.
 5. **Drafts an application email and LinkedIn InMail** — direct, no fluff.
-6. **Generates a positioning brief** — your interview prep: positioning decisions, application strength, gap prep with bridge answers, ATS before/after score.
+6. **Generates a positioning brief** — positioning decisions, application strength, gap prep with bridge answers, ATS before/after score.
 7. **Assembles a package** — resume (md/html/pdf), cover letter (md/html/pdf), positioning brief, email/InMail, strategy, all in one folder.
 8. **Tracks everything** — in Notion (recommended) or local SQLite.
+
+Once you have a package, the toolkit keeps going:
+
+- **`refine`** — iterate on any artifact with feedback, without re-running the full pipeline. Previous versions are archived automatically.
+- **`critique`** — senior recruiter review across 6 dimensions: first impression, positioning, evidence gaps, ATS risks, cover letter signal, red flags.
+- **`prep`** — stage-specific interview prep (recruiter / hiring manager / technical / executive) with talk tracks built from your actual resume.
+- **`questions`** — targeted practice questions with STAR answer frameworks, additive across rounds so nothing gets overwritten.
 
 ---
 
@@ -58,7 +69,7 @@ GOOGLE_API_KEY=AIza...
 applycling setup
 ```
 
-This walks you through:
+Setup is designed to be as smooth as possible — every prompt has a sensible default, existing values are pre-filled so re-runs only ask for what changed, and nothing is left as an exercise for the config file. This walks you through:
 
 1. **Pick an Ollama model** from your installed models.
 2. **Import your base resume** — from PDF or paste (keeps existing resume if already set up).
@@ -181,7 +192,7 @@ Context loaded for prep:
 
 `intel_vision_provider` defaults to your configured provider if omitted. Any vision-capable model works: `llava`, `llama3.2-vision`, `moondream` (Ollama); or your cloud model (`claude-sonnet-4-6`, `gpt-4o`, `gemini-2.0-flash`) which all support vision natively. Without this config, images are skipped with a hint.
 
-Image extractions are cached as `intel/{filename}.extracted.md` so they're not re-extracted on every run. You can review and edit the cached text — it's used as-is until the original image is modified.
+Image extractions are cached in `intel/.cache/{filename}.extracted.md` so they're not re-extracted on every run. You can review and edit the cached text — it's used as-is until the original image is modified. The `.cache/` folder is managed automatically and kept separate from your own intel files.
 
 **Step notes** — after each interview round, drop your notes into `intel/`. The next `prep` run automatically uses them as context:
 
@@ -190,10 +201,33 @@ intel/
 ├── step1_recruiter_notes.md     ← what they asked, what went well
 ├── step2_hm_notes.md            ← hiring manager focus areas
 ├── glassdoor_research.md
-└── slack_recruiter.png          ← extracted via vision model
+├── slack_recruiter.png          ← extracted via vision model
+└── .cache/                      ← auto-managed extraction cache (don't edit)
 ```
 
 Saves `interview_prep.md` to the package folder.
+
+---
+
+### `applycling questions <job_id> [--stage STAGE] [-n COUNT] [--model MODEL] [--provider PROVIDER]`
+
+Generate targeted interview questions with STAR-structured answer frameworks. Additive — each run appends a new dated section to `questions.md`. Run it multiple times (before different rounds, or after adding new intel) without losing previous output.
+
+```bash
+applycling questions job_015                          # 5 questions × all 4 stages
+applycling questions job_015 --stage recruiter        # recruiter stage only
+applycling questions job_015 --stage technical -n 8   # 8 technical questions
+applycling questions job_015 --stage hiring-manager --model claude-opus-4-6 --provider anthropic
+```
+
+For each question:
+- **Why likely** — why this specific interviewer will ask this, tied to the JD or candidate gaps
+- **STAR framework** — a suggested answer using a named role and real outcome from the resume
+- **Watch out for** — the trap or pitfall to avoid when answering
+
+Each run passes existing questions as context so the LLM generates new, non-duplicate questions. A `⚠ Gap:` note is added when the candidate has a real gap, with a suggested bridge answer.
+
+Saves (or appends) to `questions.md` in the package folder. Reads the same intel context as `prep`: `intel/` folder files, vision-extracted images (if configured), and Notion page notes.
 
 ---
 
@@ -280,6 +314,7 @@ applycling/
 │       ├── company_context.md
 │       ├── critique.md          (applycling critique — on demand)
 │       ├── interview_prep.md    (applycling prep — on demand)
+│       ├── questions.md         (applycling questions — additive, append-only)
 │       ├── intel/               (drop research files here before running prep)
 │       ├── v1/ v2/ ...          (previous versions archived by applycling refine)
 │       ├── job.json             (manifest)

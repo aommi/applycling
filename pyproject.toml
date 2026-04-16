@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "applycling"
 version = "0.1.0"
-description = "Your clingy job-search companion. Tailors your resume to job descriptions with a local Ollama LLM."
+description = "Your clingy job-search companion. Tailors your resume, writes cover letters, and builds complete application packages. Supports Ollama, Anthropic, OpenAI, and Google AI Studio."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

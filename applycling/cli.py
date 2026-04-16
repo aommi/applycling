@@ -1315,27 +1315,34 @@ def _read_intel_folder(
     unreadable or unsupported files — nothing fails silently.
 
     If vision_model is set, image files are processed via the vision LLM.
+    Extraction caches are stored in intel/.cache/ to keep the intel folder clean.
     """
     intel_dir = folder / "intel"
     if not intel_dir.exists():
         return "", []
 
+    # Cache lives in intel/.cache/ — hidden from the user, keeps intel/ clean.
+    cache_dir = intel_dir / ".cache"
+
     parts: list[str] = []
     warnings: list[str] = []
-
-    # Skip .extracted.md files — they're caches, not user-authored intel.
-    cache_suffix = ".extracted.md"
 
     for f in sorted(intel_dir.iterdir()):
         if f.is_dir():
             continue
-        if f.name.endswith(cache_suffix):
-            continue
         ext = f.suffix.lower()
 
         if ext in _INTEL_IMAGE_EXTS:
-            # Check for cached extraction first.
-            cache_path = intel_dir / f"{f.stem}.extracted.md"
+            # Check for cached extraction first (new location: .cache/).
+            cache_path = cache_dir / f"{f.stem}.extracted.md"
+            # Also check old location alongside image for backwards compat.
+            old_cache_path = intel_dir / f"{f.stem}.extracted.md"
+            if not cache_path.exists() and old_cache_path.exists():
+                # Migrate old cache to new location.
+                cache_dir.mkdir(exist_ok=True)
+                cache_path.write_text(old_cache_path.read_text(encoding="utf-8"), encoding="utf-8")
+                old_cache_path.unlink()
+
             if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime:
                 try:
                     cached = cache_path.read_text(encoding="utf-8").strip()
@@ -1350,7 +1357,8 @@ def _read_intel_folder(
                     text = llm.extract_image_text(f, vision_model, vision_provider)
                     if text.strip():
                         parts.append(f"--- {f.name} (extracted via {vision_model}) ---\n{text.strip()}")
-                        # Cache the extraction.
+                        # Cache the extraction in .cache/.
+                        cache_dir.mkdir(exist_ok=True)
                         cache_path.write_text(text.strip(), encoding="utf-8")
                     else:
                         warnings.append(f"{f.name}: vision model returned empty text.")
@@ -1485,10 +1493,9 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief_text else '—'}[/dim]")
 
     intel_dir = folder / "intel"
-    _cache_suffix = ".extracted.md"
     intel_files = [
         f for f in sorted(intel_dir.iterdir())
-        if not f.is_dir() and not f.name.endswith(_cache_suffix)
+        if not f.is_dir()
     ] if intel_dir.exists() else []
     _processable_exts = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if _vision_model else set())
     loaded_files = [f for f in intel_files if f.suffix.lower() in _processable_exts]
@@ -1501,7 +1508,7 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
         for f in loaded_files:
             label = "intel/" + f.name
             if f.suffix.lower() in _INTEL_IMAGE_EXTS:
-                cache_path = intel_dir / f"{f.stem}.extracted.md"
+                cache_path = intel_dir / ".cache" / f"{f.stem}.extracted.md"
                 note = " (cached)" if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime else " (vision)"
             else:
                 note = ""
@@ -1567,6 +1574,212 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
         _in = len(_enc.encode(_s.prompt_text))
         _out = len(_enc.encode(_s.output))
         console.print(f"[dim]Tokens: {_in:,} in + {_out:,} out  [{_s.duration}s][/dim]")
+    except Exception:
+        pass
+
+
+# ---------- questions ----------
+
+
+@main.command()
+@click.argument("job_id")
+@click.option(
+    "--stage", "stage_arg", default="",
+    help=f"Focus on one stage: {', '.join(_PREP_STAGES)}. Default: all stages (one section per stage).",
+)
+@click.option("--count", "-n", default=5, show_default=True, help="Number of questions per stage.")
+@click.option("--model", "model_arg", default="", help="Override model for this run.")
+@click.option("--provider", "provider_arg", default="", help="Override provider.")
+def questions(job_id: str, stage_arg: str, count: int, model_arg: str, provider_arg: str) -> None:
+    """Generate targeted interview questions with STAR answer frameworks.
+
+    Appends to questions.md in the package folder. Each run adds a new
+    dated section — previous questions are never overwritten.
+    """
+    cfg = _require_config()
+    model = model_arg or cfg.get("model")
+    if not model:
+        console.print("[red]No model in config.[/red] Run setup again.")
+        sys.exit(1)
+    provider = provider_arg or cfg.get("provider", "ollama")
+
+    store = get_store()
+    try:
+        job = store.load_job(job_id)
+    except TrackerError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not job.package_folder:
+        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
+        sys.exit(1)
+
+    folder = Path(job.package_folder)
+    if not folder.exists():
+        console.print(f"[red]Package folder not found:[/red] {folder}")
+        sys.exit(1)
+
+    # Resolve which stages to generate.
+    if stage_arg:
+        key = stage_arg.lower().strip()
+        if key not in _PREP_STAGE_LABELS:
+            console.print(f"[red]Unknown stage '{stage_arg}'.[/red] Valid: {', '.join(_PREP_STAGES)}")
+            sys.exit(1)
+        stages_to_run = [(key, _PREP_STAGE_LABELS[key])]
+    else:
+        stages_to_run = list(_PREP_STAGE_LABELS.items())
+
+    console.print(
+        Panel.fit(
+            f"[bold]Interview Questions[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
+            f"[dim]{count} questions × {len(stages_to_run)} stage(s)[/dim]",
+            style="cyan",
+        )
+    )
+
+    def _read(fname: str) -> str:
+        p = folder / fname
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    resume = _read("resume.md")
+    strategy = _read("strategy.md")
+    positioning_brief_text = _read("positioning_brief.md")
+    job_description = _read("job_description.md") or strategy
+
+    if not resume:
+        console.print("[red]resume.md not found in package folder.[/red]")
+        sys.exit(1)
+    if not job_description:
+        console.print("[red]No job description or strategy found in package folder.[/red]")
+        sys.exit(1)
+
+    # Read intel folder + Notion notes.
+    _vision_model = cfg.get("intel_vision_model", "")
+    _vision_provider = cfg.get("intel_vision_provider", provider) if _vision_model else ""
+    intel_folder_text, intel_warnings = _read_intel_folder(
+        folder, vision_model=_vision_model, vision_provider=_vision_provider,
+    )
+    for w in intel_warnings:
+        console.print(f"[yellow]Intel warning:[/yellow] {w}")
+
+    # Context summary.
+    console.print("\n[dim]Context loaded:[/dim]")
+    console.print(f"[dim]  {'resume.md':<28} ✓[/dim]")
+    console.print(f"[dim]  {'job description':<28} ✓[/dim]")
+    console.print(f"[dim]  {'role intel / strategy':<28} {'✓' if strategy else '—'}[/dim]")
+    console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief_text else '—'}[/dim]")
+
+    intel_dir = folder / "intel"
+    intel_files = [
+        f for f in sorted(intel_dir.iterdir())
+        if not f.is_dir()
+    ] if intel_dir.exists() else []
+    _processable_exts = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if _vision_model else set())
+    loaded_files = [f for f in intel_files if f.suffix.lower() in _processable_exts]
+    if _vision_model:
+        console.print(f"[dim]  {'vision model':<28} {_vision_model} ({_vision_provider})[/dim]")
+    if loaded_files:
+        for f in loaded_files:
+            label = "intel/" + f.name
+            if f.suffix.lower() in _INTEL_IMAGE_EXTS:
+                cache_path = intel_dir / ".cache" / f"{f.stem}.extracted.md"
+                note = " (cached)" if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime else " (vision)"
+            else:
+                note = ""
+            console.print(f"[dim]  {label:<28} ✓{note}[/dim]")
+    else:
+        console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here[/dim]")
+
+    notion_notes = store.load_job_notes(job_id)
+    console.print(f"[dim]  {'Notion page notes':<28} {'✓' if notion_notes else '— (not connected or empty)'}[/dim]")
+    console.print()
+
+    intel_parts: list[str] = []
+    if intel_folder_text:
+        intel_parts.append(intel_folder_text)
+    if notion_notes:
+        intel_parts.append(f"--- Notion page notes ---\n{notion_notes}")
+    intel_combined = "\n\n".join(intel_parts)
+
+    # Load existing questions.md for deduplication context.
+    questions_path = folder / "questions.md"
+    existing_questions = ""
+    if questions_path.exists():
+        existing_questions = questions_path.read_text(encoding="utf-8").strip()
+
+    # Generate questions for each stage and append.
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    all_new_sections: list[str] = []
+    step_logs: list[dict] = []
+
+    for _stage_key, _stage_label in stages_to_run:
+        _s = _Step(f"questions_{_stage_key}", step_logs, output_file="questions.md")
+        _s.prompt_text = prompts.QUESTIONS_PROMPT.format(
+            count=count,
+            stage=_stage_label,
+            job_description=job_description,
+            resume=resume,
+            role_intel=strategy,
+            positioning_brief=positioning_brief_text or "(not provided)",
+            intel_section=f"\n=== ADDITIONAL INTEL ===\n{intel_combined}\n" if intel_combined else "",
+            existing_questions=existing_questions or "(none yet)",
+        )
+        try:
+            with _s, console.status(f"[cyan]Generating questions for {_stage_label}...[/cyan]", spinner="dots"):
+                for chunk in llm.generate_questions(
+                    job_description, resume, strategy, model,
+                    positioning_brief=positioning_brief_text,
+                    intel=intel_combined,
+                    existing_questions=existing_questions,
+                    stage=_stage_label,
+                    count=count,
+                    provider=provider,
+                ):
+                    _s.collect(chunk)
+        except llm.LLMError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+
+        section_text = _clean_llm_output(_s.output)
+        if not section_text:
+            console.print(f"[yellow]No output for stage '{_stage_label}' — skipping.[/yellow]")
+            continue
+
+        section = f"## Questions — {_stage_label.title()} (generated {today})\n\n{section_text}"
+        all_new_sections.append(section)
+        # Accumulate so subsequent stages know all already-generated questions.
+        existing_questions = (existing_questions + "\n\n" + section).strip()
+
+    if not all_new_sections:
+        console.print("[yellow]No questions were generated.[/yellow]")
+        sys.exit(1)
+
+    new_content = "\n\n---\n\n".join(all_new_sections)
+
+    # Append to questions.md (never overwrite).
+    if questions_path.exists():
+        existing_file = questions_path.read_text(encoding="utf-8").rstrip()
+        questions_path.write_text(
+            existing_file + "\n\n---\n\n" + new_content + "\n",
+            encoding="utf-8",
+        )
+        console.print(f"\n[green]Appended to:[/green] {questions_path}")
+    else:
+        questions_path.write_text(
+            f"# Interview Questions — {job.title} @ {job.company}\n\n{new_content}\n",
+            encoding="utf-8",
+        )
+        console.print(f"\n[green]Saved:[/green] {questions_path}")
+
+    console.print(Panel(new_content, title="[bold]Interview Questions[/bold]", style="green"))
+
+    try:
+        import tiktoken as _tiktoken
+        _enc = _tiktoken.get_encoding("cl100k_base")
+        _total_in = sum(len(_enc.encode(s.get("prompt_text", ""))) for s in step_logs)
+        _total_out = sum(len(_enc.encode(s.get("output_text", ""))) for s in step_logs)
+        console.print(f"[dim]Tokens: {_total_in:,} in + {_total_out:,} out[/dim]")
     except Exception:
         pass
 

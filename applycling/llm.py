@@ -15,6 +15,7 @@ from .prompts import (
     FORMAT_RESUME_PROMPT,
     POSITIONING_BRIEF_PROMPT,
     PROFILE_SUMMARY_PROMPT,
+    QUESTIONS_PROMPT,
     REFINE_COVER_LETTER_PROMPT,
     REFINE_EMAIL_INMAIL_PROMPT,
     REFINE_POSITIONING_BRIEF_PROMPT,
@@ -540,6 +541,32 @@ def critique(
         cover_letter=cover_letter or "(not provided)",
         role_intel=role_intel,
         positioning_brief=positioning_brief or "(not provided)",
+    )
+    yield from _stream_chat(model, prompt, provider)
+
+
+def generate_questions(
+    job_description: str,
+    resume: str,
+    role_intel: str,
+    model: str,
+    positioning_brief: str = "",
+    intel: str = "",
+    existing_questions: str = "",
+    stage: str = "all stages",
+    count: int = 5,
+    provider: str = "ollama",
+) -> Iterator[str]:
+    intel_section = f"\n=== ADDITIONAL INTEL ===\n{intel}\n" if intel else ""
+    prompt = QUESTIONS_PROMPT.format(
+        count=count,
+        stage=stage,
+        job_description=job_description,
+        resume=resume,
+        role_intel=role_intel,
+        positioning_brief=positioning_brief or "(not provided)",
+        intel_section=intel_section,
+        existing_questions=existing_questions or "(none yet)",
     )
     yield from _stream_chat(model, prompt, provider)
 
