@@ -1323,17 +1323,35 @@ def _read_intel_folder(
     parts: list[str] = []
     warnings: list[str] = []
 
+    # Skip .extracted.md files — they're caches, not user-authored intel.
+    cache_suffix = ".extracted.md"
+
     for f in sorted(intel_dir.iterdir()):
         if f.is_dir():
+            continue
+        if f.name.endswith(cache_suffix):
             continue
         ext = f.suffix.lower()
 
         if ext in _INTEL_IMAGE_EXTS:
+            # Check for cached extraction first.
+            cache_path = intel_dir / f"{f.stem}.extracted.md"
+            if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime:
+                try:
+                    cached = cache_path.read_text(encoding="utf-8").strip()
+                    if cached:
+                        parts.append(f"--- {f.name} (cached) ---\n{cached}")
+                        continue
+                except Exception:
+                    pass  # Fall through to re-extract.
+
             if vision_model:
                 try:
                     text = llm.extract_image_text(f, vision_model, vision_provider)
                     if text.strip():
                         parts.append(f"--- {f.name} (extracted via {vision_model}) ---\n{text.strip()}")
+                        # Cache the extraction.
+                        cache_path.write_text(text.strip(), encoding="utf-8")
                     else:
                         warnings.append(f"{f.name}: vision model returned empty text.")
                 except llm.LLMError as e:
@@ -1467,7 +1485,11 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief_text else '—'}[/dim]")
 
     intel_dir = folder / "intel"
-    intel_files = [f for f in sorted(intel_dir.iterdir()) if not f.is_dir()] if intel_dir.exists() else []
+    _cache_suffix = ".extracted.md"
+    intel_files = [
+        f for f in sorted(intel_dir.iterdir())
+        if not f.is_dir() and not f.name.endswith(_cache_suffix)
+    ] if intel_dir.exists() else []
     _processable_exts = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if _vision_model else set())
     loaded_files = [f for f in intel_files if f.suffix.lower() in _processable_exts]
     skipped_files = [f for f in intel_files if f not in loaded_files]
@@ -1478,7 +1500,11 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     if loaded_files:
         for f in loaded_files:
             label = "intel/" + f.name
-            note = " (vision)" if f.suffix.lower() in _INTEL_IMAGE_EXTS else ""
+            if f.suffix.lower() in _INTEL_IMAGE_EXTS:
+                cache_path = intel_dir / f"{f.stem}.extracted.md"
+                note = " (cached)" if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime else " (vision)"
+            else:
+                note = ""
             console.print(f"[dim]  {label:<28} ✓{note}[/dim]")
     else:
         console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here for richer prep[/dim]")

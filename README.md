@@ -181,6 +181,18 @@ Context loaded for prep:
 
 `intel_vision_provider` defaults to your configured provider if omitted. Any vision-capable model works: `llava`, `llama3.2-vision`, `moondream` (Ollama); or your cloud model (`claude-sonnet-4-6`, `gpt-4o`, `gemini-2.0-flash`) which all support vision natively. Without this config, images are skipped with a hint.
 
+Image extractions are cached as `intel/{filename}.extracted.md` so they're not re-extracted on every run. You can review and edit the cached text — it's used as-is until the original image is modified.
+
+**Step notes** — after each interview round, drop your notes into `intel/`. The next `prep` run automatically uses them as context:
+
+```
+intel/
+├── step1_recruiter_notes.md     ← what they asked, what went well
+├── step2_hm_notes.md            ← hiring manager focus areas
+├── glassdoor_research.md
+└── slack_recruiter.png          ← extracted via vision model
+```
+
 Saves `interview_prep.md` to the package folder.
 
 ---
