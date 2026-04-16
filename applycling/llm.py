@@ -173,10 +173,11 @@ def _stream_google(model: str, prompt: str) -> Iterator[str]:
 # ---------------------------------------------------------------------------
 
 _VISION_PROMPT = (
-    "Extract all text from this image. Output only the raw extracted text, "
-    "preserving the original structure (paragraphs, lists, etc.). "
-    "No commentary, no preamble."
-    " If you can confidently infer, add some context what is this text, (e.g. it's slack message, a linkedin message, an email) from who etc."
+    "Extract all text from this image, preserving the original structure "
+    "(paragraphs, lists, etc.). "
+    "If you can confidently infer the source, add a one-line header with context "
+    "(e.g. 'Source: Slack message from Jane Smith' or 'Source: LinkedIn InMail from recruiter'). "
+    "Then the extracted text. No other commentary."
 )
 
 
