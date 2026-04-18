@@ -15,7 +15,8 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
-from . import llm, notion_connect, package, pdf_import, prompts, render, storage
+from . import llm, notion_connect, package, pdf_import, render, storage
+from .skills import load_skill
 from .text_utils import clean_llm_output as _clean_llm_output
 from .tracker import STATUSES, Job, TrackerError, get_store
 
@@ -915,7 +916,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     refined_resume_body = ""
     if "resume" in in_scope:
         _s = _Step("refine_resume", step_logs, output_file="resume.md")
-        _s.prompt_text = prompts.REFINE_RESUME_PROMPT.format(
+        _s.prompt_text = load_skill("refine_resume").render(
             feedback=feedback, resume=existing_resume, job_description=job_description
         )
         try:
@@ -929,7 +930,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
 
         # Format pass.
         _sf = _Step("format_resume_refine", step_logs, output_file="resume.md")
-        _sf.prompt_text = prompts.FORMAT_RESUME_PROMPT.format(resume=refined_body)
+        _sf.prompt_text = load_skill("format_resume").render(resume=refined_body)
         try:
             with _sf, console.status("[cyan]Formatting refined resume...[/cyan]", spinner="dots"):
                 for chunk in llm.format_resume(refined_body, model, provider=provider):
@@ -974,7 +975,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     if "brief" in in_scope and existing_brief:
         current_resume = refined_resume_body or existing_resume
         _s = _Step("refine_brief", step_logs, output_file="positioning_brief.md")
-        _s.prompt_text = prompts.REFINE_POSITIONING_BRIEF_PROMPT.format(
+        _s.prompt_text = load_skill("refine_positioning_brief").render(
             feedback=feedback, resume=current_resume, brief=existing_brief, role_intel=strategy
         )
         try:
@@ -995,7 +996,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     # ---- Refine cover letter ----
     if "cover_letter" in in_scope and existing_cover_letter:
         _s = _Step("refine_cover_letter", step_logs, output_file="cover_letter.md")
-        _s.prompt_text = prompts.REFINE_COVER_LETTER_PROMPT.format(
+        _s.prompt_text = load_skill("refine_cover_letter").render(
             feedback=feedback, cover_letter=existing_cover_letter, role_intel=strategy
         )
         try:
@@ -1024,7 +1025,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     # ---- Refine email + InMail ----
     if "email" in in_scope and existing_email:
         _s = _Step("refine_email", step_logs, output_file="email_inmail.md")
-        _s.prompt_text = prompts.REFINE_EMAIL_INMAIL_PROMPT.format(
+        _s.prompt_text = load_skill("refine_email_inmail").render(
             feedback=feedback, email_inmail=existing_email, role_intel=strategy
         )
         try:
@@ -1303,7 +1304,7 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
 
     step_logs: list[dict] = []
     _s = _Step("interview_prep", step_logs, output_file="interview_prep.md")
-    _s.prompt_text = prompts.INTERVIEW_PREP_PROMPT.format(
+    _s.prompt_text = load_skill("interview_prep").render(
         stages=stages_str,
         job_description=job_description,
         resume=resume,
@@ -1487,7 +1488,7 @@ def questions(job_id: str, stage_arg: str, count: int, model_arg: str, provider_
 
     for _stage_key, _stage_label in stages_to_run:
         _s = _Step(f"questions_{_stage_key}", step_logs, output_file="questions.md")
-        _s.prompt_text = prompts.QUESTIONS_PROMPT.format(
+        _s.prompt_text = load_skill("questions").render(
             count=count,
             stage=_stage_label,
             job_description=job_description,
@@ -1628,7 +1629,7 @@ def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
 
     step_logs: list[dict] = []
     _s = _Step("critique", step_logs, output_file="critique.md")
-    _s.prompt_text = prompts.CRITIQUE_PROMPT.format(
+    _s.prompt_text = load_skill("critique").render(
         job_description=job_description,
         resume=resume,
         cover_letter=cover_letter_text or "(not provided)",

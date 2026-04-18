@@ -23,6 +23,7 @@ dependencies = [
     "google-genai>=1.0",
     "InquirerPy>=0.3",
     "openai>=1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -30,3 +31,7 @@ applycling = "applycling.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["applycling*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

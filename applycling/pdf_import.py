@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterator
 
 from . import llm
-from .prompts import PDF_RESUME_CLEANUP_PROMPT
+from .skills import load_skill
 
 
 class PDFImportError(Exception):
@@ -58,7 +58,7 @@ def clean_to_markdown(extracted_text: str, model: str, provider: str = "ollama")
 
     Yields token strings as they arrive. Caller joins them.
     """
-    prompt = PDF_RESUME_CLEANUP_PROMPT.format(extracted_text=extracted_text)
+    prompt = load_skill("pdf_resume_cleanup").render(extracted_text=extracted_text)
     yield from llm._stream_chat(model, prompt, provider)
 
 

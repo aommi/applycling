@@ -24,16 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
 from . import llm, package, storage, tracker
-from .prompts import (
-    APPLICATION_EMAIL_PROMPT,
-    COVER_LETTER_PROMPT,
-    FIT_SUMMARY_PROMPT,
-    FORMAT_RESUME_PROMPT,
-    POSITIONING_BRIEF_PROMPT,
-    PROFILE_SUMMARY_PROMPT,
-    ROLE_INTEL_PROMPT,
-    TAILOR_RESUME_PROMPT,
-)
+from .skills import load_skill
 from .text_utils import clean_llm_output as _clean_llm_output
 
 
@@ -535,7 +526,7 @@ def run_add(
 
     _co_note = "\nUse the company page text below to inform this section." if company_page_text else ""
     _cand_section = "\nYou have the candidate's base resume below. Use it to assess keyword coverage and gaps."
-    _intel_prompt = ROLE_INTEL_PROMPT.format(
+    _intel_prompt = load_skill("role_intel").render(
         job_description=job_description, company_note=_co_note, candidate_section=_cand_section
     )
     if company_page_text:
@@ -577,7 +568,7 @@ def run_add(
     _vt = f" Candidate's voice and tone: {context.profile['voice_tone']}" if context.profile and context.profile.get("voice_tone") else ""
     _nf_list = context.profile.get("never_fabricate", []) if context.profile else []
     _nf = f"\n- Specifically NEVER fabricate: {'; '.join(_nf_list)}." if _nf_list else ""
-    _tailor_prompt = TAILOR_RESUME_PROMPT.format(
+    _tailor_prompt = load_skill("resume_tailor").render(
         resume=context.resume, job_description=job_description,
         stories_section=_stories_section, voice_tone_section=_vt,
         never_fabricate_section=_nf,
@@ -615,7 +606,7 @@ def run_add(
             on_status("Generating profile summary...")
 
         step = PipelineStep("profile_summary")
-        step.prompt = PROFILE_SUMMARY_PROMPT.format(
+        step.prompt = load_skill("profile_summary").render(
             resume=context.resume, job_description=job_description
         )
         try:
@@ -635,7 +626,7 @@ def run_add(
         on_status("Formatting resume...")
 
     step = PipelineStep("format_resume", output_file="resume.md")
-    step.prompt = FORMAT_RESUME_PROMPT.format(resume=tailored_body)
+    step.prompt = load_skill("format_resume").render(resume=tailored_body)
     try:
         with step.streaming(on_chunk=on_chunk, on_status=on_status) as collect:
             for chunk in llm.format_resume(tailored_body, context.model, provider=context.provider):
@@ -660,7 +651,7 @@ def run_add(
         on_status("Generating positioning brief...")
 
     step = PipelineStep("positioning_brief", output_file="positioning_brief.md")
-    step.prompt = POSITIONING_BRIEF_PROMPT.format(
+    step.prompt = load_skill("positioning_brief").render(
         role_intel=strategy, tailored_resume=tailored, job_description=job_description
     )
     try:
@@ -681,7 +672,7 @@ def run_add(
 
     _vt = f" Candidate's voice and tone: {context.profile['voice_tone']}" if context.profile and context.profile.get("voice_tone") else ""
     step = PipelineStep("cover_letter", output_file="cover_letter.md")
-    step.prompt = COVER_LETTER_PROMPT.format(
+    step.prompt = load_skill("cover_letter").render(
         role_intel=strategy, tailored_resume=tailored,
         job_description=job_description, voice_tone_section=_vt,
     )
@@ -711,7 +702,7 @@ def run_add(
         ]))
         _vt = f" Candidate's voice and tone: {context.profile['voice_tone']}" if context.profile.get("voice_tone") else ""
         step = PipelineStep("email_inmail", output_file="email_inmail.md")
-        step.prompt = APPLICATION_EMAIL_PROMPT.format(
+        step.prompt = load_skill("email_inmail").render(
             role_intel=strategy, candidate_name=context.profile.get("name", ""),
             candidate_contact=contact_line, job_title=job_title,
             company=job_company, voice_tone_section=_vt,
@@ -736,7 +727,7 @@ def run_add(
         on_status("Generating fit summary...")
 
     step = PipelineStep("fit_summary", output_file="fit_summary.md")
-    step.prompt = FIT_SUMMARY_PROMPT.format(
+    step.prompt = load_skill("fit_summary").render(
         resume=context.resume, job_description=job_description
     )
     try:

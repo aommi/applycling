@@ -6,23 +6,7 @@ import os
 from pathlib import Path
 from typing import Iterator
 
-from .prompts import (
-    APPLICATION_EMAIL_PROMPT,
-    COVER_LETTER_PROMPT,
-    CRITIQUE_PROMPT,
-    INTERVIEW_PREP_PROMPT,
-    FIT_SUMMARY_PROMPT,
-    FORMAT_RESUME_PROMPT,
-    POSITIONING_BRIEF_PROMPT,
-    PROFILE_SUMMARY_PROMPT,
-    QUESTIONS_PROMPT,
-    REFINE_COVER_LETTER_PROMPT,
-    REFINE_EMAIL_INMAIL_PROMPT,
-    REFINE_POSITIONING_BRIEF_PROMPT,
-    REFINE_RESUME_PROMPT,
-    ROLE_INTEL_PROMPT,
-    TAILOR_RESUME_PROMPT,
-)
+from .skills import load_skill
 
 # Load .env from repo root so API keys are available.
 try:
@@ -340,7 +324,7 @@ def tailor_resume(
     if never_fabricate:
         items = "; ".join(never_fabricate)
         never_fabricate_section = f"\n- Specifically NEVER fabricate: {items}."
-    prompt = TAILOR_RESUME_PROMPT.format(
+    prompt = load_skill("resume_tailor").render(
         resume=resume,
         job_description=job_description,
         stories_section=stories_section,
@@ -359,7 +343,7 @@ def tailor_resume(
 def get_fit_summary(
     resume: str, job_description: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
-    prompt = FIT_SUMMARY_PROMPT.format(
+    prompt = load_skill("fit_summary").render(
         resume=resume, job_description=job_description
     )
     yield from _stream_chat(model, prompt, provider)
@@ -378,7 +362,7 @@ def role_intel(
     candidate_section = ""
     if resume:
         candidate_section = "\nYou have the candidate's base resume below. Use it to assess keyword coverage and gaps."
-    prompt = ROLE_INTEL_PROMPT.format(
+    prompt = load_skill("role_intel").render(
         job_description=job_description,
         company_note=company_note,
         candidate_section=candidate_section,
@@ -393,7 +377,7 @@ def role_intel(
 def positioning_brief(
     role_intel: str, tailored_resume: str, job_description: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
-    prompt = POSITIONING_BRIEF_PROMPT.format(
+    prompt = load_skill("positioning_brief").render(
         role_intel=role_intel,
         tailored_resume=tailored_resume,
         job_description=job_description,
@@ -410,7 +394,7 @@ def cover_letter(
     provider: str = "ollama",
 ) -> Iterator[str]:
     vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
-    prompt = COVER_LETTER_PROMPT.format(
+    prompt = load_skill("cover_letter").render(
         role_intel=role_intel_text,
         tailored_resume=tailored_resume,
         job_description=job_description,
@@ -430,7 +414,7 @@ def application_email(
     provider: str = "ollama",
 ) -> Iterator[str]:
     vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
-    prompt = APPLICATION_EMAIL_PROMPT.format(
+    prompt = load_skill("email_inmail").render(
         role_intel=role_intel_text,
         candidate_name=candidate_name,
         candidate_contact=candidate_contact,
@@ -444,7 +428,7 @@ def application_email(
 def get_profile_summary(
     resume: str, job_description: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
-    prompt = PROFILE_SUMMARY_PROMPT.format(
+    prompt = load_skill("profile_summary").render(
         resume=resume, job_description=job_description
     )
     yield from _stream_chat(model, prompt, provider)
@@ -453,7 +437,7 @@ def get_profile_summary(
 def format_resume(
     resume: str, model: str, provider: str = "ollama"
 ) -> Iterator[str]:
-    prompt = FORMAT_RESUME_PROMPT.format(resume=resume)
+    prompt = load_skill("format_resume").render(resume=resume)
     yield from _stream_chat(model, prompt, provider)
 
 
@@ -464,7 +448,7 @@ def refine_resume(
     model: str,
     provider: str = "ollama",
 ) -> Iterator[str]:
-    prompt = REFINE_RESUME_PROMPT.format(
+    prompt = load_skill("refine_resume").render(
         feedback=feedback,
         resume=resume,
         job_description=job_description,
@@ -479,7 +463,7 @@ def refine_cover_letter(
     model: str,
     provider: str = "ollama",
 ) -> Iterator[str]:
-    prompt = REFINE_COVER_LETTER_PROMPT.format(
+    prompt = load_skill("refine_cover_letter").render(
         feedback=feedback,
         cover_letter=cover_letter,
         role_intel=role_intel,
@@ -495,7 +479,7 @@ def refine_positioning_brief(
     model: str,
     provider: str = "ollama",
 ) -> Iterator[str]:
-    prompt = REFINE_POSITIONING_BRIEF_PROMPT.format(
+    prompt = load_skill("refine_positioning_brief").render(
         feedback=feedback,
         resume=resume,
         brief=brief,
@@ -515,7 +499,7 @@ def interview_prep(
     provider: str = "ollama",
 ) -> Iterator[str]:
     intel_section = f"\n=== ADDITIONAL INTEL ===\n{intel}\n" if intel else ""
-    prompt = INTERVIEW_PREP_PROMPT.format(
+    prompt = load_skill("interview_prep").render(
         stages=stages,
         job_description=job_description,
         resume=resume,
@@ -535,7 +519,7 @@ def critique(
     positioning_brief: str = "",
     provider: str = "ollama",
 ) -> Iterator[str]:
-    prompt = CRITIQUE_PROMPT.format(
+    prompt = load_skill("critique").render(
         job_description=job_description,
         resume=resume,
         cover_letter=cover_letter or "(not provided)",
@@ -558,7 +542,7 @@ def generate_questions(
     provider: str = "ollama",
 ) -> Iterator[str]:
     intel_section = f"\n=== ADDITIONAL INTEL ===\n{intel}\n" if intel else ""
-    prompt = QUESTIONS_PROMPT.format(
+    prompt = load_skill("questions").render(
         count=count,
         stage=stage,
         job_description=job_description,
@@ -578,7 +562,7 @@ def refine_email_inmail(
     model: str,
     provider: str = "ollama",
 ) -> Iterator[str]:
-    prompt = REFINE_EMAIL_INMAIL_PROMPT.format(
+    prompt = load_skill("refine_email_inmail").render(
         feedback=feedback,
         email_inmail=email_inmail,
         role_intel=role_intel,
