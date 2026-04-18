@@ -61,6 +61,66 @@ applycling/
 
 ---
 
+## Skills architecture (post-T7)
+
+All 16 LLM prompt templates live in `applycling/skills/<name>/SKILL.md`. The old `applycling/prompts.py` has been deleted entirely — there are no prompt strings in Python source files.
+
+### Skill file format
+
+Each `SKILL.md` file contains a YAML frontmatter block followed by the prompt template body:
+
+```markdown
+---
+name: skill_name          # must match the directory name exactly
+description: One-line purpose shown in logs and docs
+inputs:
+  - placeholder_one       # every {placeholder} used in the body must be listed
+  - placeholder_two
+output_file: result.md    # optional — omit if the step writes no file
+model_hint: claude-3-5-haiku-20241022   # optional — per-skill model preference (T8)
+temperature: 0.3          # optional — per-skill temperature override (T8)
+---
+Prompt body here.  Uses {placeholder_one} and {placeholder_two} via str.format.
+
+Use {{literal_braces}} when you need a { or } character in the output.
+```
+
+Frontmatter is parsed with `pyyaml`. The template engine is plain `str.format` — zero additional dependencies.
+
+### Loader: `applycling/skills/loader.py`
+
+`load_skill(name) -> Skill` reads `SKILLS_DIR/<name>/SKILL.md`, parses the frontmatter, and returns a `Skill` dataclass with:
+
+- `.name`, `.description`, `.inputs`, `.output_file`, `.model_hint`, `.temperature`
+- `.render(**kwargs) -> str` — validates all declared inputs are present, then calls `template.format(**kwargs)`. Raises `SkillError` on missing inputs or undefined keys.
+
+Import path: `from applycling.skills import load_skill, Skill, SkillError`
+
+The loader validates that the `name` field in frontmatter matches the directory name — a mismatch raises `SkillError` immediately at load time.
+
+### All 16 skills
+
+| Skill | Purpose | `output_file` |
+|-------|---------|---------------|
+| `role_intel` | Analyse job description; build ATS keyword table and positioning strategy | `strategy.md` |
+| `resume_tailor` | Tailor base resume to the job using role intel | `resume.md` |
+| `profile_summary` | Write 2-3 sentence tailored profile summary | _(none — injected into resume)_ |
+| `format_resume` | Reformat tailored resume into canonical markdown structure | `resume.md` |
+| `positioning_brief` | Write interview-prep positioning brief from role intel + resume | `positioning_brief.md` |
+| `cover_letter` | Write tailored cover letter matching candidate voice | `cover_letter.md` |
+| `email_inmail` | Write short application email + LinkedIn InMail | `email_inmail.md` |
+| `fit_summary` | Write honest 2-3 sentence fit summary | `fit_summary.md` |
+| `refine_resume` | Refine tailored resume from feedback without restarting | `resume.md` |
+| `refine_cover_letter` | Refine cover letter from feedback without rewriting | `cover_letter.md` |
+| `refine_positioning_brief` | Update positioning brief to reflect resume changes | `positioning_brief.md` |
+| `refine_email_inmail` | Refine email/InMail from feedback without rewriting | `email_inmail.md` |
+| `interview_prep` | Generate scannable prep doc with likely questions per stage | `interview_prep.md` |
+| `critique` | Senior-recruiter critique across 6 dimensions | `critique.md` |
+| `questions` | Generate targeted practice questions with STAR frameworks | _(none — printed to terminal)_ |
+| `pdf_resume_cleanup` | Convert messy PDF-extracted text to clean Markdown | _(none — used in import flow)_ |
+
+---
+
 ## Adding a new LLM pipeline step
 
 All pipeline steps in `applycling add` use the `_Step` context manager defined in `cli.py`. This handles timing, logging, token counting, and status automatically.
@@ -172,3 +232,16 @@ The format template rules are in `applycling/skills/format_resume/SKILL.md`. The
 - The profile summary section header must be `## PROFILE` (all caps) to match the format template.
 - `storage.save_config()` merges — never call it with only partial keys unless merging is the intent.
 - All API keys live in `.env` at repo root (gitignored). Loaded via `python-dotenv` in `llm.py`.
+- **Escaped braces in skill files:** `{{` and `}}` in a `SKILL.md` body render as literal `{` and `}` after `str.format`. Use this whenever the prompt itself must output a brace (e.g., `Q{{n}}` → `Q{n}` in the rendered prompt). Do not use `\{` — that is not valid `str.format` syntax.
+- **Conditional logic stays in Python:** Skill templates have no `if/else` constructs. The caller pre-computes conditional strings (e.g., `voice_tone_section = "Write in a formal tone." if tone else ""`) and passes them as inputs. The template just interpolates `{voice_tone_section}` unconditionally.
+- **No Jinja2:** The template engine is `str.format` and nothing else. Never add a Jinja2 dependency — `str.format` handles all current and planned cases. If logic is complex, move it into the Python caller, not the skill file.
+
+---
+
+## Future work (T8+)
+
+The skills architecture introduced in T7 is the foundation for the following planned features. Do not implement these ahead of schedule, but do not design changes that would conflict with them.
+
+- **T8 — Per-skill model overrides and resolver layer:** The `model_hint` and `temperature` frontmatter fields are parsed and stored on `Skill` but not yet acted on. T8 will wire these into `_stream_chat` so expensive skills (e.g., `resume_tailor`) can target a stronger model while cheap skills (e.g., `fit_summary`) use a faster one. T8 will also add a resolver layer that inspects context (job seniority, available stories, etc.) and activates optional extra skills automatically.
+- **T9 — Learning loop (`LEARNED.md`):** After each successful run, patterns extracted from feedback will be appended to a `LEARNED.md` file stored alongside each skill directory. Future renders will inject the relevant learned patterns as an additional `{learned_section}` input. This closes the loop between human review and prompt quality over time.
+- **T10 — User-override skills (`~/.applycling/skills/`):** `load_skill` will check `~/.applycling/skills/<name>/SKILL.md` before falling back to the built-in skills directory. This lets power users override any prompt without touching the package source, and enables community-shared skill packs that drop into the user directory.
