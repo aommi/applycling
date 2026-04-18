@@ -11,7 +11,25 @@ applycling/
 ├── applycling/
 │   ├── cli.py           # All click commands + _Step context manager
 │   ├── llm.py           # LLM provider routing (ollama / anthropic / google)
-│   ├── prompts.py       # All LLM prompt templates
+│   ├── skills/          # Skill files — one subdirectory per skill
+│   │   ├── __init__.py  # re-exports Skill, SkillError, load_skill
+│   │   ├── loader.py    # load_skill(name) → Skill(template, metadata)
+│   │   ├── role_intel/SKILL.md
+│   │   ├── resume_tailor/SKILL.md
+│   │   ├── profile_summary/SKILL.md
+│   │   ├── format_resume/SKILL.md
+│   │   ├── positioning_brief/SKILL.md
+│   │   ├── cover_letter/SKILL.md
+│   │   ├── email_inmail/SKILL.md
+│   │   ├── fit_summary/SKILL.md
+│   │   ├── interview_prep/SKILL.md
+│   │   ├── critique/SKILL.md
+│   │   ├── questions/SKILL.md
+│   │   ├── refine_resume/SKILL.md
+│   │   ├── refine_cover_letter/SKILL.md
+│   │   ├── refine_positioning_brief/SKILL.md
+│   │   ├── refine_email_inmail/SKILL.md
+│   │   └── pdf_resume_cleanup/SKILL.md
 │   ├── scraper.py       # Job posting scraper (LinkedIn, JSON-LD, LLM fallback)
 │   ├── storage.py       # File-based config/resume/profile/stories storage
 │   ├── render.py        # Markdown → HTML → PDF (Playwright/Chromium)
@@ -47,14 +65,51 @@ applycling/
 
 All pipeline steps in `applycling add` use the `_Step` context manager defined in `cli.py`. This handles timing, logging, token counting, and status automatically.
 
-**Pattern — copy this exactly for any new step:**
+**Step 1 — Create `applycling/skills/<name>/SKILL.md`** with YAML frontmatter and the prompt body:
+
+```markdown
+---
+name: my_step
+description: One-line description of what this skill does
+inputs:
+  - input_key_one
+  - input_key_two
+output_file: my_step.md   # omit if the step produces no output file
+---
+You are an expert at...
+
+=== INPUT ONE ===
+{input_key_one}
+
+=== INPUT TWO ===
+{input_key_two}
+```
+
+Frontmatter fields: `name` (must match directory name), `description`, `inputs` (list of `{placeholder}` names in the body), `output_file` (optional), `model_hint` (optional), `temperature` (optional).
+
+**Step 2 — Add the function to `llm.py`:**
 
 ```python
-_s = _Step("step_name", step_logs, output_file="output_file.md")
-_s.prompt_text = prompts.YOUR_PROMPT.format(...)
+from .skills import load_skill
+
+def my_step(input_key_one: str, input_key_two: str, model: str, provider: str = "ollama") -> Iterator[str]:
+    prompt = load_skill("my_step").render(
+        input_key_one=input_key_one,
+        input_key_two=input_key_two,
+    )
+    yield from _stream_chat(model, prompt, provider)
+```
+
+**Step 3 — Use `_Step` in `cli.py` or `PipelineStep` in `pipeline.py`:**
+
+```python
+_s = _Step("my_step", step_logs, output_file="my_step.md")
+_s.prompt_text = load_skill("my_step").render(
+    input_key_one=..., input_key_two=...
+)
 try:
     with _s, console.status("[cyan]Doing the thing...[/cyan]", spinner="dots"):
-        for chunk in llm.your_function(..., provider=provider):
+        for chunk in llm.my_step(..., provider=provider):
             _s.collect(chunk)
 except llm.LLMError as e:
     console.print(f"[red]{e}[/red]")   # use [red] + sys.exit(1) for critical steps
@@ -67,12 +122,6 @@ result = _clean_llm_output(_s.output)
 - `_Step.__exit__` auto-appends to `step_logs` with timing, status, and text — no manual append needed.
 - Status is set to `"ok"`, `"skipped"` (empty output), or `"failed"` (exception) automatically.
 - Token counts and cost estimates are computed from `step_logs` at the end of the run.
-
-**Adding the LLM function:**
-
-1. Add the prompt template to `prompts.py`.
-2. Add the function to `llm.py` — import the prompt and yield from `_stream_chat(model, prompt, provider)`.
-3. Use `_Step` in `cli.py` as shown above.
 
 Nothing else needs wiring — token counts, run_log, and the terminal breakdown all pick it up automatically.
 
@@ -112,7 +161,7 @@ The tailored resume goes through two LLM passes:
 1. **resume_tailor** — content tailoring (keywords, bullets, relevance)
 2. **format_resume** — structure reformatting to match the user's preferred template
 
-The format template rules are in `FORMAT_RESUME_PROMPT` in `prompts.py`. The HTML/CSS in `render.py` uses `h3 em { float: right }` to right-align dates when written as `### Job Title *Date Range*`.
+The format template rules are in `applycling/skills/format_resume/SKILL.md`. The HTML/CSS in `render.py` uses `h3 em { float: right }` to right-align dates when written as `### Job Title *Date Range*`.
 
 ---
 
