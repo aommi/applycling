@@ -2,6 +2,17 @@
 
 **applycling** is a CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary. Supports Anthropic (Claude), Google AI Studio (Gemini), and Ollama (local/cloud).
 
+## Architecture vision
+
+Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the
+canonical record of architectural principles (thin harness + fat skills),
+product direction, design-decision rationale, and known risks. Tickets
+expire; this document does not. Use it to understand *why* the codebase
+looks the way it does before changing it.
+
+CLAUDE.md documents *how* the codebase works today. ARCHITECTURE_VISION.md
+documents *why* it is shaped this way and where it is going.
+
 ---
 
 ## Project structure
@@ -235,10 +246,18 @@ The format template rules are in `applycling/skills/format_resume/SKILL.md`. The
 - **Escaped braces in skill files:** `{{` and `}}` in a `SKILL.md` body render as literal `{` and `}` after `str.format`. Use this whenever the prompt itself must output a brace (e.g., `Q{{n}}` → `Q{n}` in the rendered prompt). Do not use `\{` — that is not valid `str.format` syntax.
 - **Conditional logic stays in Python:** Skill templates have no `if/else` constructs. The caller pre-computes conditional strings (e.g., `voice_tone_section = "Write in a formal tone." if tone else ""`) and passes them as inputs. The template just interpolates `{voice_tone_section}` unconditionally.
 - **No Jinja2:** The template engine is `str.format` and nothing else. Never add a Jinja2 dependency — `str.format` handles all current and planned cases. If logic is complex, move it into the Python caller, not the skill file.
+- **Keep `ARCHITECTURE_VISION.md` canonical.** Update it in the same commit
+  whenever you: add or remove a skill, change the pipeline contract
+  (`_Step`, `PipelineStep`, `load_skill`), introduce a new provider, ship a
+  T-numbered phase from "Future work", or discover a risk worth remembering.
+  If you are unsure whether a change qualifies, it does — update the doc.
 
 ---
 
-## Future work (T8+)
+## Future work (T8+) — product roadmap
+
+The detailed *why* behind these phases lives in `ARCHITECTURE_VISION.md`.
+This section is the sprint-ready ticket list.
 
 The skills architecture introduced in T7 is the foundation for the following planned features. Do not implement these ahead of schedule, but do not design changes that would conflict with them.
 
