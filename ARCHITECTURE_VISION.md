@@ -144,7 +144,8 @@ The pipeline is initiated by many sources today and in the near future:
 
 ### OpenClaw integration
 
-OpenClaw is the orchestrator (Telegram + multi-channel hub). applycling is a
+OpenClaw is the orchestrator — a universal messaging gateway supporting 20+ platforms
+(WhatsApp, Telegram, Slack, Discord, Signal, and others). applycling is a
 **skill within OpenClaw's skill library**. The contract is:
 
 1. OpenClaw receives a job URL (Telegram, email, web, etc.).
@@ -157,12 +158,19 @@ OpenClaw is the orchestrator (Telegram + multi-channel hub). applycling is a
    delivers the package + updates Notion.
 
 **Design alignment**: The SKILL.md format (YAML frontmatter + Markdown template)
-was chosen deliberately to match OpenClaw's skill format. This ensures applycling
-skills are directly portable to OpenClaw's skill library in future phases (T8+,
-when skills become context-switchable resolvers).
+was designed to be compatible with OpenClaw's skill format (both use
+`<dir>/SKILL.md` convention). This enables applycling skills to be directly
+portable to OpenClaw's skill library in future phases (T8+, when skills
+become context-switchable resolvers). Field-for-field parity verification
+pending as OpenClaw's frontmatter spec evolves.
 
 This works today because `pipeline.py` is already presentation-free — there
 are no `rich.Console` calls inside it.
+
+**Note on tool registration:** How applycling registers as a tool within OpenClaw's
+tool registry (discovery, invocation, capability advertisement) is currently
+undocumented. This should be clarified in T8+ when resolvers make applycling skills
+directly discoverable by OpenClaw (vs. manual integration today).
 
 ---
 
