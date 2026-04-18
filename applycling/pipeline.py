@@ -17,7 +17,6 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json as _json
-import re as _re
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -35,6 +34,16 @@ from .prompts import (
     ROLE_INTEL_PROMPT,
     TAILOR_RESUME_PROMPT,
 )
+from .text_utils import clean_llm_output as _clean_llm_output
+
+
+def _utcnow() -> dt.datetime:
+    """Naive UTC now via non-deprecated API.
+
+    Returns a naive datetime so existing `.isoformat() + "Z"` serialization
+    keeps working. Replaces `_utcnow()` (deprecated in 3.12+).
+    """
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
 @dataclass
@@ -156,7 +165,7 @@ class PipelineStep:
     output_file: Optional[str] = None
 
     # Timing
-    started_at: dt.datetime = field(default_factory=dt.datetime.utcnow)
+    started_at: dt.datetime = field(default_factory=_utcnow)
     finished_at: Optional[dt.datetime] = None
 
     # Content
@@ -180,7 +189,7 @@ class PipelineStep:
         """Mark step as successfully completed with output."""
         self.output = output
         self.status = "ok"
-        self.finished_at = dt.datetime.utcnow()
+        self.finished_at = _utcnow()
         if not output.strip():
             self.status = "skipped"
 
@@ -188,13 +197,13 @@ class PipelineStep:
         """Mark step as skipped (empty output)."""
         self.output = ""
         self.status = "skipped"
-        self.finished_at = dt.datetime.utcnow()
+        self.finished_at = _utcnow()
 
     def mark_failed(self, error: Exception) -> None:
         """Mark step as failed."""
         self.status = "failed"
         self.error = str(error)
-        self.finished_at = dt.datetime.utcnow()
+        self.finished_at = _utcnow()
 
     @contextmanager
     def streaming(
@@ -222,7 +231,7 @@ class PipelineStep:
         Yields:
             A collector callable that appends chunks to self.output and calls on_chunk.
         """
-        self.started_at = dt.datetime.utcnow()
+        self.started_at = _utcnow()
         parts: list[str] = []
 
         def collect(chunk: str) -> None:
@@ -235,7 +244,7 @@ class PipelineStep:
         finally:
             # Finalize on exit
             self.output = "".join(parts)
-            self.finished_at = dt.datetime.utcnow()
+            self.finished_at = _utcnow()
             if not self.output.strip():
                 self.status = "skipped"
 
@@ -244,7 +253,7 @@ class PipelineStep:
         return {
             "name": self.name,
             "started_at": self.started_at.isoformat() + "Z",
-            "finished_at": (self.finished_at or dt.datetime.utcnow()).isoformat() + "Z",
+            "finished_at": (self.finished_at or _utcnow()).isoformat() + "Z",
             "duration_seconds": self.duration_seconds(),
             "output_file": self.output_file,
             "status": self.status,
@@ -341,7 +350,7 @@ class AddResult:
 
     # Pipeline run log
     run: PipelineRun = field(default_factory=lambda: PipelineRun(
-        run_id="", started_at=dt.datetime.utcnow(), finished_at=dt.datetime.utcnow(),
+        run_id="", started_at=_utcnow(), finished_at=_utcnow(),
         model="", provider=""
     ))
 
@@ -436,36 +445,6 @@ def compute_token_costs(
     return totals, cost_estimates
 
 
-def _clean_llm_output(text: str) -> str:
-    """Strip common LLM artifacts from output before rendering.
-
-    This is copied from cli.py to keep the pipeline module self-contained.
-    """
-    # Strip markdown code fences anywhere in the output.
-    text = _re.sub(r"```[a-z]*\s*\n?", "", text)
-
-    # Remove preamble: everything before the first markdown heading or bullet.
-    first_content = _re.search(r"^(#{1,3} |\- |\* |\d+\. )", text, flags=_re.MULTILINE)
-    if first_content and first_content.start() > 0:
-        preamble = text[:first_content.start()]
-        # Only strip if the preamble looks like LLM chatter (no headings/bullets).
-        if not _re.search(r"^#{1,3} ", preamble, flags=_re.MULTILINE):
-            text = text[first_content.start():]
-
-    # Remove leaked prompt markers (=== SOMETHING ===).
-    text = _re.sub(r"^===.*?===.*$", "", text, flags=_re.MULTILINE)
-
-    # Remove trailing sign-off / offer to help.
-    text = _re.sub(
-        r"\n(?:Let me know|Feel free|I hope|By consistently|If you'd like|I can).*$",
-        "", text, flags=_re.DOTALL | _re.IGNORECASE,
-    )
-
-    # Collapse excessive blank lines left by removals.
-    text = _re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
 def _profile_header_markdown(profile: dict) -> str:
     """Build the static top section of the resume from stored profile fields."""
     lines = []
@@ -531,7 +510,7 @@ def run_add(
         tracker.TrackerError: If job persistence fails.
     """
     run_id = str(uuid.uuid4())
-    run_started = dt.datetime.utcnow()
+    run_started = _utcnow()
     steps: list[PipelineStep] = []
 
     # Fetch company page text (optional, no LLM call).
@@ -655,7 +634,7 @@ def run_add(
     if on_status:
         on_status("Formatting resume...")
 
-    step = PipelineStep("format_resume", output_file=None)
+    step = PipelineStep("format_resume", output_file="resume.md")
     step.prompt = FORMAT_RESUME_PROMPT.format(resume=tailored_body)
     try:
         with step.streaming(on_chunk=on_chunk, on_status=on_status) as collect:
@@ -773,7 +752,7 @@ def run_add(
     fit_summary = _clean_llm_output(step.output)
 
     # ---- Finalize run log ----
-    run_finished = dt.datetime.utcnow()
+    run_finished = _utcnow()
     run_log = PipelineRun(
         run_id=run_id,
         started_at=run_started,

@@ -116,10 +116,11 @@ def test_pipeline_run_aggregation():
     steps[1].tokens_in = 200
     steps[1].tokens_out = 100
 
+    _now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     run = pipeline.PipelineRun(
         run_id="test_run",
-        started_at=dt.datetime.utcnow(),
-        finished_at=dt.datetime.utcnow(),
+        started_at=_now,
+        finished_at=_now,
         model="test-model",
         provider="ollama",
         steps=steps,

@@ -74,7 +74,7 @@ def load_fixture(filename: str) -> str:
 # Shared setup: build a PipelineContext + run the pipeline with mocked LLM
 # ---------------------------------------------------------------------------
 
-def _make_context_and_run(tmp_path: Path):
+def _make_context_and_run(tmp_path: Path, on_gate=None):
     """Run the full pipeline with stub LLM and mocked render. Return (result, folder)."""
     from applycling import pipeline, tracker
 
@@ -89,12 +89,13 @@ def _make_context_and_run(tmp_path: Path):
 
         def save_job(self, job: tracker.Job) -> tracker.Job:
             import uuid, datetime as dt
+            now_iso = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
             saved = tracker.Job(
                 id=job.id or f"job_{uuid.uuid4().hex[:8]}",
                 title=job.title,
                 company=job.company,
-                date_added=job.date_added or dt.datetime.utcnow().isoformat() + "Z",
-                date_updated=job.date_updated or dt.datetime.utcnow().isoformat() + "Z",
+                date_added=job.date_added or now_iso,
+                date_updated=job.date_updated or now_iso,
                 status=job.status,
                 source_url=job.source_url,
                 fit_summary=job.fit_summary,
@@ -182,6 +183,7 @@ def _make_context_and_run(tmp_path: Path):
             context=ctx,
             want_summary=True,
             render_pdf=True,
+            on_gate=on_gate,
         )
 
         folder = pipeline.persist_add_result(
@@ -333,6 +335,69 @@ def test_regression_job_json_schema(tmp_path):
     assert "resume_html" in files
     assert "resume_pdf" in files
     assert "fit_summary" in files
+
+
+def test_regression_step_output_files(tmp_path):
+    """Verify that each PipelineStep declares its expected output_file.
+
+    Catches regressions where a step is silently dropped from the run_log's
+    file inventory because output_file wasn't set.
+    """
+    result, _ = _make_context_and_run(tmp_path)
+
+    step_outputs = {s.name: s.output_file for s in result.run.steps}
+
+    expected = {
+        "role_intel": "strategy.md",
+        "resume_tailor": "resume.md",
+        "format_resume": "resume.md",
+        "positioning_brief": "positioning_brief.md",
+        "cover_letter": "cover_letter.md",
+        "email_inmail": "email_inmail.md",
+        "fit_summary": "fit_summary.md",
+    }
+    for step_name, expected_file in expected.items():
+        assert step_name in step_outputs, f"Step '{step_name}' missing"
+        assert step_outputs[step_name] == expected_file, (
+            f"Step '{step_name}' output_file mismatch: "
+            f"got {step_outputs[step_name]!r}, expected {expected_file!r}"
+        )
+
+
+def test_regression_async_path_no_gate(tmp_path):
+    """Pipeline runs to completion when on_gate is None (process-queue / async path).
+
+    This is the code path used by `applycling process-queue` and OpenClaw
+    integration. Must succeed without any interactive callback.
+    """
+    result, folder = _make_context_and_run(tmp_path, on_gate=None)
+
+    assert folder.exists()
+    assert (folder / "resume.md").exists()
+    assert (folder / "fit_summary.md").exists()
+    # Strategy was generated but not gated
+    assert result.strategy and result.strategy.strip()
+
+
+def test_regression_interactive_gate_override(tmp_path):
+    """Pipeline invokes on_gate exactly once with strategy text and respects override.
+
+    Verifies the interactive gate contract used by `applycling add` (without --async).
+    """
+    calls = []
+    override_text = "## Overridden strategy\nUse this instead."
+
+    def gate(content: str) -> str:
+        calls.append(content)
+        return override_text
+
+    result, _ = _make_context_and_run(tmp_path, on_gate=gate)
+
+    assert len(calls) == 1, f"Expected on_gate called once, got {len(calls)}"
+    assert calls[0].strip(), "on_gate received empty strategy"
+    assert result.strategy == override_text, (
+        f"Expected override to replace strategy, got: {result.strategy!r}"
+    )
 
 
 def test_fixtures_exist():

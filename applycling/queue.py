@@ -18,6 +18,11 @@ import uuid
 import datetime as dt
 
 
+def _utcnow_iso() -> str:
+    """UTC timestamp in 'YYYY-MM-DDTHH:MM:SS...Z' form via non-deprecated API."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+
+
 @dataclass
 class QueuedJob:
     """A job waiting to be processed."""
@@ -123,7 +128,7 @@ class MemoryQueue(QueueStore):
             url=url,
             source=source,
             metadata=metadata or {},
-            created_at=dt.datetime.utcnow().isoformat() + "Z",
+            created_at=_utcnow_iso(),
         )
         self._queue.append(job)
         return job
@@ -132,7 +137,7 @@ class MemoryQueue(QueueStore):
         for job in self._queue:
             if job.claimed_by is None and job.id not in self._completed:
                 job.claimed_by = claimer_id
-                job.claimed_at = dt.datetime.utcnow().isoformat() + "Z"
+                job.claimed_at = _utcnow_iso()
                 return job
         return None
 

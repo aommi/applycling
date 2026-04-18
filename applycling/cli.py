@@ -16,9 +16,15 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from . import llm, notion_connect, package, pdf_import, prompts, render, storage
+from .text_utils import clean_llm_output as _clean_llm_output
 from .tracker import STATUSES, Job, TrackerError, get_store
 
 console = Console()
+
+
+def _utcnow() -> _dt.datetime:
+    """Naive UTC now via non-deprecated API (replaces datetime.utcnow())."""
+    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
 
 STATUS_STYLES = {
     "tailored": "blue",
@@ -51,36 +57,6 @@ def _pick(question: str, options: list[str], default: str = "") -> str:
             return options[int(choice) - 1]
         except (ValueError, IndexError):
             return default or options[0]
-
-
-def _clean_llm_output(text: str) -> str:
-    """Strip common LLM artifacts from output before rendering."""
-    import re as _re
-
-    # Strip markdown code fences anywhere in the output.
-    text = _re.sub(r"```[a-z]*\s*\n?", "", text)
-
-    # Remove preamble: everything before the first markdown heading or bullet.
-    # Models often write "Here's the revised resume:\n" before the actual content.
-    first_content = _re.search(r"^(#{1,3} |\- |\* |\d+\. )", text, flags=_re.MULTILINE)
-    if first_content and first_content.start() > 0:
-        preamble = text[:first_content.start()]
-        # Only strip if the preamble looks like LLM chatter (no headings/bullets).
-        if not _re.search(r"^#{1,3} ", preamble, flags=_re.MULTILINE):
-            text = text[first_content.start():]
-
-    # Remove leaked prompt markers (=== SOMETHING ===).
-    text = _re.sub(r"^===.*?===.*$", "", text, flags=_re.MULTILINE)
-
-    # Remove trailing sign-off / offer to help.
-    text = _re.sub(
-        r"\n(?:Let me know|Feel free|I hope|By consistently|If you'd like|I can).*$",
-        "", text, flags=_re.DOTALL | _re.IGNORECASE,
-    )
-
-    # Collapse excessive blank lines left by removals.
-    text = _re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
 
 
 def _profile_header_markdown(profile: dict) -> str:
@@ -171,14 +147,14 @@ class _Step:
         self._started: _dt.datetime | None = None
 
     def __enter__(self) -> "_Step":
-        self._started = _dt.datetime.utcnow()
+        self._started = _utcnow()
         return self
 
     def collect(self, chunk: str) -> None:
         self._parts.append(chunk)
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        finished = _dt.datetime.utcnow()
+        finished = _utcnow()
         self.output = "".join(self._parts)
         self.duration = round((finished - self._started).total_seconds(), 2)
         if exc_type is not None:
@@ -933,7 +909,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     console.print(f"[dim]Archived previous version to {v_folder.name}/[/dim]\n")
 
     step_logs: list[dict] = []
-    run_started = _dt.datetime.utcnow()
+    run_started = _utcnow()
 
     # ---- Refine resume ----
     refined_resume_body = ""
@@ -1066,7 +1042,7 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
                 encoding="utf-8",
             )
 
-    run_finished = _dt.datetime.utcnow()
+    run_finished = _utcnow()
 
     # Token usage display.
     try:
