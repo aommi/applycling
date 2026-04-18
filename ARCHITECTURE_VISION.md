@@ -144,17 +144,22 @@ The pipeline is initiated by many sources today and in the near future:
 
 ### OpenClaw integration
 
-OpenClaw is the agent (Telegram + multi-channel hub). applycling is the skill
-it invokes. The contract is:
+OpenClaw is the orchestrator (Telegram + multi-channel hub). applycling is a
+**skill within OpenClaw's skill library**. The contract is:
 
 1. OpenClaw receives a job URL (Telegram, email, web, etc.).
-2. OpenClaw calls `applycling.pipeline.add(job_url, ctx)` — either in-process
+2. OpenClaw calls `applycling.pipeline.run_add(job_url, ctx)` — either in-process
    or via `applycling process-queue` subprocess, depending on OpenClaw's
    isolation model.
 3. applycling streams `on_status` events (step started, step completed,
    checkpoint reached). OpenClaw forwards these to Telegram.
 4. applycling returns an `AddResult` (paths, run_log, artefacts). OpenClaw
    delivers the package + updates Notion.
+
+**Design alignment**: The SKILL.md format (YAML frontmatter + Markdown template)
+was chosen deliberately to match OpenClaw's skill format. This ensures applycling
+skills are directly portable to OpenClaw's skill library in future phases (T8+,
+when skills become context-switchable resolvers).
 
 This works today because `pipeline.py` is already presentation-free — there
 are no `rich.Console` calls inside it.
@@ -168,7 +173,7 @@ are no `rich.Console` calls inside it.
 **Engineering:**
 - `PipelineContext`, `PipelineStep`, `PipelineRun` in `applycling/pipeline.py`.
 - Step bookkeeping (timing, tokens, status, run_log) inherited by every step.
-- Linear composition: `pipeline.add(url, ctx)` runs all steps in order.
+- Linear composition: `pipeline.run_add(url, ctx)` runs all steps in order.
 
 **Product:**
 - `applycling add <url>` produces a full application package (resume, cover
@@ -306,7 +311,7 @@ confirm nothing blocks it.
 | Multi-tenancy | `PipelineContext` already encapsulates per-user data (`data_dir`, `output_dir`, `profile`, `resume`). Swap disk-backed storage for per-tenant DB rows. No pipeline changes. |
 | Per-user skill overrides | `~/.applycling/skills/` already overrides built-in `applycling/skills/`. On SaaS, resolve user skills from a DB before built-ins. Same precedence, different store. |
 | Provider keys per tenant | `llm.py` already takes provider/model per call. Inject per-tenant keys via `PipelineContext.config`. |
-| Long-running jobs | `pipeline.add()` is already stream-friendly via `on_status`. A web worker picks up queued jobs (same `queue.py` pattern used for OpenClaw). |
+| Long-running jobs | `pipeline.run_add()` is already stream-friendly via `on_status`. A web worker picks up queued jobs (same `queue.py` pattern used for OpenClaw). |
 | Observability | `run_log.json` is already structured. Ship it to a log sink on SaaS. |
 | Cost controls | Token counts are already tracked per step. Enforce tenant budgets in the pipeline wrapper. |
 | Skill sharing / marketplace | Skills are self-contained `SKILL.md` files. A marketplace is a registry + download into the user's skill dir. |
@@ -334,7 +339,7 @@ stays small.
 | Provider lock-in via `model_hint` | Low | Medium | `model_hint` is a hint, not a requirement. Runtime can override. Skills avoid provider-specific syntax. |
 | T11 quality gates become fragile validators | Medium | High | Validators live in `validators.py` (Python), not skills. Skills declare gate by name only. Validators are unit-tested. |
 | Computer-use agent submits wrong answer to a form (T11) | High if shipped naively | High | All T11 actions default to dry-run preview. Human confirms before first submission to a new site. Per-site trust list. |
-| OpenClaw and applycling evolve out of sync | Medium | Medium | Pin `pipeline.add()` signature; version with `applycling.__version__`. OpenClaw runs against a declared version. |
+| OpenClaw and applycling evolve out of sync | Medium | Medium | Pin `pipeline.run_add()` signature; version with `applycling.__version__`. OpenClaw runs against a declared version. |
 | Prompt regressions when skill is edited | High | Medium | `output/<run>/run_log.json` captures the full prompt. A regression test fixture compares against golden runs for each shipped skill. (Not yet built — candidate for T8 hardening.) |
 
 ---
@@ -368,7 +373,7 @@ stays small.
 **Ongoing hygiene:**
 - [ ] Golden-run regression tests for each shipped skill (locks T8/T9 changes
       from silently breaking output quality).
-- [ ] Version `pipeline.add()` signature; publish a changelog for OpenClaw.
+- [ ] Version `pipeline.run_add()` signature; publish a changelog for OpenClaw.
 
 ---
 
