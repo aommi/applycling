@@ -1,0 +1,10 @@
+{
+  "name": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "phone": "(555) 123-4567",
+  "location": "San Francisco, CA",
+  "linkedin": "linkedin.com/in/janedoe",
+  "github": "github.com/janedoe",
+  "voice_tone": "professional but personable, technical depth without jargon",
+  "never_fabricate": []
+}
