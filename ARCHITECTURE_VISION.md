@@ -144,33 +144,44 @@ The pipeline is initiated by many sources today and in the near future:
 
 ### OpenClaw integration
 
-OpenClaw is the orchestrator — a universal messaging gateway supporting 20+ platforms
-(WhatsApp, Telegram, Slack, Discord, Signal, and others). applycling is a
-**skill within OpenClaw's skill library**. The contract is:
+**[VERIFIED against OpenClaw README 2026-04-18]**
 
-1. OpenClaw receives a job URL (Telegram, email, web, etc.).
+OpenClaw is the orchestrator — a personal AI assistant (local-first) that functions
+as a universal messaging gateway. It supports 20+ platforms including WhatsApp,
+Telegram, Slack, Discord, Signal, and others. applycling is designed as **a skill
+within OpenClaw's skill library**.
+
+The integration contract:
+
+1. OpenClaw receives a job URL (via any supported messaging platform).
 2. OpenClaw calls `applycling.pipeline.run_add(job_url, ctx)` — either in-process
-   or via `applycling process-queue` subprocess, depending on OpenClaw's
-   isolation model.
+   or via `applycling process-queue` subprocess.
 3. applycling streams `on_status` events (step started, step completed,
-   checkpoint reached). OpenClaw forwards these to Telegram.
+   checkpoint reached). OpenClaw's Gateway manages these events and forwards
+   updates to the user's chosen channel.
 4. applycling returns an `AddResult` (paths, run_log, artefacts). OpenClaw
-   delivers the package + updates Notion.
-
-**Design alignment**: The SKILL.md format (YAML frontmatter + Markdown template)
-was designed to be compatible with OpenClaw's skill format (both use
-`<dir>/SKILL.md` convention). This enables applycling skills to be directly
-portable to OpenClaw's skill library in future phases (T8+, when skills
-become context-switchable resolvers). Field-for-field parity verification
-pending as OpenClaw's frontmatter spec evolves.
+   handles persistence (Notion, file storage, etc.) — applycling never knows
+   where files live.
 
 This works today because `pipeline.py` is already presentation-free — there
 are no `rich.Console` calls inside it.
 
-**Note on tool registration:** How applycling registers as a tool within OpenClaw's
-tool registry (discovery, invocation, capability advertisement) is currently
-undocumented. This should be clarified in T8+ when resolvers make applycling skills
-directly discoverable by OpenClaw (vs. manual integration today).
+**[ASPIRATIONAL — pending T8+ resolver work]**
+
+The SKILL.md format (YAML frontmatter + Markdown template) was designed to be
+compatible with OpenClaw's `~/.openclaw/workspace/skills/<skill>/SKILL.md`
+convention. Both systems use the same directory structure. In T8+, when applycling
+skills become context-switchable resolvers, this format alignment will enable
+direct portability to OpenClaw's skill library. Note: field-for-field frontmatter
+parity (e.g., `model_hint`, `temperature`) has not yet been verified against
+OpenClaw's published spec.
+
+**[UNDOCUMENTED]**
+
+How applycling registers as a tool within OpenClaw's tool registry (Gateway
+discovery, capability advertisement, invocation routing) is not yet documented.
+This is a manual integration today and will be clarified in T8+ when resolvers
+make skills directly discoverable.
 
 ---
 
