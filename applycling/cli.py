@@ -381,8 +381,87 @@ def setup() -> None:
                 console.print("[dim]You can add them later — run [bold]applycling setup[/bold] again, or edit [bold]data/stories.md[/bold] directly.[/dim]")
         return {}
 
+    def _step_applicant_profile():
+        console.print("\n[bold]Step 6 — Application details[/bold] [dim](used to pre-fill job form questions)[/dim]")
+        existing = storage.load_applicant_profile()
+
+        work_auth = Prompt.ask("Work authorisation (e.g. Canadian PR, needs H1B)", default=existing.get("work_auth", ""))
+        sponsorship_raw = _pick("Sponsorship needed?", ["no", "yes", _BACK], default="yes" if existing.get("sponsorship_needed") else "no")
+        if sponsorship_raw == _BACK: return _BACK
+        sponsorship_needed = sponsorship_raw == "yes"
+        visa_status = Prompt.ask("Visa status (optional free-text)", default=existing.get("visa_status", ""))
+
+        relocation_raw = _pick("Open to relocation?", ["no", "yes", _BACK], default="yes" if existing.get("relocation") else "no")
+        if relocation_raw == _BACK: return _BACK
+        relocation = relocation_raw == "yes"
+        relocation_cities: list[str] = existing.get("relocation_cities", [])
+        if relocation:
+            cities_default = ", ".join(relocation_cities)
+            cities_input = Prompt.ask("Preferred cities (comma-separated, optional)", default=cities_default)
+            relocation_cities = [c.strip() for c in cities_input.split(",") if c.strip()]
+
+        remote_preference = _pick(
+            "Remote preference",
+            ["flexible", "remote", "hybrid", "on-site", _BACK],
+            default=existing.get("remote_preference", "flexible"),
+        )
+        if remote_preference == _BACK: return _BACK
+
+        console.print("\n[bold]Compensation expectations[/bold] [dim](leave blank to skip)[/dim]")
+        existing_comp = existing.get("comp_expectation", {})
+        comp_min = Prompt.ask("Minimum (e.g. 120000)", default=str(existing_comp.get("min", ""))).strip()
+        comp_target = Prompt.ask("Target (e.g. 140000)", default=str(existing_comp.get("target", ""))).strip()
+        comp_currency = Prompt.ask("Currency", default=existing_comp.get("currency", "USD")).strip()
+        comp_expectation: dict = {}
+        if comp_min or comp_target:
+            comp_expectation = {"currency": comp_currency or "USD"}
+            if comp_min:
+                try: comp_expectation["min"] = int(comp_min)
+                except ValueError: comp_expectation["min"] = comp_min
+            if comp_target:
+                try: comp_expectation["target"] = int(comp_target)
+                except ValueError: comp_expectation["target"] = comp_target
+
+        notice_period = Prompt.ask("Notice period (e.g. 2 weeks, immediate)", default=existing.get("notice_period", ""))
+        earliest_start_date = Prompt.ask("Earliest start date (optional)", default=existing.get("earliest_start_date", ""))
+
+        console.print("\n[bold]EEOC / demographics[/bold] [dim](entirely optional — only used for form auto-fill)[/dim]")
+        demo_choice = _pick("Provide demographic info?", ["skip", "yes", _BACK], default="skip")
+        if demo_choice == _BACK: return _BACK
+        demographics: dict = existing.get("demographics", {})
+        if demo_choice == "yes":
+            demographics = {
+                "gender":           Prompt.ask("Gender (optional)", default=demographics.get("gender", "")),
+                "race_ethnicity":   Prompt.ask("Race/ethnicity (optional)", default=demographics.get("race_ethnicity", "")),
+                "disability_status":Prompt.ask("Disability status (optional)", default=demographics.get("disability_status", "")),
+                "veteran_status":   Prompt.ask("Veteran status (optional)", default=demographics.get("veteran_status", "")),
+            }
+            demographics = {k: v for k, v in demographics.items() if v}
+
+        back = _pick("Continue?", ["continue", _BACK], default="continue")
+        if back == _BACK: return _BACK
+
+        result: dict = {
+            "work_auth": work_auth,
+            "sponsorship_needed": sponsorship_needed,
+            "relocation": relocation,
+            "remote_preference": remote_preference,
+            "notice_period": notice_period,
+        }
+        if visa_status:
+            result["visa_status"] = visa_status
+        if relocation_cities:
+            result["relocation_cities"] = relocation_cities
+        if comp_expectation:
+            result["comp_expectation"] = comp_expectation
+        if earliest_start_date:
+            result["earliest_start_date"] = earliest_start_date
+        if demographics:
+            result["demographics"] = demographics
+        return result
+
     def _step_linkedin():
-        console.print("\n[bold]Step 6 — LinkedIn profile[/bold] [dim](optional, zero tokens)[/dim]")
+        console.print("\n[bold]Step 7 — LinkedIn profile[/bold] [dim](optional, zero tokens)[/dim]")
         console.print("[dim]Export as PDF from LinkedIn (Me → Save to PDF) and provide the path.[/dim]")
         existing_linkedin = storage.load_linkedin_profile()
         if existing_linkedin:
@@ -425,7 +504,7 @@ def setup() -> None:
     profile_data = None
     output_settings = None
 
-    while step <= 5:
+    while step <= 6:
         if step == 0:
             result = _step_provider_model(prev_provider=provider, prev_model=chosen_model)
             if result == _BACK:
@@ -465,6 +544,13 @@ def setup() -> None:
             else:
                 step += 1
         elif step == 5:
+            result = _step_applicant_profile()
+            if result == _BACK:
+                step -= 1
+            else:
+                storage.save_applicant_profile(result)
+                step += 1
+        elif step == 6:
             result = _step_linkedin()
             if result == _BACK:
                 step -= 1
