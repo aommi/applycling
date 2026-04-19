@@ -2028,7 +2028,6 @@ def telegram_add(url: str, model_arg: str, provider_arg: str) -> None:
             stdout=log_file,
             stderr=log_file,
             start_new_session=True,
-            env={**os.environ},
         )
 
     console.print(f"[green]Queued.[/green] Processing in background — check Telegram for updates.")
@@ -2058,6 +2057,12 @@ def telegram_run(url: str, model_arg: str, provider_arg: str) -> None:
             provider=provider_arg or None,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()  # captured by worker log
+        try:
+            notifier.notify(f"❌ Worker crashed.\nError: {e}")
+        except Exception:
+            pass
         sys.exit(1)
 
 

@@ -20,8 +20,8 @@ class TelegramNotifier:
         self._chat_id = chat_id
 
     def notify(self, text: str) -> None:
-        """Send a plain-text message (HTML parse mode)."""
-        self._post("sendMessage", {"chat_id": self._chat_id, "text": text, "parse_mode": "HTML"})
+        """Send a plain-text message."""
+        self._post("sendMessage", {"chat_id": self._chat_id, "text": text})
 
     def send_document(self, path: Path, caption: str = "") -> None:
         """Upload a file to the chat."""

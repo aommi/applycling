@@ -1029,7 +1029,7 @@ def run_add_notify(
             want_summary=True,
             render_pdf=True,
         )
-    except LLMError as e:
+    except llm.LLMError as e:
         _safe(f"❌ Pipeline failed.\nError: {e}")
         raise
 
