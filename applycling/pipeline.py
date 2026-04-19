@@ -926,3 +926,163 @@ def persist_add_result(
     result.job = dataclasses.replace(result.job, package_folder=str(folder))
 
     return folder
+
+
+def run_add_notify(
+    url: str,
+    notifier: "Any",
+    *,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    output_root: Optional[Path] = None,
+) -> Path:
+    """Run the full add pipeline and deliver results via any Notifier.
+
+    This is the channel-agnostic worker. It scrapes the URL, runs the pipeline,
+    persists artefacts, sends PDFs, and sends a completion summary — all via the
+    notifier's ``notify`` / ``send_document`` interface.
+
+    Args:
+        url: Job posting URL to scrape and process.
+        notifier: Any object satisfying the Notifier protocol (TelegramNotifier,
+                  DiscordNotifier, etc.).
+        model: Override LLM model from config.
+        provider: Override LLM provider from config.
+        output_root: Override output directory.
+
+    Returns:
+        Path to the assembled package folder.
+    """
+    from . import scraper, storage, tracker
+
+    def _safe(text: str) -> None:
+        try:
+            notifier.notify(text)
+        except Exception:
+            pass
+
+    # Load config
+    cfg = storage.load_config()
+    final_model = model or cfg.get("model")
+    final_provider = provider or cfg.get("provider", "ollama")
+    out_root = output_root or (Path(cfg.get("output_dir", "./output")).expanduser())
+
+    _safe(f"⚙️ Queued: {url}\nProcessing will begin shortly…")
+
+    # Scrape
+    _safe("📄 Scraping job description…")
+    try:
+        posting, _ = scraper.fetch_job_posting(url, final_model, provider=final_provider)
+    except Exception as e:
+        _safe(f"❌ Failed to scrape job URL.\nError: {e}")
+        raise
+
+    title, company = posting.title, posting.company
+    _safe(f"✅ Fetched: {title} @ {company}")
+
+    # Build context
+    profile = storage.load_profile() or {}
+    stories = storage.load_stories() or ""
+    linkedin_profile = storage.load_linkedin_profile() if cfg.get("use_linkedin_profile", True) else None
+
+    ctx = PipelineContext(
+        data_dir=storage.DATA_DIR,
+        output_dir=out_root,
+        profile=profile,
+        resume=storage.load_resume(),
+        stories=stories,
+        linkedin_profile=linkedin_profile,
+        config=cfg,
+        model=final_model,
+        provider=final_provider,
+        tracker_store=tracker.get_store(),
+    )
+
+    _STATUS_MAP = {
+        "Running role intel": "🎯 Analysing role…",
+        "Tailoring resume": "✍️ Tailoring resume…",
+        "Generating profile summary": "👤 Writing profile summary…",
+        "Formatting resume": "📝 Formatting resume…",
+        "Generating positioning brief": "🗺️ Positioning brief…",
+        "Writing cover letter": "💌 Writing cover letter…",
+        "Drafting email and InMail": "📧 Drafting email…",
+        "Generating fit summary": "📊 Fit summary…",
+    }
+
+    def _on_status(msg: str) -> None:
+        for key, emoji_msg in _STATUS_MAP.items():
+            if key.lower() in msg.lower():
+                _safe(emoji_msg)
+                return
+
+    # Run pipeline
+    try:
+        result = run_add(
+            job_url=url,
+            job_title=title,
+            job_company=company,
+            job_description=posting.description,
+            context=ctx,
+            company_url=posting.company_url or None,
+            on_status=_on_status,
+            on_gate=None,
+            want_summary=True,
+            render_pdf=True,
+        )
+    except llm.LLMError as e:
+        _safe(f"❌ Pipeline failed.\nError: {e}")
+        raise
+
+    # Persist
+    _safe("📦 Assembling package…")
+    try:
+        folder = persist_add_result(
+            result,
+            output_root=out_root,
+            generate_docx=cfg.get("generate_docx", False),
+            generate_run_log=cfg.get("generate_run_log", True),
+        )
+        try:
+            ctx.tracker_store.update_job(result.job.id, package_folder=str(folder))
+        except Exception:
+            pass
+    except Exception as e:
+        _safe(f"❌ Package assembly failed.\nError: {e}")
+        raise
+
+    # Send documents
+    for pdf_name, caption in [
+        ("resume.pdf", f"Resume — {title} @ {company}"),
+        ("cover_letter.pdf", f"Cover Letter — {title} @ {company}"),
+    ]:
+        pdf_path = folder / pdf_name
+        if pdf_path.exists():
+            try:
+                notifier.send_document(pdf_path, caption=caption)
+            except Exception as e:
+                _safe(f"⚠️ Could not send {pdf_name}: {e}")
+
+    # Completion summary
+    fit = (result.fit_summary or "").strip()
+    lines = [
+        f"✅ Done! {title} @ {company}",
+        f"Job ID: {result.job.id}",
+        f"📁 {folder}",
+    ]
+    if fit:
+        lines.append(f"\n📊 Fit summary:\n{fit}")
+
+    # Notion DB link if configured
+    try:
+        notion_path = storage.DATA_DIR / "notion.json"
+        if notion_path.exists():
+            import json as _json
+            nc = _json.loads(notion_path.read_text(encoding="utf-8"))
+            db_id = nc.get("database_id", "")
+            if db_id:
+                lines.append(f"\n🔗 Notion: https://notion.so/{db_id.replace('-', '')}")
+    except Exception:
+        pass
+
+    _safe("\n".join(lines))
+    return folder
