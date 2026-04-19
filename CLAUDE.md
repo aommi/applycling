@@ -31,7 +31,7 @@ applycling/
 │   │   ├── refine_email_inmail/SKILL.md
 │   │   └── pdf_resume_cleanup/SKILL.md
 │   ├── scraper.py       # Job posting scraper (LinkedIn, JSON-LD, LLM fallback)
-│   ├── storage.py       # File-based config/resume/profile/stories storage
+│   ├── storage.py       # File-based config/resume/profile/stories/applicant_profile storage
 │   ├── render.py        # Markdown → HTML → PDF (Playwright/Chromium)
 │   ├── package.py       # Assembles output folder + run_log.json
 │   ├── tracker/         # TrackerStore abstraction (Notion + SQLite)
@@ -41,11 +41,12 @@ applycling/
 │   ├── notion_connect.py  # Interactive Notion setup wizard
 │   └── pdf_import.py    # PDF → Markdown resume import
 ├── data/
-│   ├── config.json      # provider, model, review_mode, generate_docx, generate_run_log
-│   ├── profile.json     # name, email, phone, location, linkedin, github, voice_tone, never_fabricate
-│   ├── resume.md        # base resume (never modified by LLM)
-│   ├── stories.md       # optional extra experiences for tailoring
-│   └── notion.json      # Notion credentials (if connected)
+│   ├── config.json               # provider, model, review_mode, generate_docx, generate_run_log
+│   ├── profile.json              # name, email, phone, location, linkedin, github, voice_tone, never_fabricate
+│   ├── applicant_profile.json    # work_auth, sponsorship, relocation, comp, notice period, EEOC (gitignored)
+│   ├── resume.md                 # base resume (never modified by LLM)
+│   ├── stories.md                # optional extra experiences for tailoring
+│   └── notion.json               # Notion credentials (if connected)
 └── output/
     └── {company}-{title}-{date}[-{model}]/   # one folder per run
         ├── resume.md / .html / .pdf

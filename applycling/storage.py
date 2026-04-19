@@ -15,6 +15,7 @@ CONFIG_PATH = DATA_DIR / "config.json"
 PROFILE_PATH = DATA_DIR / "profile.json"
 STORIES_PATH = DATA_DIR / "stories.md"
 LINKEDIN_PROFILE_PATH = DATA_DIR / "linkedin_profile.md"
+APPLICANT_PROFILE_PATH = DATA_DIR / "applicant_profile.json"
 
 
 def _ensure_dirs() -> None:
@@ -140,6 +141,25 @@ def save_linkedin_profile(text: str) -> None:
     """Write LinkedIn profile text to data/linkedin_profile.md."""
     _ensure_dirs()
     LINKEDIN_PROFILE_PATH.write_text(text.strip(), encoding="utf-8")
+
+
+def load_applicant_profile() -> dict[str, Any]:
+    """Return applicant profile, or empty dict when file is missing."""
+    if not APPLICANT_PROFILE_PATH.exists():
+        return {}
+    return json.loads(APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))
+
+
+def save_applicant_profile(profile: dict[str, Any]) -> None:
+    _ensure_dirs()
+    existing: dict[str, Any] = {}
+    if APPLICANT_PROFILE_PATH.exists():
+        try:
+            existing = json.loads(APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    existing.update(profile)
+    APPLICANT_PROFILE_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
 
 def update_job_status(job_id: str, status: str) -> dict[str, Any]:
