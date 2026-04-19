@@ -16,6 +16,7 @@ PROFILE_PATH = DATA_DIR / "profile.json"
 STORIES_PATH = DATA_DIR / "stories.md"
 LINKEDIN_PROFILE_PATH = DATA_DIR / "linkedin_profile.md"
 APPLICANT_PROFILE_PATH = DATA_DIR / "applicant_profile.json"
+TELEGRAM_CONFIG_PATH = DATA_DIR / "telegram.json"
 
 
 def _ensure_dirs() -> None:
@@ -160,6 +161,21 @@ def save_applicant_profile(profile: dict[str, Any]) -> None:
             pass
     existing.update(profile)
     APPLICANT_PROFILE_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+
+def load_telegram_config() -> dict[str, Any]:
+    """Return Telegram config dict with 'bot_token' and 'chat_id' keys."""
+    if not TELEGRAM_CONFIG_PATH.exists():
+        raise StorageError("Telegram not configured. Run: applycling telegram setup")
+    return json.loads(TELEGRAM_CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def save_telegram_config(bot_token: str, chat_id: str) -> None:
+    _ensure_dirs()
+    TELEGRAM_CONFIG_PATH.write_text(
+        json.dumps({"bot_token": bot_token, "chat_id": chat_id}, indent=2),
+        encoding="utf-8",
+    )
 
 
 def update_job_status(job_id: str, status: str) -> dict[str, Any]:

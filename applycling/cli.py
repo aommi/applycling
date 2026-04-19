@@ -1960,5 +1960,106 @@ def process_queue(queue_id: str) -> None:
         sys.exit(1)
 
 
+# ---------- telegram ----------
+
+
+@main.group()
+def telegram() -> None:
+    """Telegram integration: setup and submit jobs from your phone."""
+
+
+@telegram.command("setup")
+def telegram_setup() -> None:
+    """Configure your Telegram bot token and chat ID."""
+    console.print("[bold]Telegram setup[/bold]")
+    console.print(
+        "\n[dim]You need a Telegram bot token and your chat ID.\n"
+        "Create a bot via @BotFather and get its token.\n"
+        "Send a message to the bot, then visit:\n"
+        "  https://api.telegram.org/bot<TOKEN>/getUpdates\n"
+        "to find your chat_id.[/dim]\n"
+    )
+    token = Prompt.ask("Bot token (from @BotFather)")
+    chat_id = Prompt.ask("Your chat ID")
+    storage.save_telegram_config(token.strip(), chat_id.strip())
+    console.print("[green]Telegram config saved.[/green]")
+
+    # Quick connectivity test
+    from .telegram_notify import TelegramNotifier, TelegramError
+    try:
+        notifier = TelegramNotifier(token.strip(), chat_id.strip())
+        notifier.notify("✅ applycling connected! Send me a job URL to get started.")
+        console.print("[green]Test message sent — check Telegram.[/green]")
+    except TelegramError as e:
+        console.print(f"[yellow]Config saved but test message failed:[/yellow] {e}")
+
+
+@telegram.command("add")
+@click.argument("url")
+@click.option("--model", "model_arg", default="", help="Override model from config.")
+@click.option("--provider", "provider_arg", default="", help="Override provider from config.")
+def telegram_add(url: str, model_arg: str, provider_arg: str) -> None:
+    """Queue a job URL for background processing with Telegram status updates."""
+    try:
+        tg_cfg = storage.load_telegram_config()
+    except storage.StorageError:
+        console.print("[red]Telegram not configured.[/red] Run: applycling telegram setup")
+        sys.exit(1)
+
+    cfg = _require_config()
+    _require_resume()
+
+    # Build args for the background worker
+    import subprocess
+    worker_cmd = [sys.executable, "-m", "applycling.cli", "telegram", "_run", url]
+    if model_arg:
+        worker_cmd += ["--model", model_arg]
+    if provider_arg:
+        worker_cmd += ["--provider", provider_arg]
+
+    import os
+    log_dir = Path(cfg.get("output_dir", "./output")).expanduser()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "telegram_worker.log"
+
+    with open(log_path, "a") as log_file:
+        subprocess.Popen(
+            worker_cmd,
+            stdout=log_file,
+            stderr=log_file,
+            start_new_session=True,
+            env={**os.environ},
+        )
+
+    console.print(f"[green]Queued.[/green] Processing in background — check Telegram for updates.")
+    console.print(f"[dim]Worker log: {log_path}[/dim]")
+
+
+@telegram.command("_run", hidden=True)
+@click.argument("url")
+@click.option("--model", "model_arg", default="", help="Override model from config.")
+@click.option("--provider", "provider_arg", default="", help="Override provider from config.")
+def telegram_run(url: str, model_arg: str, provider_arg: str) -> None:
+    """Internal: run the full pipeline and deliver results via Telegram."""
+    from . import pipeline as _pipeline
+    from .telegram_notify import TelegramNotifier
+
+    try:
+        tg_cfg = storage.load_telegram_config()
+    except storage.StorageError as e:
+        sys.exit(f"Config error: {e}")
+
+    notifier = TelegramNotifier(tg_cfg["bot_token"], tg_cfg["chat_id"])
+    try:
+        _pipeline.run_add_notify(
+            url,
+            notifier,
+            model=model_arg or None,
+            provider=provider_arg or None,
+        )
+    except Exception as e:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
