@@ -1,9 +1,10 @@
 #!/bin/bash
-
 # stop.sh — fires after each response
 # Goal: remind agent to inspect diff and propose memory updates if significant
+set -euo pipefail
 
-CHANGED_FILES=$(git diff --name-only 2>/dev/null)
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+CHANGED_FILES="$(git -C "$REPO_ROOT" diff HEAD --name-only 2>/dev/null || true)"
 
 if [ -n "$CHANGED_FILES" ]; then
   echo "Memory check — inspect diff and propose updates if significant:"

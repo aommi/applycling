@@ -1,6 +1,18 @@
 {
   "hooks": {
-    "UserPromptSubmit": "cat hooks/preprompt.txt",
-    "Stop": "bash hooks/stop.sh"
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "cat hooks/preprompt.txt" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash hooks/stop.sh" }
+        ]
+      }
+    ]
   }
 }

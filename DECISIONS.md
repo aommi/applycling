@@ -27,5 +27,3 @@ Append-only architectural decisions log. To reverse a prior decision, append a n
 - No memory system (context lost every session, re-explanation tax)
 
 **Affects:** CLAUDE.md, hooks/, memory/, dev/
-
----

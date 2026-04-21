@@ -2,14 +2,11 @@
 
 ## Current Focus
 
-Memory system implementation — creating file structure, hooks, and CLAUDE.md integration per operational manual.
+(none — memory system landed; awaiting next task)
 
 ## In Progress
 
-- Creating memory files (semantic.md, working.md, DECISIONS.md)
-- Creating hooks (preprompt.txt, stop.sh)
-- Updating CLAUDE.md with memory system instructions
-- Registering hooks in settings.json
+(none)
 
 ## Blocked
 
@@ -17,6 +14,4 @@ Memory system implementation — creating file structure, hooks, and CLAUDE.md i
 
 ## Next Steps
 
-- Commit memory system files
-- Create PR for review
-- Test hook execution on next session
+- T8 is the likely next focus: per-skill `model_hint` / `temperature` wiring and the context-based resolver layer (see `ARCHITECTURE_VISION.md` + semantic.md).
