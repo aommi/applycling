@@ -396,7 +396,65 @@ stays small.
 
 ---
 
-## 10. What This Document Is Not
+## 10. Adding a New Pipeline Step
+
+All pipeline steps use the `_Step` context manager in `cli.py`, which handles timing, logging, token counting, and status automatically.
+
+**Step 1 — Create `applycling/skills/<name>/SKILL.md`:**
+
+```markdown
+---
+name: my_step
+description: One-line description
+inputs:
+  - input_key_one
+  - input_key_two
+output_file: my_step.md   # omit if the step produces no output file
+---
+You are an expert at...
+
+=== INPUT ONE ===
+{input_key_one}
+
+=== INPUT TWO ===
+{input_key_two}
+```
+
+**Step 2 — Add the function to `llm.py`:**
+
+```python
+from .skills import load_skill
+
+def my_step(input_key_one: str, input_key_two: str, model: str, provider: str = "ollama") -> Iterator[str]:
+    prompt = load_skill("my_step").render(input_key_one=input_key_one, input_key_two=input_key_two)
+    yield from _stream_chat(model, prompt, provider)
+```
+
+**Step 3 — Use `_Step` in `cli.py` or `PipelineStep` in `pipeline.py`:**
+
+```python
+_s = _Step("my_step", step_logs, output_file="my_step.md")
+_s.prompt_text = load_skill("my_step").render(input_key_one=..., input_key_two=...)
+try:
+    with _s, console.status("[cyan]Doing the thing...[/cyan]", spinner="dots"):
+        for chunk in llm.my_step(..., provider=provider):
+            _s.collect(chunk)
+except llm.LLMError as e:
+    console.print(f"[red]{e}[/red]")
+    sys.exit(1)
+result = _clean_llm_output(_s.output)
+```
+
+Notes:
+- `prompt_text` must be set before entering the `with` block.
+- `_Step.__exit__` auto-appends to `step_logs` — no manual append needed.
+- Status is set to `"ok"`, `"skipped"`, or `"failed"` automatically.
+- Use `[red]` + `sys.exit(1)` for critical steps; `[yellow]` + `continue` for optional steps.
+- Update this document and `memory/semantic.md` (Active Areas → ship it, Core Systems → add it) when the step ships.
+
+---
+
+## 11. What This Document Is Not
 
 - Not a user guide — see `README.md`.
 - Not a sprint plan — see `PERSONAL_USE_PLAN.md`.
