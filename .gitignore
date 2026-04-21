@@ -29,7 +29,8 @@ output/*
 !output/.gitkeep
 
 # Local Claude Code tooling (agent memory, agent definitions, worktrees, etc.)
-.claude/
+.claude/worktrees/
+.claude/projects/
 
 # Stray screenshots / image dumps — commit images explicitly under docs/ if intended
 images/

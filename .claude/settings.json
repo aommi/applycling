@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "UserPromptSubmit": "cat hooks/preprompt.txt",
+    "Stop": "bash hooks/stop.sh"
+  }
+}

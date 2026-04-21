@@ -1,0 +1,14 @@
+Before answering:
+
+1. Read memory/working.md for current state (semantic.md was loaded at session start)
+2. If your reasoning feels uncertain or inconsistent with prior context, re-read memory/semantic.md
+3. Only load /dev/[task]/* if this turn involves that specific task
+4. Before calling an MCP tool for information, check if it's already in semantic.md or context.md
+5. Keep context minimal and relevant
+6. If the user's message describes work outside the current working.md focus, ask:
+   "This looks like a different task — should I archive the current state first?"
+7. If context is missing:
+   a. Check relevant dev/[task]/context.md
+   b. If still unclear, state the assumption you are making explicitly
+   c. Ask the user to confirm the assumption before proceeding with irreversible work
+   d. Once confirmed, log the answer in dev/[task]/context.md under Assumptions
