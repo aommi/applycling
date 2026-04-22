@@ -41,6 +41,33 @@ Short version:
 
 ---
 
+## Switching agents
+
+[CHANGED: new section — added when Codex, Windsurf, OpenClaw, and Hermes support was introduced.]
+
+The memory files (`memory/semantic.md`, `memory/working.md`, `DECISIONS.md`, `dev/`) are
+portable. Only the entry-point file and hook config differ per agent. To switch:
+
+```bash
+python .agent/generate.py <agent>
+```
+
+| Agent | Command | Entry-point file | Hook support |
+|---|---|---|---|
+| Claude Code | `claude-code` | `CLAUDE.md` + `.claude/settings.json` | Full (preprompt + stop) |
+| Codex | `codex` | `AGENTS.md` | None |
+| Hermes | `hermes` | `AGENTS.md` (superset) | None |
+| Cursor | `cursor` | `.cursor/rules/memory.mdc` | None |
+| Gemini CLI | `gemini-cli` | `GEMINI.md` + `.gemini/context.md` | None |
+| Windsurf | `windsurf` | `.windsurfrules` | None |
+| OpenClaw | `openclaw` | `.openclaw-system.md` | None |
+
+Run `all` to generate every agent's config at once. On agents without hook support,
+the memory loading rules are embedded directly in the entry-point file — the agent
+reads them at session start automatically.
+
+---
+
 ## The daily workflow
 
 ### Starting your day

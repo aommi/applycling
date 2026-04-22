@@ -13,7 +13,13 @@ Where <agent> is one of:
     - codex        : Generates AGENTS.md (hooks not supported)
     - cursor       : Generates .cursor/rules/memory.mdc with auto-attach
     - gemini-cli   : Generates GEMINI.md + .gemini/context.md
-    - all          : Generates all of the above
+    - windsurf     : Generates .windsurfrules (no hook support)
+    - openclaw     : Generates .openclaw-system.md (system prompt include)
+    - hermes       : Generates AGENTS.md — superset of codex, also readable by Codex
+    - all          : Generates all of the above (hermes runs after codex and wins)
+
+NOTE: codex and hermes both write AGENTS.md. The hermes version is a superset
+(adds agentskills.io note). If you use both agents, run `hermes` or `all`.
 """
 
 import sys
@@ -26,6 +32,9 @@ from adapters.claude_code import generate as generate_claude_code
 from adapters.codex import generate as generate_codex
 from adapters.cursor import generate as generate_cursor
 from adapters.gemini_cli import generate as generate_gemini_cli
+from adapters.windsurf import generate as generate_windsurf
+from adapters.openclaw import generate as generate_openclaw
+from adapters.hermes import generate as generate_hermes
 
 
 AGENTS = {
@@ -33,6 +42,10 @@ AGENTS = {
     "codex": generate_codex,
     "cursor": generate_cursor,
     "gemini-cli": generate_gemini_cli,
+    "windsurf": generate_windsurf,
+    "openclaw": generate_openclaw,
+    # hermes runs after codex in 'all' mode so the hermes AGENTS.md wins
+    "hermes": generate_hermes,
 }
 
 

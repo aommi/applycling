@@ -1,4 +1,25 @@
-# Project Context — applycling
+"""
+Hermes Agent Adapter — generates AGENTS.md (superset of the Codex adapter)
+
+Hermes (Nous Research) reads AGENTS.md as workspace-level context and supports
+the agentskills.io skill frontmatter standard natively via its /skills browser.
+
+NOTE: Both this adapter and the Codex adapter write AGENTS.md. This version is
+a superset — it adds the agentskills.io note and optional Hermes memory mirroring.
+Codex reads the result fine. If you run both agents, use this adapter (or run
+`generate.py all`, which runs codex then hermes so hermes wins).
+"""
+from pathlib import Path
+
+
+def generate(project_root: Path):
+    """Generate Hermes Agent configuration."""
+
+    preprompt_path = project_root / ".agent" / "templates" / "preprompt.txt"
+    with open(preprompt_path, "r") as f:
+        preprompt_content = f.read()
+
+    agents_md_content = f"""# Project Context — applycling
 
 **applycling** is a CLI tool that turns a job URL into a complete application package:
 tailored resume, cover letter, positioning brief, email/InMail, and fit summary.
@@ -16,20 +37,7 @@ Read `memory/semantic.md` ONCE to load project context before answering.
 
 ### On Every Turn
 
-Before answering:
-
-1. Read memory/working.md for current state (semantic.md was loaded at session start)
-2. If your reasoning feels uncertain or inconsistent with prior context, re-read memory/semantic.md
-3. Only load /dev/[task]/* if this turn involves that specific task
-4. Before calling any MCP tool for information, first check if it's already in semantic.md or context.md — local files are cheaper than remote MCP queries
-5. Keep context minimal and relevant
-6. If the user's message describes work outside the current working.md focus, ask:
-   "This looks like a different task — should I archive the current state first?"
-7. If context is missing:
-   a. Check relevant dev/[task]/context.md
-   b. If still unclear, state the assumption you are making explicitly
-   c. Ask the user to confirm the assumption before proceeding with irreversible work
-   d. Once confirmed, log the answer in dev/[task]/context.md under Assumptions
+{preprompt_content.strip()}
 
 ---
 
@@ -52,7 +60,7 @@ output_file: result.md
 model_hint: claude-3-5-haiku-20241022  # optional
 temperature: 0.3  # optional
 ---
-Prompt body using {input_key} via str.format.
+Prompt body using {{input_key}} via str.format.
 ```
 
 Loader: `from applycling.skills import load_skill` → `load_skill(name).render(**kwargs)`
@@ -94,7 +102,7 @@ Use the `TrackerStore` interface only — never call either store directly from 
 - `_clean_llm_output()` strips code fences from all LLM output — always apply it
 - Profile header: `## PROFILE` (all caps)
 - `storage.save_config()` merges — don't call with partial keys
-- Skill templates use `str.format` — escape braces with `{{` and `}}`
+- Skill templates use `str.format` — escape braces with `{{{{` and `}}}}`
 - Conditional logic stays in Python, not skill templates
 - All API keys in `.env` (gitignored)
 
@@ -112,3 +120,14 @@ ln -s memory/semantic.md MEMORY.md
 ```
 
 The project's `memory/semantic.md` remains the single source of truth.
+"""
+
+    with open(project_root / "AGENTS.md", "w") as f:
+        f.write(agents_md_content)
+
+    return (
+        "Hermes configuration generated:\n"
+        "  - AGENTS.md (superset — also readable by Codex)\n\n"
+        "Note: Hermes reads AGENTS.md natively. Skills in applycling/skills/ follow\n"
+        "the agentskills.io frontmatter shape and are browsable via Hermes's /skills."
+    )
