@@ -2,11 +2,11 @@
 
 ## Current Focus
 
-(none — memory system landed; awaiting next task)
+Agent agnosticism — adapter system for multi-agent memory support
 
 ## In Progress
 
-(none)
+- `.agent/` adapter system created with generators for Claude Code, Codex, Cursor, Gemini CLI
 
 ## Blocked
 
@@ -14,4 +14,5 @@
 
 ## Next Steps
 
-- T8 is the likely next focus: per-skill `model_hint` / `temperature` wiring and the context-based resolver layer (see `ARCHITECTURE_VISION.md` + semantic.md).
+- Test `python .agent/generate.py all` to verify all adapters work
+- Create PR for user review

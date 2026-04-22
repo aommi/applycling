@@ -7,6 +7,7 @@
 - **LLM routing:** `applycling/llm.py` — ollama, anthropic, google, openai providers. API keys in `.env` (gitignored), loaded via `python-dotenv`.
 - **Tracker abstraction:** `applycling/tracker/` — `get_store()` auto-detects Notion (`data/notion.json`) or falls back to SQLite. Never call stores directly from CLI.
 - **Renderer:** `applycling/render.py` — markdown → HTML → PDF via Playwright/Chromium. `h3 em { float: right }` right-aligns dates.
+- **Agent agnosticism:** `.agent/generate.py <agent>` generates entry-point files + hooks for 7 agents: Claude Code, Codex, Hermes, Cursor, Gemini CLI, Windsurf, OpenClaw. Memory files (`memory/`, `dev/`, `DECISIONS.md`) are portable across all agents.
 
 ## Key Patterns
 

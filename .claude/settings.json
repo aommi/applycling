@@ -3,14 +3,20 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "cat hooks/preprompt.txt" }
+          {
+            "type": "command",
+            "command": "cat hooks/preprompt.txt"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "bash hooks/stop.sh" }
+          {
+            "type": "command",
+            "command": "bash hooks/stop.sh"
+          }
         ]
       }
     ]

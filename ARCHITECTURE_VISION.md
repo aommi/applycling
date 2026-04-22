@@ -454,7 +454,39 @@ Notes:
 
 ---
 
-## 11. What This Document Is Not
+## 11. Agent Agnosticism
+
+The memory system (`memory/semantic.md`, `memory/working.md`, `dev/[task]/`, `DECISIONS.md`) is portable across AI coding agents. The adapter layer (`.agent/`) generates the right entry-point file and hook configuration for each tool.
+
+**Supported agents:**
+- **Claude Code**: `CLAUDE.md` + `.claude/settings.json` hooks (full hook support)
+- **Codex**: `AGENTS.md` (hooks not supported — relies on agent reading entry-point)
+- **Hermes** (Nous Research): `AGENTS.md` superset of Codex; agentskills.io-compatible
+- **Cursor**: `.cursor/rules/memory.mdc` with `alwaysApply: true`
+- **Gemini CLI**: `GEMINI.md` + `.gemini/context.md`
+- **Windsurf**: `.windsurfrules` (instruction-driven, no hook support)
+- **OpenClaw**: `.openclaw-system.md` (system prompt include — paste or `system_prompt_file`)
+
+**Usage:**
+```bash
+python .agent/generate.py <agent>   # or 'all' for all agents
+```
+
+**What stays portable:**
+- `memory/semantic.md` — distilled project knowledge
+- `memory/working.md` — live task state
+- `DECISIONS.md` — append-only log
+- `dev/[task]/` — task context
+
+**What changes per agent:**
+- Entry-point file name/format (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/*.mdc`)
+- Hook mechanism (Claude Code hooks, Cursor auto-attach, or entry-point instructions only)
+
+See `.agent/README.md` for details.
+
+---
+
+## 12. What This Document Is Not
 
 - Not a user guide — see `README.md`.
 - Not a sprint plan — see `PERSONAL_USE_PLAN.md`.
