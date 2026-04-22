@@ -1,6 +1,6 @@
 # Memory System
 
-Persistent, file-based memory + Claude Code hooks. Long-form reference lives in `operational-manual.md`; this file is the in-repo crib.
+Persistent, file-based memory + Claude Code hooks. Long-form reference lives in `OPERATIONAL_MANUAL.md`; this file is the in-repo crib.
 
 ## Setup (first time)
 

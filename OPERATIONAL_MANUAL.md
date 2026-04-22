@@ -1,0 +1,308 @@
+# Operational Manual — Daily Use
+
+How to work with the memory system day in, day out. Written for solo coding projects.
+
+> **In-repo version of the original operational manual.** Changes from the original are noted inline with `[CHANGED]` markers. Quick-start hook setup lives in `MEMORY_SYSTEM.md`.
+
+---
+
+## What the system does, in one paragraph
+
+On session start, the agent reads `memory/semantic.md` once — the distilled, long-lived knowledge about your project: architecture, patterns, decisions, gotchas. On every turn, it reads `memory/working.md` to know what you're actively doing right now. If the agent's reasoning starts to drift mid-session, it re-reads `semantic.md` to self-correct without waiting for you to notice. When doing deep work on a feature, it also loads `dev/[task]/` files. After every response, a hook prompts the agent to inspect the diff. If something significant happened, it asks about intent if the diff doesn't explain itself, then drafts a proposed memory update and waits for your approval before writing. You commit your code normally; the memory keeps itself current with one lightweight checkpoint per session.
+
+---
+
+## The files and what lives in each
+
+| File | Purpose | Size limit | Who writes | Approval needed? |
+|---|---|---|---|---|
+| `CLAUDE.md` | Rules-only constitution — startup behavior + coding rules [CHANGED: slimmed to 77 lines; reference content moved to ARCHITECTURE_VISION.md] | ≤500 lines | You (manual) | N/A |
+| `MEMORY_SYSTEM.md` | In-repo crib — hook setup, disable steps, 6-bullet daily guide, example workflow [CHANGED: new file, not in original] | — | You (manual) | N/A |
+| `memory/semantic.md` | Distilled long-lived project knowledge | **≤500 lines** [CHANGED: lines, not tokens] | Agent (proposed) | **Yes** |
+| `memory/working.md` | Live task state — what's happening right now | **≤300 lines** [CHANGED: lines, not tokens] | Agent (automatic) | No |
+| `DECISIONS.md` | Append-only architectural decisions log | No limit | Agent (proposed) | **Yes** |
+| `dev/[task]/plan.md` | Goal and approach for a specific task | No limit | Agent | No |
+| `dev/[task]/context.md` | Constraints, files, decisions, assumptions | No limit | Agent | No |
+| `dev/[task]/tasks.md` | Checklist with progress | No limit | Agent | No |
+
+The approval gate applies only to `semantic.md` and `DECISIONS.md` — the two files that accumulate permanent knowledge. `working.md` is ephemeral and the agent updates it freely, including rewriting it from scratch if it becomes stale or bloated.
+
+---
+
+## Hook setup
+
+[CHANGED: setup instructions moved to `MEMORY_SYSTEM.md` to keep this manual focused on daily use. If hooks aren't firing, check that file first.]
+
+Short version:
+1. Hooks are registered in `.claude/settings.json` — already done.
+2. `hooks/stop.sh` must be executable: `chmod +x hooks/stop.sh` — already done.
+3. To temporarily disable: rename `.claude/settings.json` to `.claude/settings.json.off`.
+4. Full setup and troubleshooting: see `MEMORY_SYSTEM.md`.
+
+---
+
+## The daily workflow
+
+### Starting your day
+
+Open your terminal. Run Claude Code (or whichever agent you use).
+
+The agent reads `CLAUDE.md` and `memory/semantic.md` automatically at session start — you do nothing. It then reads `memory/working.md` on your first message via the preprompt hook.
+
+You'll see the agent acknowledge what it knows. If it's missing something important, your `semantic.md` is stale. Tell it; it'll propose an update for your approval.
+
+### Starting a new task
+
+Tell the agent what you want to build. Use planning mode first (`Shift+Tab` in Claude Code).
+
+Once the plan is reviewed and approved:
+
+> Create dev/[task-name]/ with plan.md, context.md, and tasks.md. Update working.md to reflect we're now working on [task-name].
+
+The agent creates the three files and updates `working.md` without asking. One response, no manual file creation.
+
+### Continuing work in the same session
+
+Keep working. The stop hook fires after each response.
+
+After each response with code changes, the agent inspects the diff [CHANGED: `stop.sh` now captures both staged and unstaged changes — `git diff HEAD` instead of bare `git diff`]. If intent behind a change isn't obvious from the code alone, it will ask you first: "This looks like it changed the auth strategy — was that intentional?" Only after understanding the intent will it propose a memory update. This prevents shallow or wrong entries.
+
+You'll then see one of three outcomes:
+
+- "Changes were trivial — updating working.md only." No action needed from you.
+- "Proposed semantic.md addition: [one line]. Approve?" Read it, say yes or correct it.
+- "Intent unclear from the diff — what were you solving here?" Answer, then it proposes.
+
+If the agent starts skipping the hook output in a long session (context pressure), nudge it: "Check the diff and propose any memory updates."
+
+### Mid-session context drift
+
+If the agent starts giving answers that feel slightly off — contradicting something you'd established earlier — it will catch this itself and re-read `semantic.md` before continuing. You'll see it say something like "Let me re-check the project context before answering this." That's the self-healing rule working. You don't need to do anything.
+
+If you notice drift before the agent does, just say: "Re-read semantic.md and try again."
+
+### Switching mid-session to a different task
+
+If you start describing work that doesn't match the current `working.md` focus, the agent will prompt you:
+
+> "This looks like a different task — should I archive the current state first?"
+
+Say yes and it handles the rest: snapshots current `working.md` into the paused task's `context.md`, creates or loads the new task's folder, and rewrites `working.md` for the new focus.
+
+You can also trigger this manually at any time:
+
+> Archive current working.md into dev/[current-task]/context.md, then switch to [new-task].
+
+To resume a paused task:
+
+> Resume dev/[original-task]/. Read its plan.md, context.md, and tasks.md. Update working.md.
+
+### Coming back tomorrow (or next week)
+
+Open the agent. It reads `semantic.md` and `working.md` automatically. `working.md` tells it where you left off. Say:
+
+> Continue.
+
+The agent reads the relevant `dev/[task]/` files and picks up. No re-explanation needed.
+
+### Ending a session
+
+No ceremony. The stop hook fires after your last response. The agent may propose a final `semantic.md` update — approve or skip, then close.
+
+Before closing, glance at `working.md`. If it doesn't reflect reality, say "update working.md to reflect current state." Takes one response.
+
+### Finishing a task
+
+When the task ships:
+
+> Archive dev/[task]/ to dev/archive/[task]/. Clear working.md Current Focus. Propose any final memory updates.
+
+The agent archives the folder, clears working.md, and surfaces any pending proposals for your approval.
+
+---
+
+## How the approval flow works in practice
+
+When the stop hook fires after a significant change, you'll see something like this:
+
+```
+Diff shows: added JWT refresh token rotation logic in src/auth/tokens.ts.
+
+The reason isn't fully clear from the diff alone — was this fixing a security
+issue or part of the planned auth refactor?
+
+[You]: Part of the auth refactor we planned — rotating on use for security.
+
+Proposed semantic.md addition (1 line):
+  "Auth: refresh tokens rotate on use, stored httpOnly cookie, 7-day TTL
+  — see DECISIONS 2026-04-22"
+
+Proposed DECISIONS.md entry:
+  ## 2026-04-22 — Refresh token strategy
+  Decision: Rotate-on-use with httpOnly cookies
+  Why: Prevents token theft replay; cookies avoid localStorage XSS exposure
+  Rejected: Redis session store (adds infrastructure dependency)
+  Affects: src/auth/tokens.ts, src/middleware/auth.ts
+
+Approve both? (or correct before I write)
+```
+
+You say "yes" and it writes. This is the entire approval overhead — one glance per significant change, with the agent having already understood the intent before drafting.
+
+If you're in flow and don't want to be interrupted: say "skip memory update for now." The agent updates `working.md` only. Batch approvals at end of session: "Propose any pending semantic.md updates from this session."
+
+---
+
+## Handling assumptions during work
+
+When the agent doesn't know something and needs to keep moving:
+
+1. It checks `dev/[task]/context.md` first
+2. If still unclear, it states the assumption explicitly: "I'm assuming subscriptions are per-user, not per-team. Confirm before I proceed with the DB schema."
+3. It waits for your answer
+4. It logs the confirmed answer in `context.md` under "Assumptions" — one line, dated
+
+These accumulate over the life of a task. When the task ships, the Assumptions section is a record of everything that wasn't obvious from the plan. Worth skimming before archiving.
+
+---
+
+## Handling MCP efficiency
+
+The core principle: **local files are cheaper than remote MCP calls.**
+
+The preprompt hook tells the agent to check `semantic.md` and `context.md` before reaching for any MCP tool. This directly addresses the Notion-MCP problem — a remote MCP call for something you own is always the wrong choice.
+
+Practical rules:
+
+- **Project knowledge lives in `semantic.md` and `context.md`** — not in Notion, not in a remote wiki
+- **MCP tools are for systems you don't own** — GitHub issues, Slack messages, live database queries, calendar events
+- **If you have a Notion wiki**, extract the essential facts into `semantic.md` at project start. After that, don't let the agent fetch from Notion for project knowledge — it'll read `semantic.md` instead
+
+---
+
+## Troubleshooting
+
+**The agent keeps re-explaining context I've already given it**
+`semantic.md` isn't being loaded. Check that CLAUDE.md's first instruction is "On session start, read memory/semantic.md." Also check `.claude/settings.json` hook registration is correct (see `MEMORY_SYSTEM.md`). [CHANGED: CLAUDE.md is now slim — if this rule is missing it may have been accidentally dropped during editing.]
+
+**The agent's answers feel slightly off mid-session**
+Context drift. Say "Re-read semantic.md and try again." The self-healing rule in the preprompt should catch this automatically, but in very long sessions you may need to trigger it manually.
+
+**`semantic.md` grew past 500 lines** [CHANGED: lines, not tokens]
+Say: "Compact semantic.md — keep only high-signal entries, 1–2 lines each, rewrite from scratch. Propose the result for approval."
+
+**The agent is proposing updates too frequently**
+Its significance filter is too sensitive. Correct a proposal by saying "this is too trivial to capture — skip it." It will calibrate over the session.
+
+**The agent stopped proposing updates**
+Context pressure suppressing the hook. Say: "Inspect the diff since your last memory check and propose any updates."
+
+**The agent isn't asking about intent before proposing**
+Remind it once: "Before proposing memory updates, if the reason behind a change isn't obvious from the diff, ask me first." It'll self-correct.
+
+**Context window is filling up fast**
+Ask: "List every file you've read this session with approximate line count." [CHANGED: line count instead of token count] You're likely loading `dev/` files from tasks you're not actively on. The preprompt hook prevents this by design — if it's happening, check the hook registration in `MEMORY_SYSTEM.md`.
+
+**`working.md` is stale or bloated**
+The agent should catch this automatically and rewrite it. If it hasn't: "Rewrite working.md from scratch based on current state." No approval needed.
+
+**Agent keeps asking the same question across sessions**
+Confirmed answers aren't being logged. Check `dev/[task]/context.md` Assumptions section. If empty, the agent isn't following step (d) of the preprompt. Remind it once.
+
+**Stop hook isn't firing after responses** [CHANGED: new entry]
+Check two things: (1) `.claude/settings.json` uses the array-of-matchers schema, not bare strings — see `MEMORY_SYSTEM.md`. (2) `hooks/stop.sh` is executable: `ls -l hooks/stop.sh` should show the `x` bit.
+
+---
+
+## Weekly maintenance — 10 minutes
+
+Once a week:
+
+1. **Open `semantic.md`.** Skim for staleness. Anything no longer true? Tell the agent to propose a correction.
+2. **Open `DECISIONS.md`.** Any reversed decisions without a "Supersedes" entry? Add one.
+3. **Check `dev/`** for shipped tasks that didn't get archived. Move to `dev/archive/`.
+4. **Check `CLAUDE.md`** for dead rules. Remove them or start enforcing them — dead rules train the agent to ignore the live ones. [CHANGED: CLAUDE.md is now 77 lines — easier to scan. Reference content lives in ARCHITECTURE_VISION.md.]
+
+That's it.
+
+---
+
+## What NOT to do
+
+- **Don't manually read memory files at session start** — the hooks do this.
+- **Don't approve every proposal reflexively** — read the proposed line before saying yes. The approval step exists to catch drift.
+- **Don't copy `semantic.md` into your prompts** — it's already in context. Duplication doubles the line count cost.
+- **Don't treat `DECISIONS.md` as a changelog** — it's decisions, not changes. A refactor without a new decision doesn't belong there.
+- **Don't let `semantic.md` grow past 500 lines** [CHANGED: lines, not tokens] — propose a compaction as soon as it would exceed. 500 becomes 800 becomes unusable fast.
+- **Don't use MCP tools for information you own** — if it could be in `semantic.md`, it should be there.
+- **Don't rubber-stamp intent clarification questions** — when the agent asks "what were you solving here?", a real answer produces a better memory entry than "just proceed."
+
+---
+
+## Mental model
+
+- **`CLAUDE.md`** — 77-line rules-only constitution. Startup behavior + coding rules. No reference content. [CHANGED: was a 285-line reference doc; reference content moved to ARCHITECTURE_VISION.md]
+- **`MEMORY_SYSTEM.md`** — in-repo crib. Hook setup, disable steps, daily-use bullets, example workflow. [CHANGED: new file]
+- **`memory/semantic.md`** — distilled project knowledge. What any agent needs to understand this codebase in 30 seconds. Curated by proposal, never free-growing.
+- **`memory/working.md`** — your desk right now. Ephemeral, freely updated, rewritten when stale.
+- **`DECISIONS.md`** — the engineering logbook. Append-only, never rewritten, superseded by later entries.
+- **`ARCHITECTURE_VISION.md`** — the *why* and *how-to*. Architectural rationale, product direction, and implementation patterns (including adding new pipeline steps). [CHANGED: now also the home for how-to patterns moved out of CLAUDE.md]
+- **`dev/[task]/`** — your working folder for one feature. Create it, work in it, archive it when done.
+
+Everything else is just code.
+
+---
+
+## One example, start to finish
+
+**Monday 9am — starting a new feature:**
+```
+[Agent reads semantic.md (session start) + working.md (preprompt)]
+You: "I want to add Stripe subscription webhooks."
+[Agent enters plan mode, produces plan]
+You: [review, approve]
+You: "Create dev/stripe-webhooks/ with plan.md, context.md, tasks.md. Update working.md."
+[Agent creates files, updates working.md — no approval needed]
+You: "Proceed with phase 1."
+```
+
+**Monday 11am — hook fires, intent unclear:**
+```
+Agent: "Diff shows changes to src/auth/tokens.ts — but the reason isn't clear
+from the code alone. Was this part of the planned refactor or a bugfix?"
+You: "Security fix — tokens need to rotate on use to prevent replay attacks."
+Agent: "Got it. Proposed semantic.md addition:
+  'Auth: tokens rotate on use — replay attack prevention, see DECISIONS 2026-04-21'
+Approve?"
+You: "Yes."
+[Agent writes to semantic.md and DECISIONS.md]
+```
+
+**Monday 11:30am — switching tasks:**
+```
+You: "I need to fix the login timeout bug."
+Agent: "This looks like a different task — should I archive the current state first?"
+You: "Yes."
+[Agent archives working.md into stripe-webhooks/context.md, creates dev/login-timeout/,
+rewrites working.md for new task]
+[Work on bug]
+You: "Fixed. Archive dev/login-timeout/ to dev/archive/. Resume stripe-webhooks."
+[Agent archives, reads stripe-webhooks/context.md, restores working.md]
+```
+
+**Tuesday 9am — back at it:**
+```
+[Agent reads semantic.md + working.md automatically]
+Agent: "You were on phase 2 of stripe-webhooks — signature verification middleware. Continue?"
+You: "Yes."
+```
+
+**Tuesday 2pm — shipping:**
+```
+You: "Done. Archive dev/stripe-webhooks/ to dev/archive/. Propose any final memory updates."
+Agent: "No new semantic.md entries needed — everything was captured during the session.
+DECISIONS.md already has the webhook entry from Monday. Archiving now."
+You: [close terminal]
+```
+
+Memory current. Lines low. Nothing lost.

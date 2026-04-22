@@ -18,7 +18,7 @@
 
 ## Important Decisions (see DECISIONS.md for full log)
 
-- **2026-04-21:** Memory system implemented — `memory/semantic.md` (≤500 tokens), `memory/working.md` (≤300 tokens), `DECISIONS.md` (append-only), `/dev/[task]/` for active work. Hooks: `preprompt.txt` (per-turn context), `stop.sh` (post-response memory proposals).
+- **2026-04-21:** Memory system implemented — `memory/semantic.md` (≤500 lines), `memory/working.md` (≤300 lines), `DECISIONS.md` (append-only), `/dev/[task]/` for active work. Hooks: `preprompt.txt` (per-turn context), `stop.sh` (post-response memory proposals).
 
 ## Known Gotchas
 
