@@ -461,8 +461,11 @@ The memory system (`memory/semantic.md`, `memory/working.md`, `dev/[task]/`, `DE
 **Supported agents:**
 - **Claude Code**: `CLAUDE.md` + `.claude/settings.json` hooks (full hook support)
 - **Codex**: `AGENTS.md` (hooks not supported — relies on agent reading entry-point)
-- **Cursor**: `.cursor/rules/memory.mdc` with auto-attach globs
+- **Hermes** (Nous Research): `AGENTS.md` superset of Codex; agentskills.io-compatible
+- **Cursor**: `.cursor/rules/memory.mdc` with `alwaysApply: true`
 - **Gemini CLI**: `GEMINI.md` + `.gemini/context.md`
+- **Windsurf**: `.windsurfrules` (instruction-driven, no hook support)
+- **OpenClaw**: `.openclaw-system.md` (system prompt include — paste or `system_prompt_file`)
 
 **Usage:**
 ```bash

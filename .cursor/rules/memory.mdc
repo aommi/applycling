@@ -1,6 +1,5 @@
 ---
 description: Memory system for cross-session context
-globs: **/*
 alwaysApply: true
 ---
 
@@ -32,8 +31,8 @@ Before answering:
 
 ## Architecture Reference
 
-- **Skills**: `applycling/skills/<name>/SKILL.md` — prompts with YAML frontmatter
-- **Pipeline**: `applycling/pipeline.py` — library API for URL→package flow
+- **Skills**: `applycling/skills/<name>/SKILL.md` — prompts with YAML frontmatter; loader: `load_skill(name).render(**kwargs)`
+- **Pipeline**: `applycling/pipeline.py` — `PipelineContext`, `PipelineStep`, `PipelineRun`; linear flow: role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary
 - **LLM routing**: `applycling/llm.py` — ollama/anthropic/google/openai
 - **Tracker**: `tracker/__init__.py` — Notion or SQLite via `get_store()`
 
@@ -50,4 +49,4 @@ Before answering:
 - API keys in `.env` (gitignored)
 - `_clean_llm_output()` required for all LLM output
 - Profile header: `## PROFILE` (all caps)
-- Skill templates use `str.format` — escape braces with `{` and `}`
+- Skill templates use `str.format` — escape braces with `{{` and `}}`

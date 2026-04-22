@@ -1,68 +1,58 @@
 """
 Claude Code Adapter — generates CLAUDE.md + .claude/settings.json hooks
 """
-import os
 import json
 from pathlib import Path
+
 
 def generate(project_root: Path):
     """Generate Claude Code configuration."""
 
-    # Read the shared preprompt template
-    preprompt_path = project_root / ".agent" / "templates" / "preprompt.txt"
-    with open(preprompt_path, "r") as f:
-        preprompt_content = f.read()
+    templates = project_root / ".agent" / "templates"
 
     # Write hooks/preprompt.txt
     hooks_dir = project_root / "hooks"
     hooks_dir.mkdir(exist_ok=True)
-    with open(hooks_dir / "preprompt.txt", "w") as f:
-        f.write(preprompt_content)
+    (hooks_dir / "preprompt.txt").write_text((templates / "preprompt.txt").read_text())
 
-    # Write hooks/stop.sh
-    stop_script = project_root / ".agent" / "templates" / "stop.sh"
-    with open(stop_script, "r") as f:
-        stop_content = f.read()
-    with open(hooks_dir / "stop.sh", "w") as f:
-        f.write(stop_content)
-    os.chmod(hooks_dir / "stop.sh", 0o755)
+    # Write hooks/stop.sh and make executable
+    stop_path = hooks_dir / "stop.sh"
+    stop_path.write_text((templates / "stop.sh").read_text())
+    stop_path.chmod(0o755)
 
-    # Generate .claude/settings.json with hook registration
+    # Generate .claude/settings.json
+    # Merge per-event: preserve any hook events we don't own (e.g. PreToolUse),
+    # but replace our own events (UserPromptSubmit, Stop) with the current config.
     claude_dir = project_root / ".claude"
     claude_dir.mkdir(exist_ok=True)
+    settings_path = claude_dir / "settings.json"
 
-    settings = {
-        "hooks": {
-            "UserPromptSubmit": [
-                {
-                    "hooks": [
-                        {"type": "command", "command": "cat hooks/preprompt.txt"}
-                    ]
-                }
-            ],
-            "Stop": [
-                {
-                    "hooks": [
-                        {"type": "command", "command": "bash hooks/stop.sh"}
-                    ]
-                }
-            ]
-        }
+    our_hooks = {
+        "UserPromptSubmit": [
+            {"hooks": [{"type": "command", "command": "cat hooks/preprompt.txt"}]}
+        ],
+        "Stop": [
+            {"hooks": [{"type": "command", "command": "bash hooks/stop.sh"}]}
+        ],
     }
 
-    settings_path = claude_dir / "settings.json"
     if settings_path.exists():
-        # Merge with existing settings (preserve user customizations)
-        with open(settings_path, "r") as f:
-            existing = json.load(f)
-        existing["hooks"] = settings["hooks"]
-        settings = existing
+        try:
+            existing = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+    else:
+        existing = {}
 
-    with open(settings_path, "w") as f:
-        json.dump(settings, f, indent=2)
+    existing.setdefault("hooks", {}).update(our_hooks)
+
+    settings_path.write_text(json.dumps(existing, indent=2) + "\n")
 
     # Generate CLAUDE.md
-    claude_md_content = """# applycling — Developer Guide
+    # This is the project constitution — kept as a plain string (not f-string)
+    # so {{ / }} in the skill example render correctly without extra escaping.
+    claude_md = """\
+# applycling — Developer Guide
 
 **applycling** is a CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary. Supports Anthropic (Claude), Google AI Studio (Gemini), and Ollama (local/cloud).
 
@@ -141,7 +131,12 @@ Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — n
 - **Keep `ARCHITECTURE_VISION.md` canonical.** Update it in the same commit whenever you: add or remove a skill, change the pipeline contract (`_Step`, `PipelineStep`, `load_skill`), introduce a new provider, ship a T-numbered phase, or discover a risk worth remembering. When in doubt, update it.
 """
 
-    with open(project_root / "CLAUDE.md", "w") as f:
-        f.write(claude_md_content)
+    (project_root / "CLAUDE.md").write_text(claude_md)
 
-    return "Claude Code configuration generated:\n  - CLAUDE.md\n  - .claude/settings.json (hooks)\n  - hooks/preprompt.txt\n  - hooks/stop.sh"
+    return (
+        "Claude Code configuration generated:\n"
+        "  - CLAUDE.md\n"
+        "  - .claude/settings.json (hooks merged)\n"
+        "  - hooks/preprompt.txt\n"
+        "  - hooks/stop.sh"
+    )

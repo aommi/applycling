@@ -44,9 +44,20 @@ AGENTS = {
     "gemini-cli": generate_gemini_cli,
     "windsurf": generate_windsurf,
     "openclaw": generate_openclaw,
-    # hermes runs after codex in 'all' mode so the hermes AGENTS.md wins
     "hermes": generate_hermes,
 }
+
+# Explicit run order for 'all'. hermes must follow codex because both write AGENTS.md
+# and the hermes version (superset) should win.
+ALL_ORDER = [
+    "claude-code",
+    "codex",
+    "cursor",
+    "gemini-cli",
+    "windsurf",
+    "openclaw",
+    "hermes",
+]
 
 
 def main():
@@ -62,10 +73,12 @@ def main():
 
     if agent_name == "all":
         print("Generating configurations for all agents...\n")
-        for name, generator in AGENTS.items():
+        for name in ALL_ORDER:
             print(f"=== {name.upper()} ===")
-            result = generator(project_root)
+            result = AGENTS[name](project_root)
             print(result)
+            if name == "hermes":
+                print("  (overwrote codex AGENTS.md — hermes version is superset)")
             print()
         print("Done. Memory files (memory/, dev/, DECISIONS.md) are shared across all agents.")
         return

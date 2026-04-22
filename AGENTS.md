@@ -1,8 +1,6 @@
 # Project Context — applycling
 
-**applycling** is a CLI tool that turns a job URL into a complete application package:
-tailored resume, cover letter, positioning brief, email/InMail, and fit summary.
-Supports Anthropic (Claude), Google AI Studio (Gemini), Ollama, and OpenAI.
+**applycling** is a CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary. Supports Anthropic (Claude), Google AI Studio (Gemini), Ollama, and OpenAI.
 
 ---
 
@@ -35,12 +33,11 @@ Before answering:
 
 ## Architecture
 
-Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical
-record of architectural principles, product direction, and design-decision rationale.
+Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, and design-decision rationale.
 
 ### Skills
 
-All LLM prompt templates live in `applycling/skills/<name>/SKILL.md` with YAML frontmatter:
+All LLM prompt templates live in `applycling/skills/<name>/SKILL.md`:
 
 ```markdown
 ---
@@ -56,9 +53,8 @@ Prompt body using {input_key} via str.format.
 ```
 
 Loader: `from applycling.skills import load_skill` → `load_skill(name).render(**kwargs)`
+These skill files follow the agentskills.io frontmatter shape — Hermes's `/skills` browser can enumerate them natively.
 
-These follow the agentskills.io frontmatter shape — Hermes's `/skills` browser can
-enumerate them natively.
 
 ### Pipeline
 
@@ -98,16 +94,16 @@ Use the `TrackerStore` interface only — never call either store directly from 
 - Conditional logic stays in Python, not skill templates
 - All API keys in `.env` (gitignored)
 
+
 ---
 
 ## Optional: Hermes Memory Mirroring
 
 Hermes has its own `MEMORY.md` / `USER.md` persistence layer. These are complementary,
 not replacements, for this project's `memory/` files. If you want high-signal lessons
-visible inside Hermes's built-in persistence, you can mirror manually or symlink:
+visible inside Hermes's built-in persistence, you can symlink:
 
 ```bash
-# Mirror preferences into Hermes's USER.md (optional)
 ln -s memory/semantic.md MEMORY.md
 ```
 

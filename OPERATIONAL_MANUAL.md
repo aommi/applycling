@@ -43,8 +43,6 @@ Short version:
 
 ## Switching agents
 
-[CHANGED: new section — added when Codex, Windsurf, OpenClaw, and Hermes support was introduced.]
-
 The memory files (`memory/semantic.md`, `memory/working.md`, `DECISIONS.md`, `dev/`) are
 portable. Only the entry-point file and hook config differ per agent. To switch:
 
