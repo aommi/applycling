@@ -34,5 +34,9 @@ output/*
 .claude/agent-memory/
 .claude/settings.local.json
 
+# Other agent configs — track entry-point files, ignore IDE-specific state
+.cursor/history/
+.gemini/history/
+
 # Stray screenshots / image dumps — commit images explicitly under docs/ if intended
 images/

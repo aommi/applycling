@@ -27,3 +27,32 @@ Append-only architectural decisions log. To reverse a prior decision, append a n
 - No memory system (context lost every session, re-explanation tax)
 
 **Affects:** CLAUDE.md, hooks/, memory/, dev/
+
+---
+
+## 2026-04-22 — Agent Agnostic Memory Adapters
+
+**Decision:** Implement adapter pattern in `.agent/` to generate entry-point files and hook configurations for multiple AI coding agents (Claude Code, Codex, Cursor, Gemini CLI).
+
+**Reasoning:**
+- User is adding Codex (OpenAI) alongside Claude Code for coding tasks
+- Memory files (`semantic.md`, `working.md`, `dev/`, `DECISIONS.md`) are portable, but entry-point files and hook mechanisms are agent-specific
+- Without adapters: switching agents requires manual reconfiguration and loses memory continuity
+- With adapters: run `python .agent/generate.py <agent>` and memory works across all tools
+
+**Impact:**
+- `.agent/` directory with adapter scripts per agent
+- `generate.py` CLI generates:
+  - Claude Code: `CLAUDE.md` + `.claude/settings.json` hooks
+  - Codex: `AGENTS.md` (hooks not supported)
+  - Cursor: `.cursor/rules/memory.mdc` with auto-attach globs
+  - Gemini CLI: `GEMINI.md` + `.gemini/context.md`
+- Memory files remain unchanged and shared
+- `ARCHITECTURE_VISION.md` updated with agent agnosticism section
+
+**Rejected alternatives:**
+- Maintaining separate entry-point files manually (error-prone, drift between configs)
+- Claude Code-only memory (locks user to one agent, defeats purpose of portable memory)
+- Universal entry-point file (no such thing — each agent has its own convention)
+
+**Affects:** `.agent/`, `ARCHITECTURE_VISION.md`, `memory/semantic.md`
