@@ -28,9 +28,11 @@ data/*
 output/*
 !output/.gitkeep
 
-# Local Claude Code tooling (agent memory, agent definitions, worktrees, etc.)
+# Local Claude Code tooling — track settings.json (hooks), ignore everything else
 .claude/worktrees/
 .claude/projects/
+.claude/agent-memory/
+.claude/settings.local.json
 
 # Stray screenshots / image dumps — commit images explicitly under docs/ if intended
 images/
