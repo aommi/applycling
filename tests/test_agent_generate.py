@@ -91,6 +91,104 @@ def test_claude_code_settings_trailing_newline(tmp_project):
     assert raw.endswith(b"\n"), ".claude/settings.json must end with a newline"
 
 
+def test_claude_code_sentinel_present_on_create(tmp_project):
+    """Fresh generation must wrap the memory protocol in amk sentinels."""
+    gen_claude_code(tmp_project)
+    content = (tmp_project / "CLAUDE.md").read_text()
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+    # Generic memory protocol is inside the block
+    assert "memory/semantic.md" in content
+    assert "memory/working.md" in content
+    # Project header is outside the sentinel block (before it)
+    start = content.index("<!-- amk:start -->")
+    assert "Developer Guide" in content[:start]
+
+
+def test_claude_code_sentinel_preserves_user_content(tmp_project):
+    """User content outside the sentinel block must survive regeneration."""
+    gen_claude_code(tmp_project)
+    claude_md = tmp_project / "CLAUDE.md"
+    claude_md.write_text(claude_md.read_text() + "\n## My Custom Section\n\nmy notes\n")
+
+    gen_claude_code(tmp_project)
+
+    content = claude_md.read_text()
+    assert "## My Custom Section" in content
+    assert "my notes" in content
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+
+
+def test_claude_code_sentinel_appends_when_missing(tmp_project):
+    """If CLAUDE.md exists without sentinels, amk block is appended without touching existing content."""
+    claude_md = tmp_project / "CLAUDE.md"
+    claude_md.write_text("# Existing content\n\nsome notes\n")
+
+    gen_claude_code(tmp_project)
+
+    content = claude_md.read_text()
+    assert "# Existing content" in content
+    assert "some notes" in content
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+
+
+def test_claude_code_sentinel_unchanged_on_rerun(tmp_project):
+    """Re-running with identical config must report unchanged and not modify the file."""
+    gen_claude_code(tmp_project)
+    claude_md = tmp_project / "CLAUDE.md"
+    content_before = claude_md.read_bytes()
+
+    result = gen_claude_code(tmp_project)
+
+    assert "unchanged" in result
+    assert claude_md.read_bytes() == content_before
+
+
+def test_claude_code_sentinel_inverted_order_appends(tmp_project):
+    """If amk:end appears before amk:start (e.g. in a code example), append rather than corrupt."""
+    claude_md = tmp_project / "CLAUDE.md"
+    claude_md.write_text(
+        "# My notes\n\n"
+        "```\n<!-- amk:end -->\nsome example\n<!-- amk:start -->\n```\n"
+    )
+
+    gen_claude_code(tmp_project)
+
+    content = claude_md.read_text()
+    assert "# My notes" in content
+    # A valid sentinel block must have been appended
+    start = content.find("<!-- amk:start -->")
+    end = content.rfind("<!-- amk:end -->")
+    assert start != -1 and end != -1 and end > start
+    assert "memory/semantic.md" in content[start:end]
+
+
+def test_claude_code_hooks_use_claude_project_dir(tmp_project):
+    """Hook commands must use $CLAUDE_PROJECT_DIR, not absolute or relative paths."""
+    gen_claude_code(tmp_project)
+    settings = json.loads((tmp_project / ".claude" / "settings.json").read_text())
+    for event in ("UserPromptSubmit", "Stop"):
+        cmd = settings["hooks"][event][0]["hooks"][0]["command"]
+        assert "$CLAUDE_PROJECT_DIR" in cmd
+        assert cmd.startswith('cat "$CLAUDE_PROJECT_DIR') or cmd.startswith('bash "$CLAUDE_PROJECT_DIR')
+
+
+def test_claude_code_arch_file_substitution(tmp_project):
+    """Custom architecture file path must appear in the managed block."""
+    import yaml
+    config_path = tmp_project / ".agent" / "project.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["architecture"] = {"file": "MY_ARCH.md"}
+    config_path.write_text(yaml.dump(config))
+
+    gen_claude_code(tmp_project)
+
+    content = (tmp_project / "CLAUDE.md").read_text()
+    assert "MY_ARCH.md" in content
+
+
 def test_codex(tmp_project):
     gen_codex(tmp_project)
     content = (tmp_project / "AGENTS.md").read_text()

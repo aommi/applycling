@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat hooks/preprompt.txt"
+            "command": "cat \"$CLAUDE_PROJECT_DIR/hooks/preprompt.txt\""
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash hooks/stop.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/hooks/stop.sh\""
           }
         ]
       }
