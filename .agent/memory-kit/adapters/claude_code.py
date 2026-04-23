@@ -73,6 +73,8 @@ Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — n
 """
 
     arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
+    arch_ref_note = config.get("architecture", {}).get("reference_note", "")
+    arch_extra = f"\n{arch_ref_note}" if arch_ref_note else ""
 
     claude_md = f"""\
 # {project["name"]} — Developer Guide
@@ -99,9 +101,7 @@ Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — n
 
 ## Architecture vision
 
-Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
-
-When extending the system, consult `{arch_file}` for patterns on adding new capabilities.{skills_md}
+Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.{arch_extra}{skills_md}
 ---
 
 ## Key conventions

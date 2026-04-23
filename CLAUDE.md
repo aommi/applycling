@@ -23,8 +23,8 @@
 ## Architecture vision
 
 Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
+To add a new pipeline step, see ARCHITECTURE_VISION.md — section "Adding a New Pipeline Step".
 
-To add a new pipeline step, see `ARCHITECTURE_VISION.md` — section "Adding a New Pipeline Step".
 ---
 
 ## Skills architecture
