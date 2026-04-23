@@ -27,18 +27,7 @@ def generate(project_root: Path, config: dict) -> str:
     memory_protocol = (templates / "memory_protocol.md").read_text()
 
     project = config["project"]
-
-    # Load architecture content
-    arch_file = config.get("architecture", {}).get("file")
-    arch_content = ""
-    if arch_file:
-        arch_path = project_root / arch_file
-        if arch_path.exists():
-            arch_content = arch_path.read_text()
-        else:
-            fallback = project_root / ".agent" / "templates" / "architecture.md"
-            if fallback.exists():
-                arch_content = fallback.read_text()
+    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
 
     # Build conventions section
     conventions = config.get("conventions", [])
@@ -93,9 +82,9 @@ ask: "This looks like a different task — should I archive the current state fi
 
 ---
 
-## Architecture Vision
+## Architecture Reference
 
-{arch_content}
+Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
 
 ---
 

@@ -53,20 +53,6 @@ def generate(project_root: Path, config: dict) -> str:
     existing.setdefault("hooks", {}).update(our_hooks)
     settings_path.write_text(json.dumps(existing, indent=2) + "\n")
 
-    # Build CLAUDE.md from config
-    # Load architecture content if available
-    arch_file = config.get("architecture", {}).get("file")
-    arch_content = ""
-    if arch_file:
-        arch_path = project_root / arch_file
-        if arch_path.exists():
-            arch_content = arch_path.read_text()
-        else:
-            # Fallback to template for backward compatibility / test fixtures
-            fallback = project_root / ".agent" / "templates" / "architecture.md"
-            if fallback.exists():
-                arch_content = fallback.read_text()
-    
     # Build conventions section
     conventions = config.get("conventions", [])
     conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
@@ -75,7 +61,18 @@ def generate(project_root: Path, config: dict) -> str:
     skills = config.get("skills", {})
     skills_md = ""
     if skills.get("enabled"):
-        skills_md = f"""\n---\n\n## Skills architecture\n\nAll LLM prompt templates live in `{skills.get("directory", "skills/")}<name>/SKILL.md`. There are no prompt strings in Python source files.\n\nFrontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — no Jinja2, no exceptions.\n"""
+        skills_md = f"""\
+
+---
+
+## Skills architecture
+
+All LLM prompt templates live in `{skills.get("directory", "skills/")}<name>/SKILL.md`. There are no prompt strings in Python source files.
+
+Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — no Jinja2, no exceptions.
+"""
+
+    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
 
     claude_md = f"""\
 # {project["name"]} — Developer Guide
@@ -102,10 +99,9 @@ def generate(project_root: Path, config: dict) -> str:
 
 ## Architecture vision
 
-Before implementing a feature, read `{arch_file or "ARCHITECTURE.md"}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
+Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
 
-{arch_content}
-{skills_md}
+To add a new pipeline step, see `{arch_file}` — section "Adding a New Pipeline Step".{skills_md}
 ---
 
 ## Key conventions

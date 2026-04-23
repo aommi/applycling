@@ -16,19 +16,9 @@ def generate(project_root: Path, config: dict) -> str:
     memory_protocol = (templates / "memory_protocol.md").read_text()
     
     project = config["project"]
-    
-    # Load architecture content
-    arch_file = config.get("architecture", {}).get("file")
-    arch_content = ""
-    if arch_file:
-        arch_path = project_root / arch_file
-        if arch_path.exists():
-            arch_content = arch_path.read_text()
-        else:
-            # Fallback to template for backward compatibility / test fixtures
-            fallback = project_root / ".agent" / "templates" / "architecture.md"
-            if fallback.exists():
-                arch_content = fallback.read_text()
+    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
+    conventions = config.get("conventions", [])
+    conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
 
     content = (
         f"# Project Context — {project['name']}\n\n"
@@ -36,7 +26,11 @@ def generate(project_root: Path, config: dict) -> str:
         f"---\n\n"
         + memory_protocol.strip()
         + "\n\n---\n\n"
-        + f"## Architecture\n\n{arch_content}"
+        + f"## Architecture\n\n"
+        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.\n"
+        + "\n\n---\n\n"
+        + "## Key conventions\n\n"
+        + conventions_md
         + "\n"
     )
 

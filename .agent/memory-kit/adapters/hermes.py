@@ -21,19 +21,9 @@ def generate(project_root: Path, config: dict) -> str:
     
     project = config["project"]
     skills = config.get("skills", {})
-    
-    # Load architecture content
-    arch_file = config.get("architecture", {}).get("file")
-    arch_content = ""
-    if arch_file:
-        arch_path = project_root / arch_file
-        if arch_path.exists():
-            arch_content = arch_path.read_text()
-        else:
-            # Fallback to template for backward compatibility / test fixtures
-            fallback = project_root / ".agent" / "templates" / "architecture.md"
-            if fallback.exists():
-                arch_content = fallback.read_text()
+    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
+    conventions = config.get("conventions", [])
+    conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
     
     # Hermes-specific skills note
     skills_note = ""
@@ -42,14 +32,6 @@ def generate(project_root: Path, config: dict) -> str:
             f"\nThese skill files follow the {skills['standard']} standard —"
             " Hermes's `/skills` browser can enumerate them natively.\n"
         )
-        # Insert after the first paragraph in arch content if possible
-        if "Loader:" in arch_content and skills_note:
-            arch_content = arch_content.replace(
-                "Loader:",
-                f"Loader: {skills_note.strip()}\n\nLoader:",
-                1
-            )
-            skills_note = ""  # Already inserted
 
     hermes_footer = (
         "---\n\n"
@@ -70,8 +52,11 @@ def generate(project_root: Path, config: dict) -> str:
         + memory_protocol.strip()
         + "\n\n---\n\n"
         + "## Architecture\n\n"
-        + arch_content
+        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.\n"
         + (skills_note if skills_note else "")
+        + "\n\n---\n\n"
+        + "## Key conventions\n\n"
+        + conventions_md
         + "\n\n"
         + hermes_footer
     )
