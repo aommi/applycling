@@ -13,8 +13,6 @@ def generate(project_root: Path, config: dict) -> str:
     
     project = config["project"]
     arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
-    arch_ref_note = config.get("architecture", {}).get("reference_note", "")
-    arch_extra = f"\n{arch_ref_note}" if arch_ref_note else ""
     
     conventions = config.get("conventions", [])
     conventions_text = "\n".join(f"- {c}" for c in conventions) if conventions else ""
@@ -33,7 +31,7 @@ def generate(project_root: Path, config: dict) -> str:
         + preprompt.strip()
         + "\n\n"
         "## Architecture Reference\n\n"
-        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.{arch_extra}\n"
+        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.\n"
         + "\n\n"
         "## Conventions\n\n"
         + conventions_text

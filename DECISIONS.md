@@ -80,3 +80,28 @@ Append-only architectural decisions log. To reverse a prior decision, append a n
 - Asking each agent to read a single universal entry-point file (no such convention exists)
 
 **Affects:** `.agent/`, `ARCHITECTURE_VISION.md`, `memory/semantic.md`, `.agent/OPERATIONAL_MANUAL.md`
+
+---
+
+## 2026-04-23 — Skill Template Engine: str.format vs Jinja2
+
+**Decision:** Use Python's built-in `str.format` as the sole template engine for skill files. Jinja2 is forbidden.
+
+**Reasoning:**
+- `str.format` is in the Python standard library — no external dependency
+- Jinja2's control-flow syntax (`{% if %}`, `{% for %}`) encourages putting logic in templates, which violates the "conditional logic stays in Python" principle
+- LLMs generate `str.format` placeholders more reliably than Jinja2 syntax
+- Escaped braces (`{{` and `}}`) are sufficient for literal brace output; no need for Jinja2's complexity
+- If template logic becomes complex, the correct fix is to move the logic to the Python caller and pre-compute strings, not to upgrade the template engine
+
+**Impact:**
+- All skill files use `{placeholder}` syntax with YAML frontmatter
+- Callers pre-compute conditional strings and pass them as inputs
+- `{{` and `}}` in skill bodies render as literal `{`/`}` after formatting
+
+**Rejected alternatives:**
+- Jinja2 (adds dependency, encourages template logic, overkill for simple string substitution)
+- f-strings embedded in skills (not portable, require Python evaluation context)
+- Custom template syntax (unnecessary when `str.format` exists)
+
+**Affects:** `applycling/skills/`, `memory/semantic.md`, `ARCHITECTURE_VISION.md`

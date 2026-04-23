@@ -9,8 +9,6 @@ project:
   - openai
 architecture:
   file: ARCHITECTURE_VISION.md
-  reference_note: >
-    To add a new pipeline step, see ARCHITECTURE_VISION.md — section "Adding a New Pipeline Step".
   sections:
     skills:
       directory: applycling/skills/<name>/SKILL.md
