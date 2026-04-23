@@ -56,7 +56,7 @@ def _write_managed_section(claude_md_path: Path, header: str, content: str) -> s
 
     existing = claude_md_path.read_text()
     start_idx = existing.find(SENTINEL_START)
-    end_idx = existing.find(SENTINEL_END)
+    end_idx = existing.rfind(SENTINEL_END)
 
     if start_idx == -1 or end_idx == -1 or end_idx < start_idx:
         sep = "\n" if existing.endswith("\n") else "\n\n"

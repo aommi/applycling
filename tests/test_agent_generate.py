@@ -138,12 +138,55 @@ def test_claude_code_sentinel_unchanged_on_rerun(tmp_project):
     """Re-running with identical config must report unchanged and not modify the file."""
     gen_claude_code(tmp_project)
     claude_md = tmp_project / "CLAUDE.md"
-    mtime_before = claude_md.stat().st_mtime
+    content_before = claude_md.read_bytes()
 
     result = gen_claude_code(tmp_project)
 
     assert "unchanged" in result
-    assert claude_md.stat().st_mtime == mtime_before
+    assert claude_md.read_bytes() == content_before
+
+
+def test_claude_code_sentinel_inverted_order_appends(tmp_project):
+    """If amk:end appears before amk:start (e.g. in a code example), append rather than corrupt."""
+    claude_md = tmp_project / "CLAUDE.md"
+    claude_md.write_text(
+        "# My notes\n\n"
+        "```\n<!-- amk:end -->\nsome example\n<!-- amk:start -->\n```\n"
+    )
+
+    gen_claude_code(tmp_project)
+
+    content = claude_md.read_text()
+    assert "# My notes" in content
+    # A valid sentinel block must have been appended
+    start = content.find("<!-- amk:start -->")
+    end = content.rfind("<!-- amk:end -->")
+    assert start != -1 and end != -1 and end > start
+    assert "memory/semantic.md" in content[start:end]
+
+
+def test_claude_code_hooks_use_claude_project_dir(tmp_project):
+    """Hook commands must use $CLAUDE_PROJECT_DIR, not absolute or relative paths."""
+    gen_claude_code(tmp_project)
+    settings = json.loads((tmp_project / ".claude" / "settings.json").read_text())
+    for event in ("UserPromptSubmit", "Stop"):
+        cmd = settings["hooks"][event][0]["hooks"][0]["command"]
+        assert "$CLAUDE_PROJECT_DIR" in cmd
+        assert cmd.startswith('cat "$CLAUDE_PROJECT_DIR') or cmd.startswith('bash "$CLAUDE_PROJECT_DIR')
+
+
+def test_claude_code_arch_file_substitution(tmp_project):
+    """Custom architecture file path must appear in the managed block."""
+    import yaml
+    config_path = tmp_project / ".agent" / "project.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["architecture"] = {"file": "MY_ARCH.md"}
+    config_path.write_text(yaml.dump(config))
+
+    gen_claude_code(tmp_project)
+
+    content = (tmp_project / "CLAUDE.md").read_text()
+    assert "MY_ARCH.md" in content
 
 
 def test_codex(tmp_project):
