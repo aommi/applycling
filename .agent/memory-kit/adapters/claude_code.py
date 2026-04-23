@@ -101,7 +101,7 @@ Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — n
 
 Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
 
-To add a new pipeline step, see `{arch_file}` — section "Adding a New Pipeline Step".{skills_md}
+When extending the system, consult `{arch_file}` for patterns on adding new capabilities.{skills_md}
 ---
 
 ## Key conventions
