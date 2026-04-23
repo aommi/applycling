@@ -91,6 +91,61 @@ def test_claude_code_settings_trailing_newline(tmp_project):
     assert raw.endswith(b"\n"), ".claude/settings.json must end with a newline"
 
 
+def test_claude_code_sentinel_present_on_create(tmp_project):
+    """Fresh generation must wrap the memory protocol in amk sentinels."""
+    gen_claude_code(tmp_project)
+    content = (tmp_project / "CLAUDE.md").read_text()
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+    # Generic memory protocol is inside the block
+    assert "memory/semantic.md" in content
+    assert "memory/working.md" in content
+    # Project header is outside the sentinel block (before it)
+    start = content.index("<!-- amk:start -->")
+    assert "Developer Guide" in content[:start]
+
+
+def test_claude_code_sentinel_preserves_user_content(tmp_project):
+    """User content outside the sentinel block must survive regeneration."""
+    gen_claude_code(tmp_project)
+    claude_md = tmp_project / "CLAUDE.md"
+    claude_md.write_text(claude_md.read_text() + "\n## My Custom Section\n\nmy notes\n")
+
+    gen_claude_code(tmp_project)
+
+    content = claude_md.read_text()
+    assert "## My Custom Section" in content
+    assert "my notes" in content
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+
+
+def test_claude_code_sentinel_appends_when_missing(tmp_project):
+    """If CLAUDE.md exists without sentinels, amk block is appended without touching existing content."""
+    claude_md = tmp_project / "CLAUDE.md"
+    claude_md.write_text("# Existing content\n\nsome notes\n")
+
+    gen_claude_code(tmp_project)
+
+    content = claude_md.read_text()
+    assert "# Existing content" in content
+    assert "some notes" in content
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+
+
+def test_claude_code_sentinel_unchanged_on_rerun(tmp_project):
+    """Re-running with identical config must report unchanged and not modify the file."""
+    gen_claude_code(tmp_project)
+    claude_md = tmp_project / "CLAUDE.md"
+    mtime_before = claude_md.stat().st_mtime
+
+    result = gen_claude_code(tmp_project)
+
+    assert "unchanged" in result
+    assert claude_md.stat().st_mtime == mtime_before
+
+
 def test_codex(tmp_project):
     gen_codex(tmp_project)
     content = (tmp_project / "AGENTS.md").read_text()

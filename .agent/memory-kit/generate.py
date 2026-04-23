@@ -18,6 +18,7 @@ Where <agent> is one of:
     - hermes       : Generates AGENTS.md — superset of codex, also readable by Codex
     - antigravity  : Generates .agents/rules/ + .agents/workflows/ (Rules + Workflows)
     - all          : Generates all ENABLED agents (respects project.yaml agents.*.enabled)
+    - init         : Scaffold .agent/project.yaml and memory/ files for a new project
 
 FLAGS (valid only with 'all'):
     --force        When used with 'all', generate ALL agents regardless of config
@@ -99,13 +100,93 @@ AGENT_OUTPUTS = {
 }
 
 
+def cmd_init(project_root: Path) -> None:
+    """Scaffold .agent/project.yaml and memory/ files interactively."""
+    config_path = project_root / ".agent" / "project.yaml"
+    if config_path.exists():
+        print(f"project.yaml already exists at {config_path}")
+        print("Edit it directly, or delete it and re-run init.")
+        sys.exit(1)
+
+    print("Initializing agent-memory-kit for this project.\n")
+
+    name = input("Project name: ").strip()
+    if not name:
+        print("Project name is required.")
+        sys.exit(1)
+
+    description = input("Project description (one line): ").strip()
+    if not description:
+        print("Description is required.")
+        sys.exit(1)
+
+    arch_file = input("Architecture file [ARCHITECTURE_VISION.md]: ").strip() or "ARCHITECTURE_VISION.md"
+
+    print("\nWhich agents do you want to enable? (Enter to accept default)")
+    agent_defaults = [
+        ("claude-code", True),
+        ("codex",       True),
+        ("hermes",      False),
+        ("openclaw",    False),
+        ("cursor",      False),
+        ("windsurf",    False),
+        ("gemini-cli",  False),
+        ("antigravity", False),
+    ]
+    agents_section = {}
+    for agent, default in agent_defaults:
+        hint = "Y/n" if default else "y/N"
+        answer = input(f"  {agent} [{hint}]: ").strip().lower()
+        if answer == "":
+            enabled = default
+        else:
+            enabled = answer in ("y", "yes")
+        agents_section[agent.replace("-", "_")] = {"enabled": enabled}
+
+    config = {
+        "project": {"name": name, "description": description},
+        "architecture": {"file": arch_file},
+        "conventions": [],
+        "agents": agents_section,
+        "memory": {
+            "semantic_max_lines": 500,
+            "working_max_lines": 300,
+            "files": {
+                "semantic": "memory/semantic.md",
+                "working": "memory/working.md",
+                "decisions": "DECISIONS.md",
+            },
+            "task_directory": "dev/[task]/",
+        },
+    }
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    print(f"\nCreated {config_path.relative_to(project_root)}")
+
+    memory_dir = project_root / "memory"
+    memory_dir.mkdir(exist_ok=True)
+    created = []
+    for fname, heading in (("semantic.md", "Semantic Memory"), ("working.md", "Working Memory")):
+        fpath = memory_dir / fname
+        if not fpath.exists():
+            fpath.write_text(f"# {heading}\n\n")
+            created.append(f"memory/{fname}")
+    if created:
+        print("Created: " + ", ".join(created))
+
+    print("\nNext steps:")
+    print("  python .agent/memory-kit/generate.py all")
+
+
 def load_config(project_root: Path) -> dict:
     """Load project configuration from .agent/project.yaml."""
     config_path = project_root / ".agent" / "project.yaml"
     if not config_path.exists():
         raise FileNotFoundError(
             f"No project config found at {config_path}.\n"
-            "Run `amk init` or create .agent/project.yaml manually."
+            "Run `generate.py init` to create one."
         )
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -243,6 +324,11 @@ def _parse_args() -> tuple[str, Path, bool]:
 
 def main():
     agent_name, project_root, force_all = _parse_args()
+
+    if agent_name == "init":
+        cmd_init(project_root)
+        return
+
     config = load_config(project_root)
 
     if agent_name == "all":

@@ -2,8 +2,7 @@
 
 **applycling** is CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary.
 
----
-
+<!-- amk:start -->
 ## Memory System (Session Startup + Hooks)
 
 **On session start:** Read `memory/semantic.md` ONCE to load project context.
@@ -23,23 +22,4 @@
 ## Architecture vision
 
 Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
-
----
-
-## Skills architecture
-
-All LLM prompt templates live in `applycling/skills/<name>/SKILL.md`. There are no prompt strings in Python source files.
-
-Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — no Jinja2, no exceptions.
-
----
-
-## Key conventions
-
-- _clean_llm_output() strips code fences, preamble, leaked prompt markers, and trailing sign-offs from all LLM output — always apply it
-- Profile summary section header must be ## PROFILE (all caps) to match the format template
-- storage.save_config() merges — never call it with only partial keys unless merging is the intent
-- Skill templates use `str.format` — escape braces with `{{` and `}}`
-- Conditional logic stays in Python, not skill templates
-- All API keys live in .env at repo root (gitignored)
-- Keep ARCHITECTURE_VISION.md canonical — update it when adding/removing skills, changing pipeline contract, introducing new providers, shipping phases, or discovering risks
+<!-- amk:end -->
