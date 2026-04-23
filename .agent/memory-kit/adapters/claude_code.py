@@ -9,7 +9,7 @@ from pathlib import Path
 
 def generate(project_root: Path, config: dict) -> str:
     """Generate Claude Code configuration.
-    
+
     Args:
         project_root: Path to the target project
         config: Project configuration dict from project.yaml
@@ -56,7 +56,7 @@ def generate(project_root: Path, config: dict) -> str:
     # Build conventions section
     conventions = config.get("conventions", [])
     conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
-    
+
     # Build skills section if enabled
     skills = config.get("skills", {})
     skills_md = ""

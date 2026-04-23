@@ -16,9 +16,8 @@ def generate(project_root: Path, config: dict) -> str:
 
     mk_dir = project_root / ".agent" / "memory-kit"
     templates = mk_dir / "templates"
-    preprompt = (templates / "preprompt.txt").read_text()
     memory_protocol = (templates / "memory_protocol.md").read_text()
-    
+
     project = config["project"]
     skills = config.get("skills", {})
     arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
@@ -26,7 +25,7 @@ def generate(project_root: Path, config: dict) -> str:
     # Build conventions section
     conventions = config.get("conventions", [])
     conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
-    
+
     # Hermes-specific skills note
     skills_note = ""
     if skills.get("enabled") and skills.get("standard"):

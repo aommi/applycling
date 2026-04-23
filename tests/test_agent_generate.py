@@ -180,3 +180,132 @@ def test_all_agents_generate_cleanly(tmp_project):
     )
 
     sys.argv = original_argv
+
+
+def test_antigravity(tmp_project):
+    gen_antigravity = make_wrapper("antigravity")
+    gen_antigravity(tmp_project)
+    assert (tmp_project / ".agents" / "rules" / "memory-system.md").exists()
+    assert (tmp_project / ".agents" / "rules" / "project-context.md").exists()
+    assert (tmp_project / ".agents" / "workflows" / "memory-update.md").exists()
+    assert (tmp_project / ".agents" / "workflows" / "task-switch.md").exists()
+
+    rules = (tmp_project / ".agents" / "rules" / "memory-system.md").read_text()
+    assert "memory/semantic.md" in rules
+    assert "Approval Gate" in rules
+
+
+# ---------------------------------------------------------------------------
+# generate.py core logic tests
+# ---------------------------------------------------------------------------
+
+def _load_generate_module():
+    import importlib.util
+    generate_path = AGENT_DIR / "generate.py"
+    spec = importlib.util.spec_from_file_location("generate_mod", generate_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_get_enabled_agents_backward_compat():
+    mod = _load_generate_module()
+    # No agents section at all → everything enabled
+    config = {}
+    assert mod.get_enabled_agents(config) == list(mod.ALL_ORDER)
+
+
+def test_get_enabled_agents_respects_config():
+    mod = _load_generate_module()
+    config = {
+        "agents": {
+            "claude_code": {"enabled": True},
+            "codex": {"enabled": False},
+            "hermes": {"enabled": True},
+        }
+    }
+    enabled = mod.get_enabled_agents(config)
+    assert "claude-code" in enabled
+    assert "codex" not in enabled
+    assert "hermes" in enabled
+    # Missing agents default to enabled
+    assert "cursor" in enabled
+
+
+def test_should_generate_force():
+    mod = _load_generate_module()
+    should, reason = mod.should_generate("codex", Path("/tmp"), True, {})
+    assert should is True
+    assert "--force" in reason
+
+
+def test_should_generate_already_generated_files_present(tmp_project):
+    mod = _load_generate_module()
+    # Pre-create the output file and state
+    (tmp_project / "AGENTS.md").write_text("existing")
+    state = {"version": 1, "agents": {"codex": {"generated_at": "2024-01-01T00:00:00+00:00"}}}
+    should, reason = mod.should_generate("codex", tmp_project, False, state)
+    assert should is False
+    assert "already generated" in reason
+
+
+def test_should_generate_missing_files(tmp_project):
+    mod = _load_generate_module()
+    state = {"version": 1, "agents": {"codex": {"generated_at": "2024-01-01T00:00:00+00:00"}}}
+    should, reason = mod.should_generate("codex", tmp_project, False, state)
+    assert should is True
+    assert "missing files" in reason
+
+
+def test_should_generate_new_agent(tmp_project):
+    mod = _load_generate_module()
+    state = {"version": 1, "agents": {}}
+    should, reason = mod.should_generate("codex", tmp_project, False, state)
+    assert should is True
+    assert "newly enabled" in reason
+
+
+def test_agent_files_exist(tmp_project):
+    mod = _load_generate_module()
+    assert mod.agent_files_exist("codex", tmp_project) is False
+    (tmp_project / "AGENTS.md").write_text("test")
+    assert mod.agent_files_exist("codex", tmp_project) is True
+
+
+def test_state_save_load_roundtrip(tmp_project):
+    mod = _load_generate_module()
+    state = {"version": 1, "agents": {"claude-code": {"generated_at": "2024-01-01T00:00:00+00:00"}}}
+    mod.save_state(tmp_project, state)
+    loaded = mod.load_state(tmp_project)
+    assert loaded == state
+
+
+def test_superseded_state_cleared(tmp_project):
+    mod = _load_generate_module()
+    state = {
+        "version": 1,
+        "agents": {
+            "codex": {"generated_at": "2024-01-01T00:00:00+00:00"},
+            "hermes": {"generated_at": "2024-01-02T00:00:00+00:00"},
+        }
+    }
+    # When hermes generates, it should clear codex from state because they share AGENTS.md
+    mod._clear_superseded_state("hermes", state)
+    assert "codex" not in state["agents"]
+    assert "hermes" in state["agents"]
+
+    # Conversely, when codex generates, it should clear hermes
+    state = {
+        "version": 1,
+        "agents": {
+            "codex": {"generated_at": "2024-01-01T00:00:00+00:00"},
+            "hermes": {"generated_at": "2024-01-02T00:00:00+00:00"},
+        }
+    }
+    mod._clear_superseded_state("codex", state)
+    assert "hermes" not in state["agents"]
+    assert "codex" in state["agents"]
+
+
+# Import make_wrapper here so test_antigravity can use it without altering imports above
+from adapters._mk import make_wrapper

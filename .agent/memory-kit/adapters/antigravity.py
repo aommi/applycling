@@ -23,8 +23,6 @@ def generate(project_root: Path, config: dict) -> str:
 
     mk_dir = project_root / ".agent" / "memory-kit"
     templates = mk_dir / "templates"
-    preprompt = (templates / "preprompt.txt").read_text()
-    memory_protocol = (templates / "memory_protocol.md").read_text()
 
     project = config["project"]
     arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
@@ -38,60 +36,24 @@ def generate(project_root: Path, config: dict) -> str:
     rules_dir = agents_dir / "rules"
     rules_dir.mkdir(parents=True, exist_ok=True)
 
+    ag_templates = templates / "antigravity"
+
     # Rule 1: Memory System (Always On recommended)
-    memory_rule = f"""\
-# Memory System — {project['name']}
-
-You are working on a project with a file-based persistent memory system.
-Follow these rules on every turn.
-
-## Session Start
-Read `memory/semantic.md` ONCE to load distilled project context.
-
-## Every Turn
-Read `memory/working.md` to know the current task state before responding.
-
-## Task Files
-Only load `/dev/[task]/*` files when actively working on that specific task.
-Do not speculatively load files "just in case".
-
-## MCP Efficiency
-Before calling any MCP tool to retrieve project information, first check if
-that information might exist in `memory/semantic.md` or `dev/[task]/context.md`.
-Local files are cheaper than remote MCP queries.
-
-## Context Drift
-If your reasoning becomes uncertain or inconsistent with prior context,
-re-read `memory/semantic.md` before continuing.
-
-## Task Switching
-If the user's message describes work outside the current `working.md` focus,
-ask: "This looks like a different task — should I archive the current state first?"
-
-## Approval Gate
-- `memory/semantic.md` and `DECISIONS.md` require explicit user approval before writing.
-- `memory/working.md` may be updated freely, including rewriting from scratch if stale.
-- Never write speculatively to `semantic.md` or `DECISIONS.md`.
-"""
+    memory_rule = (
+        (ag_templates / "memory-system.md").read_text()
+        .format(project_name=project['name'])
+    )
 
     # Rule 2: Project Context (Always On recommended)
-    project_rule = f"""\
-# Project Context — {project['name']}
-
-**{project['name']}** is {project['description']}
-
----
-
-## Architecture Reference
-
-Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
-
----
-
-## Key Conventions
-
-{conventions_md}
-"""
+    project_rule = (
+        (ag_templates / "project-context.md").read_text()
+        .format(
+            project_name=project['name'],
+            project_description=project['description'],
+            arch_file=arch_file,
+            conventions_md=conventions_md,
+        )
+    )
 
     (rules_dir / "memory-system.md").write_text(memory_rule)
     (rules_dir / "project-context.md").write_text(project_rule)
@@ -100,58 +62,8 @@ Before implementing a feature, read `{arch_file}`. It is the canonical record of
     workflows_dir = agents_dir / "workflows"
     workflows_dir.mkdir(parents=True, exist_ok=True)
 
-    memory_workflow = """\
-# Memory Update
-
-Run this workflow after completing significant work to update project memory.
-
-## Steps
-
-1. Inspect the git diff:
-   - `git diff --name-only`
-   - `git diff` for specifics when needed
-
-2. If the reason behind a change is not obvious from the diff, ask the user
-   for intent before proposing any memory update. Do not guess intent from code alone.
-
-3. Evaluate whether changes introduce any of:
-   - New architectural decisions
-   - New patterns or conventions
-   - Important implementation details worth remembering
-   - Bugs or gotchas discovered during work
-   - Resolved assumptions (from `dev/[task]/context.md` Assumptions section)
-
-4. If ANY qualifies as architecturally or operationally significant:
-   - Draft the proposed update — show the user exactly what would be written and to which file
-   - Wait for explicit approval ("looks good", "yes", "approve") before writing
-   - On approval: write to `semantic.md` and/or `DECISIONS.md` and/or `context.md`
-   - On correction: apply the user's edit, then write
-
-5. Always, regardless of significance:
-   - Update `memory/working.md` to reflect current state — this does NOT require approval
-   - If `working.md` is stale, inconsistent, or over 300 lines: rewrite from scratch
-
-6. If changes are trivial (renames, formatting, one-line bugfixes without broader lessons):
-   - Update `working.md` only
-   - State explicitly: "No semantic.md update needed — changes were trivial."
-"""
-
-    task_switch_workflow = """\
-# Task Switch
-
-Use this workflow when the user wants to change tasks mid-session.
-
-## Steps
-
-1. Confirm with the user: "Should I archive the current state first?"
-2. If yes:
-   - Snapshot current `memory/working.md` contents into `dev/[current-task]/context.md`
-   - Create or load `dev/[new-task]/` folder
-   - Read `dev/[new-task]/plan.md`, `context.md`, and `tasks.md`
-   - Rewrite `memory/working.md` for the new focus
-3. If no:
-   - Simply create or load `dev/[new-task]/` and update `working.md`
-"""
+    memory_workflow = (ag_templates / "memory-update.md").read_text()
+    task_switch_workflow = (ag_templates / "task-switch.md").read_text()
 
     (workflows_dir / "memory-update.md").write_text(memory_workflow)
     (workflows_dir / "task-switch.md").write_text(task_switch_workflow)

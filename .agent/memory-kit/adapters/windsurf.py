@@ -10,8 +10,7 @@ def generate(project_root: Path, config: dict) -> str:
     mk_dir = project_root / ".agent" / "memory-kit"
     templates = mk_dir / "templates"
     preprompt = (templates / "preprompt.txt").read_text()
-    memory_protocol = (templates / "memory_protocol.md").read_text()
-    
+
     project = config["project"]
     arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
     conventions = config.get("conventions", [])

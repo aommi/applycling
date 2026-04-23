@@ -19,7 +19,7 @@ Where <agent> is one of:
     - antigravity  : Generates .agents/rules/ + .agents/workflows/ (Rules + Workflows)
     - all          : Generates all ENABLED agents (respects project.yaml agents.*.enabled)
 
-FLAGS:
+FLAGS (valid only with 'all'):
     --force        When used with 'all', generate ALL agents regardless of config
                    or previous generation state.
 
@@ -30,6 +30,9 @@ RE-RUN SAFETY:
     Running `generate.py all` multiple times is safe. Already-generated agents
     are skipped unless their output files are missing or --force is used.
     Newly-enabled agents in project.yaml are automatically detected and generated.
+    If you toggle agents (e.g. disable hermes after it wrote AGENTS.md), run
+    `generate.py all --force` to ensure the remaining enabled agent regenerates
+    the shared file in its own format.
 """
 
 import json
@@ -75,17 +78,6 @@ ALL_ORDER = [
     "hermes",
     "antigravity",
 ]
-
-AGENT_NAME_MAP = {
-    "claude-code": "claude_code",
-    "codex": "codex",
-    "cursor": "cursor",
-    "gemini-cli": "gemini_cli",
-    "windsurf": "windsurf",
-    "openclaw": "openclaw",
-    "hermes": "hermes",
-    "antigravity": "antigravity",
-}
 
 # Primary output files per agent — used to detect if an agent was already generated.
 AGENT_OUTPUTS = {
@@ -136,7 +128,7 @@ def get_enabled_agents(config: dict, force_all: bool = False) -> list[str]:
 
     enabled = []
     for name in ALL_ORDER:
-        cfg_key = AGENT_NAME_MAP.get(name, name)
+        cfg_key = name.replace("-", "_")
         agent_cfg = agents_config.get(cfg_key, {})
         if agent_cfg.get("enabled", True):
             enabled.append(name)
@@ -190,7 +182,28 @@ def should_generate(agent: str, project_root: Path, force: bool, state: dict) ->
         return True, "newly enabled"
 
 
-def main():
+def _clear_superseded_state(agent: str, state: dict) -> None:
+    """Remove other agents from state that share output files with this agent.
+
+    This prevents a stale "already generated" signal when an agent that shares
+    an output file (e.g. codex/hermes both write AGENTS.md) is disabled and
+    the remaining enabled agent needs to regenerate the file in its own format.
+    """
+    my_files = set(AGENT_OUTPUTS.get(agent, []))
+    for other_agent in list(state.get("agents", {}).keys()):
+        if other_agent == agent:
+            continue
+        other_files = set(AGENT_OUTPUTS.get(other_agent, []))
+        if my_files & other_files:
+            del state["agents"][other_agent]
+
+
+def _parse_args() -> tuple[str, Path, bool]:
+    """Parse command-line arguments.
+
+    Returns (agent_name, project_root, force_all).
+    Rejects unknown flags for single-agent mode.
+    """
     if len(sys.argv) < 2:
         print(__doc__)
         print("\nNo agent specified. Use one of:")
@@ -200,8 +213,34 @@ def main():
 
     agent_name = sys.argv[1].lower()
     project_root = Path(__file__).parent.parent
-    force_all = "--force" in sys.argv
+    force_all = False
 
+    # Optional positional project_root override (memory-kit style)
+    arg_idx = 2
+    if len(sys.argv) > arg_idx and not sys.argv[arg_idx].startswith("-"):
+        project_root = Path(sys.argv[arg_idx]).resolve()
+        arg_idx += 1
+
+    # Only 'all' accepts --force
+    remaining = [a for a in sys.argv[arg_idx:] if a.startswith("-")]
+    if remaining:
+        if agent_name == "all":
+            if "--force" in remaining:
+                force_all = True
+                remaining.remove("--force")
+            if remaining:
+                print(f"Unknown flag(s): {', '.join(remaining)}")
+                sys.exit(1)
+        else:
+            print(f"Unknown flag(s): {', '.join(remaining)}")
+            print("Note: --force is only valid with 'all'. Single-agent runs always regenerate.")
+            sys.exit(1)
+
+    return agent_name, project_root, force_all
+
+
+def main():
+    agent_name, project_root, force_all = _parse_args()
     config = load_config(project_root)
 
     if agent_name == "all":
@@ -225,16 +264,17 @@ def main():
                 continue
 
             print(f"  GEN   {name:<13} — {reason}")
-            result = AGENTS[name](project_root)
+            result = AGENTS[name](project_root, config)
             print(result)
             if name == "hermes":
                 print("  (overwrote codex AGENTS.md — hermes version is superset)")
             print()
 
-            # Record generation timestamp
+            # Record generation timestamp and clear any agents this one superseded
             state.setdefault("agents", {})[name] = {
                 "generated_at": datetime.now(timezone.utc).isoformat()
             }
+            _clear_superseded_state(name, state)
             generated_any = True
 
         if generated_any:
@@ -249,7 +289,7 @@ def main():
         sys.exit(1)
 
     generator = AGENTS[agent_name]
-    result = generator(project_root)
+    result = generator(project_root, config)
     print(result)
 
 

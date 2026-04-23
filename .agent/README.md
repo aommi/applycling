@@ -43,6 +43,10 @@ Where `<agent>` is one of:
 
 Use `--force` with `all` to generate every agent regardless of config.
 
+**Antigravity note:** `.agents/` is gitignored by default. After generation, open
+Antigravity's Customizations panel and set both rules to "Always On" for passive
+memory coverage. This is a one-time manual step per workspace.
+
 ## Using this in another repo
 
 See `.agent/memory-kit/README.md` for the full cross-repo setup guide. The short version:

@@ -1,31 +1,6 @@
 """
-Gemini Cli Adapter — thin wrapper around memory-kit adapter.
-
-Loads project config from .agent/project.yaml and delegates to the reusable
-memory-kit adapter in .agent/memory-kit/adapters/.
+Gemini CLI Adapter — thin wrapper around memory-kit adapter.
 """
-import importlib.util
-from pathlib import Path
-import yaml
+from ._mk import make_wrapper
 
-
-def _load_mk_adapter():
-    mk_dir = Path(__file__).parent.parent / "memory-kit"
-    spec = importlib.util.spec_from_file_location(
-        "mk_gemini_cli",
-        mk_dir / "adapters" / "gemini_cli.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.generate
-
-
-_generate = _load_mk_adapter()
-
-
-def generate(project_root: Path):
-    """Generate Gemini Cli configuration."""
-    config_path = project_root / ".agent" / "project.yaml"
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-    return _generate(project_root, config)
+generate = make_wrapper("gemini_cli")
