@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Agent Agnostic Memory Adapter Generator
+Agent Agnostic Memory Adapter Generator — Standalone
 
 Generates entry-point files and hook configurations for different AI coding agents.
 All adapters share the same underlying memory files (memory/semantic.md, memory/working.md).
 
-Usage:
-    python .agent/generate.py <agent>
+Usage in any repo with a .agent/project.yaml:
+    python .agent/memory-kit/generate.py <agent>
 
 Where <agent> is one of:
     - claude-code  : Generates CLAUDE.md + .claude/settings.json hooks
@@ -40,7 +40,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Add adapters to path
+# This file is inside .agent/memory-kit/; project root is two levels up
+DEFAULT_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from adapters.claude_code import generate as generate_claude_code
@@ -103,7 +105,7 @@ def load_config(project_root: Path) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(
             f"No project config found at {config_path}.\n"
-            "Create .agent/project.yaml manually."
+            "Run `amk init` or create .agent/project.yaml manually."
         )
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -212,10 +214,10 @@ def _parse_args() -> tuple[str, Path, bool]:
         sys.exit(1)
 
     agent_name = sys.argv[1].lower()
-    project_root = Path(__file__).parent.parent
+    project_root = DEFAULT_PROJECT_ROOT
     force_all = False
 
-    # Optional positional project_root override (memory-kit style)
+    # Allow overriding project root via second arg
     arg_idx = 2
     if len(sys.argv) > arg_idx and not sys.argv[arg_idx].startswith("-"):
         project_root = Path(sys.argv[arg_idx]).resolve()

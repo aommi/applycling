@@ -27,6 +27,7 @@
 - **Profile summary header:** Must be `## PROFILE` (all caps) to match format template.
 - **`storage.save_config()` merges:** Never call with partial keys unless merging is intent.
 - **`_clean_llm_output()` required:** Strips code fences, preamble, leaked prompt markers from all LLM output.
+- **`_profile_header_markdown()` builds static header:** Constructs the name/contact block from `profile.json` for resume output. Never let the LLM generate this section — always use the pre-computed static header.
 
 ## Active Areas
 

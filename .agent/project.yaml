@@ -1,0 +1,97 @@
+project:
+  name: applycling
+  description: 'CLI tool that turns a job URL into a complete application package:
+    tailored resume, cover letter, positioning brief, email/InMail, and fit summary.'
+  llm_providers:
+  - anthropic
+  - google
+  - ollama
+  - openai
+architecture:
+  file: ARCHITECTURE_VISION.md
+  sections:
+    skills:
+      directory: applycling/skills/<name>/SKILL.md
+      loader: from applycling.skills import load_skill
+      loader_usage: load_skill(name).render(**kwargs)
+      format: YAML frontmatter (name, description, inputs, output_file, model_hint,
+        temperature) + str.format body
+    pipeline:
+      file: applycling/pipeline.py
+      components:
+      - PipelineContext
+      - PipelineStep
+      - PipelineRun
+      flow: role_intel → resume_tailor → profile_summary → format_resume → positioning_brief
+        → cover_letter → email_inmail → fit_summary
+    llm_routing:
+      file: applycling/llm.py
+      providers:
+      - ollama
+      - anthropic
+      - google
+      - openai
+      config: .env at repo root (gitignored), loaded via python-dotenv
+    tracker:
+      file: tracker/__init__.py
+      interface: get_store()
+      backends:
+      - Notion (data/notion.json)
+      - SQLite fallback
+      rule: Never call stores directly from cli.py
+    renderer:
+      file: applycling/render.py
+      stack: markdown → HTML → PDF via Playwright/Chromium
+      note: 'h3 em { float: right } right-aligns dates'
+conventions:
+- _clean_llm_output() strips code fences, preamble, leaked prompt markers, and trailing
+  sign-offs from all LLM output — always apply it
+- 'Profile summary section header must be ## PROFILE (all caps) to match the format
+  template'
+- storage.save_config() merges — never call it with only partial keys unless merging
+  is the intent
+- 'Skill templates use `str.format` — escape braces with `{{` and `}}`'
+- Conditional logic stays in Python, not skill templates
+- All API keys live in .env at repo root (gitignored)
+- Keep ARCHITECTURE_VISION.md canonical — update it when adding/removing skills, changing
+  pipeline contract, introducing new providers, shipping phases, or discovering risks
+skills:
+  enabled: true
+  directory: applycling/skills/
+  standard: agentskills.io frontmatter
+  note: Hermes's /skills browser can enumerate them natively
+agents:
+  claude_code:
+    enabled: true
+    hooks:
+      preprompt: true
+      stop: true
+  codex:
+    enabled: true
+    hooks: null
+  hermes:
+    enabled: true
+    hooks: null
+  openclaw:
+    enabled: true
+    hooks: null
+  cursor:
+    enabled: false
+    hooks: null
+  windsurf:
+    enabled: false
+    hooks: null
+  gemini_cli:
+    enabled: true
+    hooks: null
+  antigravity:
+    enabled: true
+    hooks: null
+memory:
+  semantic_max_lines: 500
+  working_max_lines: 300
+  files:
+    semantic: memory/semantic.md
+    working: memory/working.md
+    decisions: DECISIONS.md
+  task_directory: dev/[task]/

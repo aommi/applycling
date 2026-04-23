@@ -1,6 +1,6 @@
 # applycling — Developer Guide
 
-**applycling** is a CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary. Supports Anthropic (Claude), Google AI Studio (Gemini), and Ollama (local/cloud).
+**applycling** is CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary.
 
 ---
 
@@ -22,9 +22,7 @@
 
 ## Architecture vision
 
-Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles (thin harness + fat skills), product direction, design-decision rationale, and known risks. Tickets expire; this document does not. Use it to understand *why* the codebase looks the way it does before changing it.
-
-To add a new pipeline step, see `ARCHITECTURE_VISION.md` — section "Adding a New Pipeline Step".
+Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
 
 ---
 
@@ -32,46 +30,16 @@ To add a new pipeline step, see `ARCHITECTURE_VISION.md` — section "Adding a N
 
 All LLM prompt templates live in `applycling/skills/<name>/SKILL.md`. There are no prompt strings in Python source files.
 
-### Skill file format
-
-```markdown
----
-name: skill_name          # must match the directory name exactly
-description: One-line purpose
-inputs:
-  - placeholder_one       # every {placeholder} used in the body must be listed
-  - placeholder_two
-output_file: result.md    # optional — omit if the step writes no file
-model_hint: claude-3-5-haiku-20241022   # optional (T8)
-temperature: 0.3          # optional (T8)
----
-Prompt body. Uses {placeholder_one} and {placeholder_two} via str.format.
-
-Use {{literal_braces}} when the output must contain a literal { or }.
-```
-
 Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — no Jinja2, no exceptions.
-
-### Loader
-
-`load_skill(name)` → `Skill` with `.render(**kwargs)`. Import: `from applycling.skills import load_skill, Skill, SkillError`. Raises `SkillError` if the `name` field in frontmatter doesn't match the directory name.
-
----
-
-## Tracker abstraction
-
-`get_store()` in `tracker/__init__.py` auto-detects Notion or falls back to SQLite. All tracker calls go through the `TrackerStore` interface. Never call Notion or SQLite directly from `cli.py`.
 
 ---
 
 ## Key conventions
 
-- `_clean_llm_output()` strips code fences, preamble, leaked prompt markers, and trailing sign-offs from all LLM output. Always apply it.
-- `_profile_header_markdown()` builds the static name/contact block from `profile.json`. Never let the LLM write this section.
-- The profile summary section header must be `## PROFILE` (all caps) to match the format template.
-- `storage.save_config()` merges — never call it with only partial keys unless merging is the intent.
-- All API keys live in `.env` at repo root (gitignored). Loaded via `python-dotenv` in `llm.py`.
-- **Escaped braces in skill files:** `{{` and `}}` render as literal `{`/`}` after `str.format`. Do not use `\{` — invalid syntax.
-- **Conditional logic stays in Python:** Skill templates have no `if/else`. The caller pre-computes conditional strings and passes them as inputs.
-- **No Jinja2:** The template engine is `str.format`. If logic is complex, move it to the Python caller.
-- **Keep `ARCHITECTURE_VISION.md` canonical.** Update it in the same commit whenever you: add or remove a skill, change the pipeline contract (`_Step`, `PipelineStep`, `load_skill`), introduce a new provider, ship a T-numbered phase, or discover a risk worth remembering. When in doubt, update it.
+- _clean_llm_output() strips code fences, preamble, leaked prompt markers, and trailing sign-offs from all LLM output — always apply it
+- Profile summary section header must be ## PROFILE (all caps) to match the format template
+- storage.save_config() merges — never call it with only partial keys unless merging is the intent
+- Skill templates use `str.format` — escape braces with `{{` and `}}`
+- Conditional logic stays in Python, not skill templates
+- All API keys live in .env at repo root (gitignored)
+- Keep ARCHITECTURE_VISION.md canonical — update it when adding/removing skills, changing pipeline contract, introducing new providers, shipping phases, or discovering risks
