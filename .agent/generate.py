@@ -184,7 +184,7 @@ def load_config(project_root: Path) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(
             f"No project config found at {config_path}.\n"
-            "Run `generate.py init` to create one."
+            "Run `python .agent/generate.py init` to create one."
         )
     with open(config_path) as f:
         return yaml.safe_load(f)
