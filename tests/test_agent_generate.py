@@ -24,6 +24,7 @@ from adapters.gemini_cli import generate as gen_gemini_cli
 from adapters.windsurf import generate as gen_windsurf
 from adapters.openclaw import generate as gen_openclaw
 from adapters.hermes import generate as gen_hermes
+from adapters._mk import make_wrapper
 
 
 @pytest.fixture()
@@ -305,7 +306,3 @@ def test_superseded_state_cleared(tmp_project):
     mod._clear_superseded_state("codex", state)
     assert "hermes" not in state["agents"]
     assert "codex" in state["agents"]
-
-
-# Import make_wrapper here so test_antigravity can use it without altering imports above
-from adapters._mk import make_wrapper
