@@ -1,46 +1,31 @@
 """
-Gemini CLI Adapter — generates GEMINI.md + sub-directory context files
+Gemini Cli Adapter — thin wrapper around memory-kit adapter.
+
+Loads project config from .agent/project.yaml and delegates to the reusable
+memory-kit adapter in .agent/memory-kit/adapters/.
 """
+import importlib.util
 from pathlib import Path
+import yaml
+
+
+def _load_mk_adapter():
+    mk_dir = Path(__file__).parent.parent / "memory-kit"
+    spec = importlib.util.spec_from_file_location(
+        "mk_gemini_cli",
+        mk_dir / "adapters" / "gemini_cli.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate
+
+
+_generate = _load_mk_adapter()
 
 
 def generate(project_root: Path):
-    """Generate Gemini CLI configuration."""
-
-    templates = project_root / ".agent" / "templates"
-    preprompt = (templates / "preprompt.txt").read_text()
-    arch = (templates / "architecture.md").read_text()
-
-    gemini_md = (
-        "# Project Context — applycling\n\n"
-        "**applycling** is a CLI tool that turns a job URL into a complete application package:"
-        " tailored resume, cover letter, positioning brief, email/InMail, and fit summary.\n\n"
-        "---\n\n"
-        "## Memory System\n\n"
-        "This project uses a file-based memory system to maintain context across sessions.\n\n"
-        "### Session Startup\n\n"
-        "Read `memory/semantic.md` ONCE to load project context.\n\n"
-        "### On Every Turn\n\n"
-        + preprompt.strip()
-        + "\n\n---\n\n"
-        + arch
-        + "\n"
-    )
-
-    (project_root / "GEMINI.md").write_text(gemini_md)
-
-    gemini_dir = project_root / ".gemini"
-    gemini_dir.mkdir(exist_ok=True)
-
-    context = (
-        "# Gemini CLI Context\n\n"
-        "This project uses a shared memory system in the `memory/` directory:\n\n"
-        "- `memory/semantic.md` — project knowledge (read at session start)\n"
-        "- `memory/working.md` — current task state (read every turn)\n"
-        "- `dev/[task]/` — active task context\n\n"
-        "See `GEMINI.md` for full integration details.\n"
-    )
-
-    (gemini_dir / "context.md").write_text(context)
-
-    return "Gemini CLI configuration generated:\n  - GEMINI.md\n  - .gemini/context.md"
+    """Generate Gemini Cli configuration."""
+    config_path = project_root / ".agent" / "project.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    return _generate(project_root, config)

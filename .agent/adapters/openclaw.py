@@ -1,51 +1,31 @@
 """
-OpenClaw Adapter — generates .openclaw-system.md (system prompt include)
+Openclaw Adapter — thin wrapper around memory-kit adapter.
 
-OpenClaw has no native project-root file convention. Two install options:
-  A) Point OpenClaw at this file via the `system_prompt_file` setting
-  B) Paste the file contents directly into OpenClaw's system prompt settings
+Loads project config from .agent/project.yaml and delegates to the reusable
+memory-kit adapter in .agent/memory-kit/adapters/.
 """
+import importlib.util
 from pathlib import Path
+import yaml
+
+
+def _load_mk_adapter():
+    mk_dir = Path(__file__).parent.parent / "memory-kit"
+    spec = importlib.util.spec_from_file_location(
+        "mk_openclaw",
+        mk_dir / "adapters" / "openclaw.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate
+
+
+_generate = _load_mk_adapter()
 
 
 def generate(project_root: Path):
-    """Generate OpenClaw configuration."""
-
-    templates = project_root / ".agent" / "templates"
-    preprompt = (templates / "preprompt.txt").read_text()
-    arch = (templates / "architecture.md").read_text()
-
-    content = (
-        "# OpenClaw system prompt — applycling\n\n"
-        "<!--\n"
-        "  Install options:\n"
-        "    A) system_prompt_file: .openclaw-system.md  (in OpenClaw config)\n"
-        "    B) Paste this file's content into OpenClaw's system prompt settings\n"
-        "-->\n\n"
-        "You are an agent working in the **applycling** project — a CLI tool that turns a job URL\n"
-        "into a complete application package (resume, cover letter, positioning brief, email, fit summary).\n\n"
-        "This project uses a file-based memory system. Treat it as authoritative.\n\n"
-        "## Startup (read in order)\n\n"
-        "1. `memory/semantic.md` — distilled project knowledge (≤500 tokens); read ONCE per session\n"
-        "2. `memory/working.md` — live task state; read before every response\n\n"
-        "## On Every Turn\n\n"
-        + preprompt.strip()
-        + "\n\n---\n\n"
-        + arch
-        + "\n\n---\n\n"
-        "## Memory Discipline\n\n"
-        "- `memory/semantic.md` — propose updates; wait for approval before writing\n"
-        "- `memory/working.md` — update freely after each response; no approval needed\n"
-        "- `DECISIONS.md` — append-only; propose entries for approval\n"
-        "- `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed\n"
-    )
-
-    (project_root / ".openclaw-system.md").write_text(content)
-
-    return (
-        "OpenClaw configuration generated:\n"
-        "  - .openclaw-system.md\n\n"
-        "Install options:\n"
-        "  A) Set system_prompt_file: .openclaw-system.md in OpenClaw config\n"
-        "  B) Paste the file contents into OpenClaw's system prompt settings"
-    )
+    """Generate Openclaw configuration."""
+    config_path = project_root / ".agent" / "project.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    return _generate(project_root, config)

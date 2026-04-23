@@ -2,16 +2,26 @@
 
 This directory contains adapters for integrating the applycling memory system with different AI coding agents.
 
-## The Problem
+## Structure
 
-The memory system (`memory/semantic.md`, `memory/working.md`, `dev/[task]/`) is portable across agents. However, each agent has its own:
-- Entry-point file (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`)
-- Hook configuration format (or none at all)
-- Memory loading mechanism
+```
+.agent/
+  project.yaml          # Applycling-specific configuration
+  generate.py           # Main generator script (thin wrapper around memory-kit)
+  adapters/             # Thin wrappers that load project.yaml and delegate to memory-kit
+  memory-kit/           # THE REUSABLE CORE — copy this to other repos
+    README.md           # Full documentation for the kit
+    generate.py         # Standalone generator
+    templates/          # Generic templates (preprompt, stop hook, memory protocol)
+    adapters/           # Parameterized adapters for each agent
+```
 
-## The Solution
+## How it works
 
-Run the adapter generator for your target agent. It creates the right entry-point file and hook configuration.
+1. **Project config** lives in `.agent/project.yaml` — name, description, architecture file, conventions, enabled agents.
+2. **Generic protocol** lives in `.agent/memory-kit/templates/` — preprompt instructions, stop hook, memory rules. These are agent-agnostic.
+3. **Agent adapters** in `.agent/memory-kit/adapters/` combine project config + generic templates to produce the right entry-point file for each agent.
+4. **Thin wrappers** in `.agent/adapters/` load `.agent/project.yaml` and call the memory-kit adapter. This keeps the existing `generate.py` interface unchanged.
 
 ## Usage
 
@@ -23,50 +33,26 @@ python .agent/generate.py <agent>
 Where `<agent>` is one of:
 - `claude-code` — generates `CLAUDE.md` + `.claude/settings.json` hooks
 - `codex` — generates `AGENTS.md` (hooks not supported)
-- `cursor` — generates `.cursor/rules/memory.mdc` with auto-attach globs
-- `gemini-cli` — generates `GEMINI.md` + sub-directory files
-- `windsurf` — generates `.windsurfrules` (no hook support)
-- `openclaw` — generates `.openclaw-system.md` (system prompt include)
 - `hermes` — generates `AGENTS.md` (superset of codex; also readable by Codex)
-- `all` — generates all of the above (hermes runs after codex so hermes AGENTS.md wins)
+- `openclaw` — generates `.openclaw-system.md`
+- `cursor` — generates `.cursor/rules/memory.mdc`
+- `windsurf` — generates `.windsurfrules`
+- `gemini-cli` — generates `GEMINI.md`
+- `all` — generates all of the above
 
-**codex vs hermes:** Both write `AGENTS.md`. The hermes version is a superset (adds
-agentskills.io skills note). If you use both agents, run `hermes` or `all`.
+## Using this in another repo
 
-## File Structure
+See `.agent/memory-kit/README.md` for the full cross-repo setup guide. The short version:
 
-```
-.agent/
-  generate.py          # Main generator script
-  adapters/
-    claude_code.py     # Claude Code adapter
-    codex.py           # OpenAI Codex adapter
-    cursor.py          # Cursor IDE adapter
-    gemini_cli.py      # Gemini CLI adapter
-    windsurf.py        # Windsurf adapter
-    openclaw.py        # OpenClaw adapter
-    hermes.py          # Hermes Agent adapter (Nous Research)
-  templates/
-    preprompt.txt      # Shared preprompt template
-    stop.sh            # Shared stop hook (Claude Code only)
-```
+1. Copy `.agent/memory-kit/` into your new repo
+2. Create `.agent/project.yaml` with your project details
+3. Create `ARCHITECTURE.md` with your project architecture
+4. Run `python .agent/memory-kit/generate.py all`
 
 ## Memory Files (Portable)
 
 These live at project root and are shared across all agents:
-- `memory/semantic.md` — distilled project knowledge (≤500 tokens)
-- `memory/working.md` — live task state (≤300 tokens)
+- `memory/semantic.md` — distilled project knowledge (≤500 lines)
+- `memory/working.md` — live task state (≤300 lines)
 - `DECISIONS.md` — append-only decisions log
 - `dev/[task]/` — active task context
-
-## How It Works
-
-1. **Claude Code**: Uses hooks (`UserPromptSubmit`, `Stop`) to load memory automatically
-2. **Codex**: Entry-point file (`AGENTS.md`) instructs the agent to read memory files
-3. **Cursor**: Rules with auto-attach globs trigger on file changes
-4. **Gemini CLI**: Entry-point file + sub-directory context files
-5. **Windsurf**: `.windsurfrules` file at project root; no hook support — instruction-driven
-6. **OpenClaw**: `.openclaw-system.md` as a system prompt include; paste or reference via `system_prompt_file`
-7. **Hermes**: `AGENTS.md` at project root; skills in `applycling/skills/` are natively browsable via Hermes's `/skills`
-
-The adapter generator ensures each agent gets the right integration format while sharing the same underlying memory files.

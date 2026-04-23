@@ -1,34 +1,31 @@
 """
-Windsurf Adapter — generates .windsurfrules at project root
+Windsurf Adapter — thin wrapper around memory-kit adapter.
+
+Loads project config from .agent/project.yaml and delegates to the reusable
+memory-kit adapter in .agent/memory-kit/adapters/.
 """
+import importlib.util
 from pathlib import Path
+import yaml
+
+
+def _load_mk_adapter():
+    mk_dir = Path(__file__).parent.parent / "memory-kit"
+    spec = importlib.util.spec_from_file_location(
+        "mk_windsurf",
+        mk_dir / "adapters" / "windsurf.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate
+
+
+_generate = _load_mk_adapter()
 
 
 def generate(project_root: Path):
     """Generate Windsurf configuration."""
-
-    templates = project_root / ".agent" / "templates"
-    preprompt = (templates / "preprompt.txt").read_text()
-    arch = (templates / "architecture.md").read_text()
-
-    content = (
-        "# Windsurf rules — applycling memory system\n\n"
-        "This project uses a file-based memory system to maintain context across sessions.\n"
-        "No hook support — memory loading is instruction-driven.\n\n"
-        "## Session Startup\n\n"
-        "1. Read `memory/semantic.md` ONCE to load project context\n"
-        "2. Read `memory/working.md` to understand current task state\n\n"
-        "## On Every Turn\n\n"
-        + preprompt.strip()
-        + "\n\n---\n\n"
-        + arch
-        + "\n"
-    )
-
-    (project_root / ".windsurfrules").write_text(content)
-
-    return (
-        "Windsurf configuration generated:\n"
-        "  - .windsurfrules\n\n"
-        "Note: Windsurf has no hook support. Memory loading relies on .windsurfrules being read at session start."
-    )
+    config_path = project_root / ".agent" / "project.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    return _generate(project_root, config)

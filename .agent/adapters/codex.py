@@ -1,42 +1,31 @@
 """
-OpenAI Codex Adapter — generates AGENTS.md (hooks not supported)
+Codex Adapter — thin wrapper around memory-kit adapter.
 
-Note: Hermes also reads AGENTS.md. The hermes adapter produces a superset of this
-file (adds agentskills.io note). If you use both Codex and Hermes, run the hermes
-adapter (or `generate.py all`) — Codex reads the hermes version fine.
+Loads project config from .agent/project.yaml and delegates to the reusable
+memory-kit adapter in .agent/memory-kit/adapters/.
 """
+import importlib.util
 from pathlib import Path
+import yaml
+
+
+def _load_mk_adapter():
+    mk_dir = Path(__file__).parent.parent / "memory-kit"
+    spec = importlib.util.spec_from_file_location(
+        "mk_codex",
+        mk_dir / "adapters" / "codex.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate
+
+
+_generate = _load_mk_adapter()
 
 
 def generate(project_root: Path):
-    """Generate OpenAI Codex configuration."""
-
-    templates = project_root / ".agent" / "templates"
-    preprompt = (templates / "preprompt.txt").read_text()
-    arch = (templates / "architecture.md").read_text()
-
-    content = (
-        "# Project Context — applycling\n\n"
-        "**applycling** is a CLI tool that turns a job URL into a complete application package:"
-        " tailored resume, cover letter, positioning brief, email/InMail, and fit summary."
-        " Supports Anthropic (Claude), Google AI Studio (Gemini), Ollama, and OpenAI.\n\n"
-        "---\n\n"
-        "## Memory System\n\n"
-        "This project uses a file-based memory system to maintain context across sessions.\n\n"
-        "### On Session Start\n\n"
-        "Read `memory/semantic.md` ONCE to load project context before answering.\n\n"
-        "### On Every Turn\n\n"
-        + preprompt.strip()
-        + "\n\n---\n\n"
-        + arch
-        + "\n"
-    )
-
-    (project_root / "AGENTS.md").write_text(content)
-
-    return (
-        "Codex configuration generated:\n"
-        "  - AGENTS.md\n\n"
-        "Note: Codex does not support hooks. Memory loading relies on the agent reading AGENTS.md at session start.\n"
-        "Note: If you also use Hermes, run `generate.py hermes` instead — the hermes AGENTS.md is a superset."
-    )
+    """Generate Codex configuration."""
+    config_path = project_root / ".agent" / "project.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    return _generate(project_root, config)
