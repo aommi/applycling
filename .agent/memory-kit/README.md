@@ -1,6 +1,6 @@
 # Agent Memory Kit
 
-A file-based memory system for solo developers who switch between AI coding agents. Works across any repository. Supports Claude Code, Hermes, OpenClaw, Codex, Cursor, Gemini CLI, and Windsurf.
+A file-based memory system for solo developers who switch between AI coding agents. Works across any repository. Supports Claude Code, Hermes, OpenClaw, Codex, Cursor, Gemini CLI, Windsurf, and Antigravity.
 
 ---
 
@@ -92,6 +92,8 @@ agents:
     enabled: true
   codex:
     enabled: true
+  antigravity:
+    enabled: true
 EOF
 ```
 
@@ -119,13 +121,29 @@ EOF
 python .agent/memory-kit/generate.py all
 ```
 
-This creates:
-- `CLAUDE.md` + `.claude/settings.json` + `hooks/` (Claude Code)
-- `AGENTS.md` (Hermes + Codex)
-- `.openclaw-system.md` (OpenClaw)
-- `.cursor/rules/memory.mdc` (Cursor)
-- `.windsurfrules` (Windsurf)
-- `GEMINI.md` + `.gemini/context.md` (Gemini CLI)
+This generates configs for **only the agents you enabled** in `project.yaml`:
+
+| Agent | Files created |
+|---|---|
+| Claude Code | `CLAUDE.md` + `.claude/settings.json` + `hooks/` |
+| Hermes + Codex | `AGENTS.md` |
+| OpenClaw | `.openclaw-system.md` |
+| Cursor | `.cursor/rules/memory.mdc` |
+| Windsurf | `.windsurfrules` |
+| Gemini CLI | `GEMINI.md` + `.gemini/context.md` |
+| Antigravity | `.agents/rules/` + `.agents/workflows/` |
+
+To generate **all** agents regardless of config:
+
+```bash
+python .agent/memory-kit/generate.py all --force
+```
+
+To generate a single agent on demand:
+
+```bash
+python .agent/memory-kit/generate.py claude-code
+```
 
 ### Step 5: Create runtime memory files
 
@@ -212,6 +230,26 @@ This mirrors your file-based memory into Hermes's built-in persistence. `memory/
 
 **Your workflow:**
 - Same as Hermes, but less reliable. If Codex drifts, explicitly say: "Read memory/semantic.md and memory/working.md"
+
+---
+
+### Antigravity (MEDIUM-HIGH confidence — Rules + Workflows)
+
+**Files:** `.agents/rules/memory-system.md`, `.agents/rules/project-context.md`, `.agents/workflows/memory-update.md`, `.agents/workflows/task-switch.md`
+
+**How it works:**
+- Antigravity reads workspace Rules from `.agents/rules/` and Workflows from `.agents/workflows/`
+- Rules can be set to "Always On" in the Antigravity UI for passive context injection
+- Workflows are invoked manually via `/workflow-name` (e.g., `/memory-update`)
+- No automatic post-response hooks, but Workflows give you structured manual memory maintenance
+
+**Your workflow:**
+1. Generate the Antigravity configs: `python .agent/generate.py antigravity`
+2. Open Antigravity's Customizations panel, set both rules to "Always On"
+3. Work normally. After significant changes, invoke `/memory-update`
+4. To switch tasks mid-session, invoke `/task-switch`
+
+**Note:** Because Antigravity rules are limited to 12,000 characters each, large architecture docs are split across `memory-system.md` (protocol) and `project-context.md` (architecture).
 
 ---
 
@@ -310,6 +348,7 @@ Do not over-engineer this. For 1–5 repos, copy-paste is faster than any automa
       cursor.py             # Parameterized Cursor adapter
       windsurf.py           # Parameterized Windsurf adapter
       gemini_cli.py         # Parameterized Gemini CLI adapter
+      antigravity.py        # Parameterized Antigravity adapter
 
 memory/
   semantic.md               # Distilled knowledge (≤500 lines)

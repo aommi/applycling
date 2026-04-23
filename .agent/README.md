@@ -38,7 +38,10 @@ Where `<agent>` is one of:
 - `cursor` — generates `.cursor/rules/memory.mdc`
 - `windsurf` — generates `.windsurfrules`
 - `gemini-cli` — generates `GEMINI.md`
-- `all` — generates all of the above
+- `antigravity` — generates `.agents/rules/` + `.agents/workflows/`
+- `all` — generates only the agents enabled in `.agent/project.yaml`
+
+Use `--force` with `all` to generate every agent regardless of config.
 
 ## Using this in another repo
 

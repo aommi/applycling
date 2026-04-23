@@ -76,12 +76,15 @@ agents:
     enabled: true
     hooks: null
   cursor:
-    enabled: true
+    enabled: false
     hooks: null
   windsurf:
-    enabled: true
+    enabled: false
     hooks: null
   gemini_cli:
+    enabled: true
+    hooks: null
+  antigravity:
     enabled: true
     hooks: null
 memory:

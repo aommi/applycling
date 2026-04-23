@@ -515,7 +515,7 @@ See `.agent/README.md` for details.
 ## 12. What This Document Is Not
 
 - Not a user guide — see `README.md`.
-- Not a sprint plan — see `PERSONAL_USE_PLAN.md`.
+- Not a sprint plan — see `TOREVIEW/PERSONAL_USE_PLAN.md`.
 - Not an API reference — see docstrings in `pipeline.py` and `skills/loader.py`.
 - Not a marketing doc — there are no claims about the product, only about the
   architecture.
@@ -523,14 +523,6 @@ See `.agent/README.md` for details.
 If a future change contradicts any section here, update this doc in the same
 commit. This is the source of truth for *why* applycling looks the way it does.
 
-
----
-
-## Skills architecture
-
-All LLM prompt templates live in `applycling/skills/<name>/SKILL.md`. There are no prompt strings in Python source files.
-
-Frontmatter is parsed with `pyyaml`. Template engine is plain `str.format` — no Jinja2, no exceptions.
 
 ---
 

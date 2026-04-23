@@ -73,10 +73,10 @@ Append-only architectural decisions log. To reverse a prior decision, append a n
 - Hermes and Codex both write `AGENTS.md`; hermes version is a superset (codex reads it fine)
 - `.agent/templates/architecture.md` introduced as a shared template — eliminates 7-way drift when architecture evolves
 - All adapters refactored to `Path.read_text()`/`write_text()`; `claude_code.py` hooks now deep-merge instead of replacing existing hook events
-- `OPERATIONAL_MANUAL.md` updated with "Switching agents" command table
+- `.agent/OPERATIONAL_MANUAL.md` updated with "Switching agents" command table
 
 **Rejected alternatives:**
 - Per-agent branches (merge overhead for one-person project)
 - Asking each agent to read a single universal entry-point file (no such convention exists)
 
-**Affects:** `.agent/`, `ARCHITECTURE_VISION.md`, `memory/semantic.md`, `OPERATIONAL_MANUAL.md`
+**Affects:** `.agent/`, `ARCHITECTURE_VISION.md`, `memory/semantic.md`, `.agent/OPERATIONAL_MANUAL.md`

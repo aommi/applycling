@@ -534,15 +534,13 @@ See `.agent/README.md` for details.
 ## 12. What This Document Is Not
 
 - Not a user guide — see `README.md`.
-- Not a sprint plan — see `PERSONAL_USE_PLAN.md`.
+- Not a sprint plan — see `TOREVIEW/PERSONAL_USE_PLAN.md`.
 - Not an API reference — see docstrings in `pipeline.py` and `skills/loader.py`.
 - Not a marketing doc — there are no claims about the product, only about the
   architecture.
 
 If a future change contradicts any section here, update this doc in the same
 commit. This is the source of truth for *why* applycling looks the way it does.
-
-These skill files follow the agentskills.io frontmatter standard — Hermes's `/skills` browser can enumerate them natively.
 
 
 ---
