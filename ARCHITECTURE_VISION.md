@@ -406,7 +406,7 @@ stays small.
 
 ## 10. Adding a New Pipeline Step
 
-A "pipeline step" here means adding a new **skill** as a step within an existing **capability**. To add a new top-level capability (e.g., a new orchestration like `interview_prep`), follow the same SKILL.md pattern but wire it into a new CLI command rather than the `run_add()` pipeline.
+A "pipeline step" here means adding a new **skill** as a step within an existing **capability**. To add a new top-level capability (e.g., a new orchestration like `interview_prep`), follow the same skill-creation pattern but wire it into a new CLI command rather than the `run_add()` pipeline.
 
 All pipeline steps use the `_Step` context manager in `cli.py`, which handles timing, logging, token counting, and status automatically.
 
