@@ -382,82 +382,165 @@ def setup() -> None:
         return {}
 
     def _step_applicant_profile():
-        console.print("\n[bold]Step 6 — Application details[/bold] [dim](used to pre-fill job form questions)[/dim]")
+        console.print("\n[bold]Step 6 — Application details[/bold] [dim](injected into cover letters, emails, and briefs)[/dim]")
         existing = storage.load_applicant_profile()
 
-        work_auth = Prompt.ask("Work authorisation (e.g. Canadian PR, needs H1B)", default=existing.get("work_auth", ""))
-        sponsorship_raw = _pick("Sponsorship needed?", ["no", "yes", _BACK], default="yes" if existing.get("sponsorship_needed") else "no")
-        if sponsorship_raw == _BACK: return _BACK
-        sponsorship_needed = sponsorship_raw == "yes"
-        visa_status = Prompt.ask("Visa status (optional free-text)", default=existing.get("visa_status", ""))
+        result: dict = {}
+        skipped: list[str] = []
 
-        relocation_raw = _pick("Open to relocation?", ["no", "yes", _BACK], default="yes" if existing.get("relocation") else "no")
-        if relocation_raw == _BACK: return _BACK
-        relocation = relocation_raw == "yes"
-        relocation_cities: list[str] = existing.get("relocation_cities", [])
-        if relocation:
-            cities_default = ", ".join(relocation_cities)
-            cities_input = Prompt.ask("Preferred cities (comma-separated, optional)", default=cities_default)
+        # --- work_auth ---
+        console.print()
+        val = Prompt.ask(
+            'Work authorization (e.g. "Canadian PR", "needs H1B") — press Enter to skip',
+            default=existing.get("work_auth", ""),
+        ).strip()
+        if val:
+            console.print(f"  [dim]got it — work auth: {val}. ✓[/dim]")
+            result["work_auth"] = val
+        else:
+            console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            skipped.append("work auth")
+
+        # --- sponsorship_needed ---
+        console.print()
+        _existing_sponsor = existing.get("sponsorship_needed")
+        _sponsor_default = "y" if _existing_sponsor is True else ("n" if _existing_sponsor is False else "")
+        val = Prompt.ask(
+            "Sponsorship needed? [y/n] — press Enter to skip",
+            default=_sponsor_default,
+        ).strip().lower()
+        if val in ("y", "yes"):
+            console.print("  [dim]got it — sponsorship needed: yes. ✓[/dim]")
+            result["sponsorship_needed"] = True
+        elif val in ("n", "no"):
+            console.print("  [dim]got it — sponsorship needed: no. ✓[/dim]")
+            result["sponsorship_needed"] = False
+        else:
+            console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            skipped.append("sponsorship")
+
+        # --- relocation ---
+        console.print()
+        _existing_reloc = existing.get("relocation")
+        _reloc_default = "y" if _existing_reloc is True else ("n" if _existing_reloc is False else "")
+        val = Prompt.ask(
+            "Open to relocation? [y/n] — press Enter to skip",
+            default=_reloc_default,
+        ).strip().lower()
+        if val in ("y", "yes"):
+            cities_input = Prompt.ask(
+                "Preferred cities (comma-separated) — press Enter to skip",
+                default=", ".join(existing.get("relocation_cities", [])),
+            ).strip()
             relocation_cities = [c.strip() for c in cities_input.split(",") if c.strip()]
+            if relocation_cities:
+                console.print(f"  [dim]got it — open to relocation in: {', '.join(relocation_cities)}. ✓[/dim]")
+                result["relocation_cities"] = relocation_cities
+            else:
+                console.print("  [dim]got it — open to relocation (cities tbd). ✓[/dim]")
+            result["relocation"] = True
+        elif val in ("n", "no"):
+            console.print("  [dim]got it — not open to relocation. ✓[/dim]")
+            result["relocation"] = False
+        else:
+            console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            skipped.append("relocation")
 
+        # --- remote_preference ---
+        console.print()
+        remote_default = existing.get("remote_preference", "flexible")
         remote_preference = _pick(
             "Remote preference",
-            ["flexible", "remote", "hybrid", "on-site", _BACK],
-            default=existing.get("remote_preference", "flexible"),
+            ["flexible", "remote", "hybrid", "on-site"],
+            default=remote_default,
         )
-        if remote_preference == _BACK: return _BACK
+        _is_default_remote = remote_preference == "flexible" and not existing.get("remote_preference")
+        if _is_default_remote:
+            console.print(f"  [dim]got it — remote preference: {remote_preference} (default). ✓[/dim]")
+        else:
+            console.print(f"  [dim]got it — remote preference: {remote_preference}. ✓[/dim]")
+        result["remote_preference"] = remote_preference
 
-        console.print("\n[bold]Compensation expectations[/bold] [dim](leave blank to skip)[/dim]")
-        existing_comp = existing.get("comp_expectation", {})
-        comp_min = Prompt.ask("Minimum (e.g. 120000)", default=str(existing_comp.get("min", ""))).strip()
-        comp_target = Prompt.ask("Target (e.g. 140000)", default=str(existing_comp.get("target", ""))).strip()
-        comp_currency = Prompt.ask("Currency", default=existing_comp.get("currency", "USD")).strip()
-        comp_expectation: dict = {}
-        if comp_min or comp_target:
-            comp_expectation = {"currency": comp_currency or "USD"}
-            if comp_min:
-                try: comp_expectation["min"] = int(comp_min)
-                except ValueError: comp_expectation["min"] = comp_min
-            if comp_target:
-                try: comp_expectation["target"] = int(comp_target)
-                except ValueError: comp_expectation["target"] = comp_target
+        # --- comp_expectation (single free-text) ---
+        console.print()
+        _existing_comp = existing.get("comp_expectation", "")
+        if isinstance(_existing_comp, dict):
+            _parts = []
+            if _existing_comp.get("min"): _parts.append(str(_existing_comp["min"]))
+            if _existing_comp.get("target"): _parts.append(str(_existing_comp["target"]))
+            _currency = _existing_comp.get("currency", "")
+            _existing_comp_str = (f"{' – '.join(_parts)} {_currency}".strip()) if _parts else ""
+        else:
+            _existing_comp_str = _existing_comp or ""
+        val = Prompt.ask(
+            "Compensation expectations (e.g. $150–200k CAD) — press Enter to skip",
+            default=_existing_comp_str,
+        ).strip()
+        if val:
+            console.print(f"  [dim]got it — comp expectations: {val}. ✓[/dim]")
+            result["comp_expectation"] = val
+        else:
+            console.print("  [dim]skipped for now. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            skipped.append("comp expectations")
 
-        notice_period = Prompt.ask("Notice period (e.g. 2 weeks, immediate)", default=existing.get("notice_period", ""))
-        earliest_start_date = Prompt.ask("Earliest start date (optional)", default=existing.get("earliest_start_date", ""))
+        # --- notice_period ---
+        console.print()
+        val = Prompt.ask(
+            "Notice period (e.g. 2 weeks, immediate) — press Enter to skip",
+            default=existing.get("notice_period", ""),
+        ).strip()
+        if val:
+            console.print(f"  [dim]got it — notice period: {val}. ✓[/dim]")
+            result["notice_period"] = val
+        else:
+            console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            skipped.append("notice period")
 
-        console.print("\n[bold]EEOC / demographics[/bold] [dim](entirely optional — only used for form auto-fill)[/dim]")
-        demo_choice = _pick("Provide demographic info?", ["skip", "yes", _BACK], default="skip")
-        if demo_choice == _BACK: return _BACK
-        demographics: dict = existing.get("demographics", {})
-        if demo_choice == "yes":
-            demographics = {
-                "gender":           Prompt.ask("Gender (optional)", default=demographics.get("gender", "")),
-                "race_ethnicity":   Prompt.ask("Race/ethnicity (optional)", default=demographics.get("race_ethnicity", "")),
-                "disability_status":Prompt.ask("Disability status (optional)", default=demographics.get("disability_status", "")),
-                "veteran_status":   Prompt.ask("Veteran status (optional)", default=demographics.get("veteran_status", "")),
-            }
-            demographics = {k: v for k, v in demographics.items() if v}
+        # --- earliest_start_date ---
+        console.print()
+        val = Prompt.ask(
+            "Earliest start date — press Enter to skip",
+            default=existing.get("earliest_start_date", ""),
+        ).strip()
+        if val:
+            console.print(f"  [dim]got it — earliest start: {val}. ✓[/dim]")
+            result["earliest_start_date"] = val
+        else:
+            console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            skipped.append("earliest start")
+
+        # --- Summary block ---
+        console.print()
+        _summary_lines = ["[green]applicant profile saved to data/applicant_profile.json:[/green]"]
+        _field_labels = [
+            ("work_auth", "work auth"),
+            ("sponsorship_needed", "sponsorship needed"),
+            ("relocation", "open to relocation"),
+            ("remote_preference", "remote preference"),
+            ("comp_expectation", "comp expectations"),
+            ("notice_period", "notice period"),
+            ("earliest_start_date", "earliest start"),
+        ]
+        for _k, _label in _field_labels:
+            if _k not in result:
+                continue
+            _v = result[_k]
+            if _k == "relocation" and result.get("relocation_cities"):
+                _summary_lines.append(f"- {_label}: yes ({', '.join(result['relocation_cities'])})")
+            elif isinstance(_v, bool):
+                _summary_lines.append(f"- {_label}: {'yes' if _v else 'no'}")
+            else:
+                _summary_lines.append(f"- {_label}: {_v}")
+        if skipped:
+            _summary_lines.append(
+                f"[dim]- skipped: {', '.join(skipped)} "
+                f"(run [bold]applycling setup[/bold] anytime to add)[/dim]"
+            )
+        console.print(Panel("\n".join(_summary_lines), style="green"))
 
         back = _pick("Continue?", ["continue", _BACK], default="continue")
-        if back == _BACK: return _BACK
-
-        result: dict = {
-            "work_auth": work_auth,
-            "sponsorship_needed": sponsorship_needed,
-            "relocation": relocation,
-            "remote_preference": remote_preference,
-            "notice_period": notice_period,
-        }
-        if visa_status:
-            result["visa_status"] = visa_status
-        if relocation_cities:
-            result["relocation_cities"] = relocation_cities
-        if comp_expectation:
-            result["comp_expectation"] = comp_expectation
-        if earliest_start_date:
-            result["earliest_start_date"] = earliest_start_date
-        if demographics:
-            result["demographics"] = demographics
+        if back == _BACK:
+            return _BACK
         return result
 
     def _step_linkedin():
