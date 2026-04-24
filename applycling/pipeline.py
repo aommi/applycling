@@ -703,13 +703,16 @@ def run_add(
         on_status("Writing cover letter...")
 
     _vt = f" Candidate's voice and tone: {context.profile['voice_tone']}" if context.profile and context.profile.get("voice_tone") else ""
+    _ap_section = (
+        f"\n=== APPLICANT PROFILE ===\n{_applicant_profile_block(context.applicant_profile)}"
+        if context.applicant_profile else ""
+    )
     step = PipelineStep("cover_letter", output_file="cover_letter.md")
     step.prompt = load_skill("cover_letter").render(
         role_intel=strategy, tailored_resume=tailored,
         job_description=job_description, voice_tone_section=_vt,
+        applicant_profile_section=_ap_section,
     )
-    if context.applicant_profile:
-        step.prompt += f"\n\n=== APPLICANT PROFILE ===\n{_applicant_profile_block(context.applicant_profile)}\n"
     try:
         with step.streaming(on_chunk=on_chunk, on_status=on_status) as collect:
             for chunk in llm.cover_letter(
@@ -740,9 +743,8 @@ def run_add(
             role_intel=strategy, candidate_name=context.profile.get("name", ""),
             candidate_contact=contact_line, job_title=job_title,
             company=job_company, voice_tone_section=_vt,
+            applicant_profile_section=_ap_section,
         )
-        if context.applicant_profile:
-            step.prompt += f"\n\n=== APPLICANT PROFILE ===\n{_applicant_profile_block(context.applicant_profile)}\n"
         try:
             with step.streaming(on_chunk=on_chunk, on_status=on_status) as collect:
                 for chunk in llm.application_email(

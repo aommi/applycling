@@ -403,11 +403,11 @@ def setup() -> None:
 
         # --- sponsorship_needed ---
         console.print()
-        _existing_sponsor = existing.get("sponsorship_needed")
-        _sponsor_default = "y" if _existing_sponsor is True else ("n" if _existing_sponsor is False else "")
+        existing_sponsor = existing.get("sponsorship_needed")
+        sponsor_default = "y" if existing_sponsor is True else ("n" if existing_sponsor is False else "")
         val = Prompt.ask(
             "Sponsorship needed? [y/n] — press Enter to skip",
-            default=_sponsor_default,
+            default=sponsor_default,
         ).strip().lower()
         if val in ("y", "yes"):
             console.print("  [dim]got it — sponsorship needed: yes. ✓[/dim]")
@@ -421,11 +421,11 @@ def setup() -> None:
 
         # --- relocation ---
         console.print()
-        _existing_reloc = existing.get("relocation")
-        _reloc_default = "y" if _existing_reloc is True else ("n" if _existing_reloc is False else "")
+        existing_reloc = existing.get("relocation")
+        reloc_default = "y" if existing_reloc is True else ("n" if existing_reloc is False else "")
         val = Prompt.ask(
             "Open to relocation? [y/n] — press Enter to skip",
-            default=_reloc_default,
+            default=reloc_default,
         ).strip().lower()
         if val in ("y", "yes"):
             cities_input = Prompt.ask(
@@ -446,35 +446,39 @@ def setup() -> None:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
             skipped.append("relocation")
 
-        # --- remote_preference ---
+        # --- remote_preference (always filled; default: flexible) ---
         console.print()
         remote_default = existing.get("remote_preference", "flexible")
         remote_preference = _pick(
             "Remote preference",
-            ["flexible", "remote", "hybrid", "on-site"],
+            ["flexible", "remote", "hybrid", "on-site", _BACK],
             default=remote_default,
         )
-        _is_default_remote = remote_preference == "flexible" and not existing.get("remote_preference")
-        if _is_default_remote:
+        if remote_preference == _BACK:
+            return _BACK
+        is_default_remote = remote_preference == "flexible" and not existing.get("remote_preference")
+        if is_default_remote:
             console.print(f"  [dim]got it — remote preference: {remote_preference} (default). ✓[/dim]")
         else:
             console.print(f"  [dim]got it — remote preference: {remote_preference}. ✓[/dim]")
         result["remote_preference"] = remote_preference
 
-        # --- comp_expectation (single free-text) ---
+        # --- comp_expectation (single free-text; migrates old structured dict) ---
         console.print()
-        _existing_comp = existing.get("comp_expectation", "")
-        if isinstance(_existing_comp, dict):
-            _parts = []
-            if _existing_comp.get("min"): _parts.append(str(_existing_comp["min"]))
-            if _existing_comp.get("target"): _parts.append(str(_existing_comp["target"]))
-            _currency = _existing_comp.get("currency", "")
-            _existing_comp_str = (f"{' – '.join(_parts)} {_currency}".strip()) if _parts else ""
+        existing_comp = existing.get("comp_expectation", "")
+        if isinstance(existing_comp, dict):
+            comp_parts = []
+            if existing_comp.get("min"):
+                comp_parts.append(f"min {existing_comp['min']}")
+            if existing_comp.get("target"):
+                comp_parts.append(f"target {existing_comp['target']}")
+            currency = existing_comp.get("currency", "")
+            existing_comp_str = ", ".join(comp_parts) + (f" {currency}" if currency else "")
         else:
-            _existing_comp_str = _existing_comp or ""
+            existing_comp_str = existing_comp or ""
         val = Prompt.ask(
-            "Compensation expectations (e.g. $150–200k CAD) — press Enter to skip",
-            default=_existing_comp_str,
+            "Compensation expectations (e.g. $150-200k CAD) — press Enter to skip",
+            default=existing_comp_str,
         ).strip()
         if val:
             console.print(f"  [dim]got it — comp expectations: {val}. ✓[/dim]")
@@ -511,8 +515,8 @@ def setup() -> None:
 
         # --- Summary block ---
         console.print()
-        _summary_lines = ["[green]applicant profile saved to data/applicant_profile.json:[/green]"]
-        _field_labels = [
+        summary_lines = ["[green]applicant profile saved to data/applicant_profile.json:[/green]"]
+        field_labels = [
             ("work_auth", "work auth"),
             ("sponsorship_needed", "sponsorship needed"),
             ("relocation", "open to relocation"),
@@ -521,22 +525,22 @@ def setup() -> None:
             ("notice_period", "notice period"),
             ("earliest_start_date", "earliest start"),
         ]
-        for _k, _label in _field_labels:
-            if _k not in result:
+        for key, label in field_labels:
+            if key not in result:
                 continue
-            _v = result[_k]
-            if _k == "relocation" and result.get("relocation_cities"):
-                _summary_lines.append(f"- {_label}: yes ({', '.join(result['relocation_cities'])})")
-            elif isinstance(_v, bool):
-                _summary_lines.append(f"- {_label}: {'yes' if _v else 'no'}")
+            v = result[key]
+            if key == "relocation" and result.get("relocation_cities"):
+                summary_lines.append(f"- {label}: yes ({', '.join(result['relocation_cities'])})")
+            elif isinstance(v, bool):
+                summary_lines.append(f"- {label}: {'yes' if v else 'no'}")
             else:
-                _summary_lines.append(f"- {_label}: {_v}")
+                summary_lines.append(f"- {label}: {v}")
         if skipped:
-            _summary_lines.append(
+            summary_lines.append(
                 f"[dim]- skipped: {', '.join(skipped)} "
                 f"(run [bold]applycling setup[/bold] anytime to add)[/dim]"
             )
-        console.print(Panel("\n".join(_summary_lines), style="green"))
+        console.print(Panel("\n".join(summary_lines), style="green"))
 
         back = _pick("Continue?", ["continue", _BACK], default="continue")
         if back == _BACK:

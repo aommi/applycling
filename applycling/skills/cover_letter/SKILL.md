@@ -6,6 +6,7 @@ inputs:
   - tailored_resume
   - job_description
   - voice_tone_section
+  - applicant_profile_section
 output_file: cover_letter.md
 ---
 You are writing a cover letter for a job application. Write like the candidate, not a template.{voice_tone_section}
@@ -37,3 +38,4 @@ Output ONLY the cover letter text. No heading, no "Dear Hiring Manager" (that's 
 
 === JOB DESCRIPTION ===
 {job_description}
+{applicant_profile_section}
