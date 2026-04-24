@@ -20,7 +20,7 @@ Three design commitments define the system:
    renderer.
 2. **The pipeline is a library, not a CLI.** `applycling.pipeline` is the
    public contract. The CLI, OpenClaw, future web UI, and MCP tools are all
-   callers of the same library. A skill is invocable from anywhere.
+   callers of the same library. Every capability is invocable from anywhere.
 3. **Composition is explicit.** Steps are ordered deterministically today.
    Context-based resolvers (T8) and agent-driven resolvers (T11) layer on top
    without rewriting the core.
@@ -28,6 +28,10 @@ Three design commitments define the system:
 This is Garry Tan's model — *thin harness, fat skills, learning loops,
 composition, triggers, quality gates* — scoped to a deterministic domain, with
 a documented on-ramp to full agent behavior.
+
+**Two-level vocabulary (used throughout this doc):**
+- **Skill** — a single `SKILL.md` file: one prompt, one output, one responsibility. The atomic unit. All 16 entries in `applycling/skills/` are skills.
+- **Capability** — an orchestrated action that composes one or more skills in sequence. `generate_application_package` runs 8 skills in order. `interview_prep` and `follow_up_outreach` are lighter capabilities. The CLI `add` command runs the `generate_application_package` capability.
 
 ---
 
@@ -39,8 +43,11 @@ a documented on-ramp to full agent behavior.
 | Skill loader | `applycling/skills/loader.py` — `load_skill(name)` → `Skill.render(**kw)` | Shipped |
 | Library API | `applycling/pipeline.py` — `PipelineContext`, `PipelineStep`, `PipelineRun` | Shipped (T2) |
 | LLM routing | `applycling/llm.py` — ollama / anthropic / openai / google | Shipped |
-| Deterministic linear pipeline | `role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary` | Shipped (T1–T3) |
-| Tracker abstraction | `applycling/tracker/` — Notion or SQLite | Shipped |
+| `generate_application_package` capability | Linear pipeline of 8 skills: `role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary` | Shipped (T1–T3) |
+| `interview_prep` capability | Composes `interview_prep` + `questions` skills | Shipped — usable today |
+| `follow_up_outreach` capability | Composes follow-up skills | Shipped — usable today |
+| Application tracker (SQLite) | `applycling/tracker/sqlite_store.py` — canonical source of truth | Shipped |
+| Notion integration | `applycling/tracker/notion_store.py` — enhancement/view layer; `get_store()` prefers it when connected, but SQLite is always authoritative | Shipped |
 | Renderer | `applycling/render.py` — markdown → HTML → PDF | Shipped |
 | Queue + multi-source intake | `applycling/queue.py` | Partial — drives OpenClaw integration |
 | Resolvers (context → variant skill) | — | **Not built (T8)** |
@@ -93,7 +100,7 @@ additively** — older skills keep working.
    output. Capturing their edits is higher-signal than guessing patterns from
    logs. Autonomous learning activates only when the human leaves the loop
    (T11 computer use).
-3. **Triggers are optional, not mandatory.** Core pipeline skills have
+3. **Triggers are optional, not mandatory.** Core pipeline steps have
    `trigger: always` (implicit). Optional skills (`company_context`) use
    `trigger: conditional`. Event-driven triggers (`trigger: on_form_field`)
    arrive with T11.
@@ -134,22 +141,21 @@ The pipeline is initiated by many sources today and in the near future:
                  └──────────────────────────────┘
 ```
 
+The interface layer is intentionally thin. The local CLI, Telegram/Discord/WhatsApp/Slack (via OpenClaw as messaging gateway), MCP tools, and future Web UI are all entry points that call the same `applycling.pipeline` library. Switching to a new interface requires only a new ~100-line adapter — no pipeline changes.
+
 **Key invariants:**
 
 - Every caller goes through `pipeline.py`. No caller reaches into `skills/`,
   `llm.py`, or `storage.py` directly.
 - Steps **don't replan**. Orchestrators own control flow; a step takes inputs
-  and produces outputs. This keeps skills composable by any caller.
+  and produces outputs. This keeps capabilities composable by any caller.
 - The CLI is a thin wrapper around the library, not the other way around.
 
 ### OpenClaw integration
 
 **[VERIFIED against OpenClaw README 2026-04-18]**
 
-OpenClaw is the orchestrator — a personal AI assistant (local-first) that functions
-as a universal messaging gateway. It supports 20+ platforms including WhatsApp,
-Telegram, Slack, Discord, Signal, and others. applycling is designed as **a skill
-within OpenClaw's skill library**.
+OpenClaw is a personal AI assistant (local-first) that functions as a universal messaging gateway supporting platforms including Telegram, Discord, WhatsApp, Slack, and Signal. applycling is designed as **a capability within OpenClaw's library**. This is an integration, not a coupling — applycling runs fully without OpenClaw (via CLI or any other caller). Telegram is the primary user path today; other platforms work via the same OpenClaw gateway.
 
 The integration contract:
 
@@ -198,7 +204,7 @@ make skills directly discoverable.
 - `applycling add <url>` produces a full application package (resume, cover
   letter, brief, email, fit summary) from any job URL.
 - Anthropic / Google / Ollama / OpenAI providers selectable via config.
-- Notion or SQLite tracker.
+- SQLite tracker (canonical); Notion as optional enhancement layer.
 
 ### T7 — Shipped: Skill migration
 
@@ -279,7 +285,7 @@ make skills directly discoverable.
 - Human-in-the-loop optional (async review), not mandatory.
 
 **Acceptance criteria:**
-- Skills are invocable independently of the `add` pipeline.
+- Capabilities are invocable independently of the `add` pipeline.
 - A failed quality gate produces a typed error the agent can retry or escalate.
 
 ---
@@ -334,6 +340,7 @@ confirm nothing blocks it.
 | Observability | `run_log.json` is already structured. Ship it to a log sink on SaaS. |
 | Cost controls | Token counts are already tracked per step. Enforce tenant budgets in the pipeline wrapper. |
 | Skill sharing / marketplace | Skills are self-contained `SKILL.md` files. A marketplace is a registry + download into the user's skill dir. |
+| Notion as enhancement layer | `notion_page_id` will be stored on `Job` (planned); SQLite remains canonical. Bidirectional sync (Notion card moves → SQLite state updates) deferred to post-T8. Repository pattern (`get_store()`) already abstracts the backend. |
 
 **The two things SaaS would require that don't exist yet:**
 1. Auth + tenant isolation at the storage layer (trivial — `storage.py` is a
@@ -357,7 +364,7 @@ stays small.
 | Skill forks diverge from built-ins | High | Low | `~/.applycling/skills/` files show a warning on load if the built-in schema has moved. `applycling skills diff` compares user skill to shipped version. |
 | Provider lock-in via `model_hint` | Low | Medium | `model_hint` is a hint, not a requirement. Runtime can override. Skills avoid provider-specific syntax. |
 | T11 quality gates become fragile validators | Medium | High | Validators live in `validators.py` (Python), not skills. Skills declare gate by name only. Validators are unit-tested. |
-| Computer-use agent submits wrong answer to a form (T11) | High if shipped naively | High | All T11 actions default to dry-run preview. Human confirms before first submission to a new site. Per-site trust list. |
+| Computer-use agent submits wrong answer to a form (T11) | High if shipped naively | High | All T11 actions — and any future `submit_application` capability — default to dry-run preview. Human confirms before first real submission to any new site. Per-site trust list gates autonomous mode. |
 | OpenClaw and applycling evolve out of sync | Medium | Medium | Pin `pipeline.run_add()` signature; version with `applycling.__version__`. OpenClaw runs against a declared version. |
 | Prompt regressions when skill is edited | High | Medium | `output/<run>/run_log.json` captures the full prompt. A regression test fixture compares against golden runs for each shipped skill. (Not yet built — candidate for T8 hardening.) |
 
@@ -366,6 +373,7 @@ stays small.
 ## 9. What to Build Next (Actionable Checklist)
 
 **Immediate (complete T8):**
+- [ ] Add `notion_page_id` field to `Job` dataclass — prerequisite for Notion→SQLite state sync when user moves Kanban cards.
 - [ ] Extend `Skill` dataclass in `skills/loader.py` with optional `trigger`,
       `when`, `variant_of` fields.
 - [ ] Build `skills/resolver.py` with a minimal `when` expression evaluator
@@ -397,6 +405,8 @@ stays small.
 ---
 
 ## 10. Adding a New Pipeline Step
+
+A "pipeline step" here means adding a new **skill** as a step within an existing **capability**. To add a new top-level capability (e.g., a new orchestration like `interview_prep`), follow the same SKILL.md pattern but wire it into a new CLI command rather than the `run_add()` pipeline.
 
 All pipeline steps use the `_Step` context manager in `cli.py`, which handles timing, logging, token counting, and status automatically.
 
