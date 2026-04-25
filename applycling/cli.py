@@ -442,6 +442,7 @@ def setup() -> None:
         elif val in ("n", "no"):
             console.print("  [dim]got it — not open to relocation. ✓[/dim]")
             result["relocation"] = False
+            result["relocation_cities"] = []  # clear any stale cities from a previous yes
         else:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
             skipped.append("relocation")

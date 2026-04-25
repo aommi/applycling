@@ -462,8 +462,9 @@ def _applicant_profile_block(profile: dict) -> str:
         if isinstance(v, bool):
             lines.append(f"{label}: {'yes' if v else 'no'}")
         elif isinstance(v, list):
-            lines.append(f"{label}: {', '.join(v)}")
-        else:
+            if v:  # skip empty lists
+                lines.append(f"{label}: {', '.join(v)}")
+        elif v:  # skip empty strings
             lines.append(f"{label}: {v}")
     return "\n".join(lines)
 
@@ -719,6 +720,7 @@ def run_add(
                 strategy, tailored, job_description, context.model,
                 voice_tone=context.profile.get("voice_tone") if context.profile else None,
                 provider=context.provider,
+                applicant_profile_section=_ap_section,
             ):
                 collect(chunk)
     except llm.LLMError:
@@ -752,6 +754,7 @@ def run_add(
                     job_title, job_company, context.model,
                     voice_tone=context.profile.get("voice_tone"),
                     provider=context.provider,
+                    applicant_profile_section=_ap_section,
                 ):
                     collect(chunk)
         except llm.LLMError:

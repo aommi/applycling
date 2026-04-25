@@ -392,6 +392,7 @@ def cover_letter(
     model: str,
     voice_tone: str | None = None,
     provider: str = "ollama",
+    applicant_profile_section: str = "",
 ) -> Iterator[str]:
     vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
     prompt = load_skill("cover_letter").render(
@@ -399,6 +400,7 @@ def cover_letter(
         tailored_resume=tailored_resume,
         job_description=job_description,
         voice_tone_section=vt,
+        applicant_profile_section=applicant_profile_section,
     )
     yield from _stream_chat(model, prompt, provider)
 
@@ -412,6 +414,7 @@ def application_email(
     model: str,
     voice_tone: str | None = None,
     provider: str = "ollama",
+    applicant_profile_section: str = "",
 ) -> Iterator[str]:
     vt = f" Candidate's voice and tone: {voice_tone}" if voice_tone else ""
     prompt = load_skill("email_inmail").render(
@@ -421,6 +424,7 @@ def application_email(
         job_title=job_title,
         company=company,
         voice_tone_section=vt,
+        applicant_profile_section=applicant_profile_section,
     )
     yield from _stream_chat(model, prompt, provider)
 
