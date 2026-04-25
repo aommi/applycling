@@ -873,6 +873,7 @@ def load_package_artifacts(package_folder: Path) -> dict[str, str]:
         "email_inmail": "email_inmail.md",
         "job_description": "job_description.md",
         "fit_summary": "fit_summary.md",
+        "company_context": "company_context.md",
     }
 
     for name, filename in artifact_files.items():
@@ -881,6 +882,57 @@ def load_package_artifacts(package_folder: Path) -> dict[str, str]:
             artifacts[name] = path.read_text(encoding="utf-8")
 
     return artifacts
+
+
+def answer_questions(
+    job_id: str,
+    questions: str,
+    ctx: PipelineContext,
+) -> str:
+    """Draft answers to application form questions for a job.
+
+    Args:
+        job_id: Job ID to load from the tracker.
+        questions: Form questions text (caller may append feedback for refine iterations).
+        ctx: PipelineContext supplying LLM settings, resume, stories, and applicant_profile.
+
+    Returns:
+        Drafted answers as a cleaned string.
+
+    Raises:
+        tracker.TrackerError: If job_id is not found.
+        ValueError: If job has no package folder recorded.
+        llm.LLMError: If the LLM call fails.
+    """
+    job = ctx.tracker_store.load_job(job_id)
+
+    if not job.package_folder:
+        raise ValueError(f"Job {job_id} has no package folder. Run 'applycling add' first.")
+
+    folder = Path(job.package_folder)
+    if not folder.exists():
+        raise ValueError(f"Package folder not found on disk: {folder}")
+
+    artifacts = load_package_artifacts(folder)
+    if not artifacts.get("resume"):
+        raise ValueError(f"Package folder is missing resume.md — folder may be incomplete: {folder}")
+    ap_block = _applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else ""
+
+    parts: list[str] = []
+    for chunk in llm.answer_questions(
+        resume=artifacts.get("resume", ctx.resume),
+        stories=ctx.stories,
+        role_intel=artifacts.get("strategy", ""),
+        company_context=artifacts.get("company_context", ""),
+        positioning_brief=artifacts.get("positioning_brief", ""),
+        applicant_profile=ap_block,
+        questions=questions,
+        model=ctx.model,
+        provider=ctx.provider,
+    ):
+        parts.append(chunk)
+
+    return _clean_llm_output("".join(parts))
 
 
 def get_step_names_before_checkpoint(checkpoint: str) -> list[str]:

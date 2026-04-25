@@ -1878,6 +1878,167 @@ def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
         pass
 
 
+# ---------- answer ----------
+
+
+@main.command()
+@click.argument("job_id")
+@click.option("--model", "model_arg", default="", help="Override model for this run.")
+@click.option("--provider", "provider_arg", default="", help="Override provider.")
+def answer(job_id: str, model_arg: str, provider_arg: str) -> None:
+    """Draft answers to application form questions for a job."""
+    from . import pipeline as _pipeline
+
+    cfg = _require_config()
+    model = model_arg or cfg.get("model")
+    if not model:
+        console.print("[red]No model in config.[/red] Run setup again.")
+        sys.exit(1)
+    provider = provider_arg or cfg.get("provider", "ollama")
+
+    store = get_store()
+    try:
+        job = store.load_job(job_id)
+    except TrackerError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not job.package_folder:
+        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
+        sys.exit(1)
+
+    folder = Path(job.package_folder)
+    if not folder.exists():
+        console.print(f"[red]Package folder not found:[/red] {folder}")
+        sys.exit(1)
+
+    console.print(
+        Panel.fit(
+            f"[bold]Answer Questions[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]",
+            style="cyan",
+        )
+    )
+
+    try:
+        ctx = _pipeline.PipelineContext.from_config(model=model, provider=provider)
+    except storage.StorageError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    questions = _read_multiline("Paste form questions (end with ---):")
+    if not questions.strip():
+        console.print("[yellow]No questions provided — nothing to answer.[/yellow]")
+        sys.exit(0)
+
+    step_logs: list[dict] = []
+    current_answer = ""
+    feedback_lines: list[str] = []
+
+    def _read_artifact(fname: str) -> str:
+        p = folder / fname
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    if not _read_artifact("resume.md"):
+        console.print(f"[red]Package folder is missing resume.md — folder may be incomplete:[/red] {folder}")
+        sys.exit(1)
+
+    _ap_block = _pipeline._applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else ""
+    _resume = _read_artifact("resume.md")
+    _role_intel = _read_artifact("strategy.md")
+    _company_context = _read_artifact("company_context.md")
+    _positioning_brief = _read_artifact("positioning_brief.md")
+
+    while True:
+        # Build questions block: original questions + any accumulated feedback.
+        questions_block = questions
+        if feedback_lines:
+            questions_block += "\n\n" + "\n".join(f"Refinement request: {f}" for f in feedback_lines)
+
+        _s = _Step("answer_questions", step_logs, output_file="answers.md")
+        _s.prompt_text = load_skill("answer_questions").render(
+            resume=_resume,
+            stories=ctx.stories or "(not provided)",
+            role_intel=_role_intel or "(not provided)",
+            company_context=_company_context or "(not provided)",
+            positioning_brief=_positioning_brief or "(not provided)",
+            applicant_profile=f"\n=== APPLICANT PROFILE ===\n{_ap_block}" if _ap_block else "",
+            questions=questions_block,
+        )
+        try:
+            with _s, console.status("[cyan]Drafting answers...[/cyan]", spinner="dots"):
+                for chunk in llm.answer_questions(
+                    resume=_resume,
+                    stories=ctx.stories,
+                    role_intel=_role_intel,
+                    company_context=_company_context,
+                    positioning_brief=_positioning_brief,
+                    applicant_profile=_ap_block,
+                    questions=questions_block,
+                    model=model,
+                    provider=provider,
+                ):
+                    _s.collect(chunk)
+        except llm.LLMError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+
+        current_answer = _clean_llm_output(_s.output)
+        if not current_answer:
+            console.print("[yellow]No answer generated.[/yellow]")
+            sys.exit(1)
+
+        console.print()
+        console.print(Panel(current_answer, title="[bold]Drafted Answers[/bold]", style="green"))
+
+        choice = _pick("What next?", ["accept", "edit", "refine", "quit"], default="accept")
+
+        if choice == "accept":
+            break
+        elif choice == "edit":
+            try:
+                edited = click.edit(current_answer, extension=".md")
+            except click.UsageError:
+                console.print("[yellow]Could not open editor ($EDITOR unset?) — keeping current draft.[/yellow]")
+                edited = None
+            if edited is not None:
+                stripped = edited.strip()
+                current_answer = stripped if stripped else current_answer
+            break
+        elif choice == "refine":
+            feedback = Prompt.ask("Feedback (describe what to change)")
+            if feedback.strip():
+                feedback_lines.append(feedback.strip())
+            else:
+                console.print("[dim]No feedback given — re-running with same prompt.[/dim]")
+        elif choice == "quit":
+            console.print("[dim]Discarded — nothing saved.[/dim]")
+            return
+
+    # Append to answers.md with timestamp header (never overwrite prior runs).
+    timestamp = _utcnow().strftime("%Y-%m-%d %H:%M")
+    section = f"## Answers — {timestamp}\n\n{current_answer}"
+    answers_path = folder / "answers.md"
+    if answers_path.exists():
+        existing = answers_path.read_text(encoding="utf-8").rstrip()
+        answers_path.write_text(existing + "\n\n---\n\n" + section + "\n", encoding="utf-8")
+        console.print(f"\n[green]Appended to:[/green] {answers_path}")
+    else:
+        answers_path.write_text(
+            f"# Application Answers — {job.title} @ {job.company}\n\n{section}\n",
+            encoding="utf-8",
+        )
+        console.print(f"\n[green]Saved:[/green] {answers_path}")
+
+    try:
+        import tiktoken as _tiktoken
+        _enc = _tiktoken.get_encoding("cl100k_base")
+        _total_in = sum(len(_enc.encode(s.get("prompt_text", ""))) for s in step_logs)
+        _total_out = sum(len(_enc.encode(s.get("output_text", ""))) for s in step_logs)
+        console.print(f"[dim]Tokens: {_total_in:,} in + {_total_out:,} out[/dim]")
+    except Exception:
+        pass
+
+
 # ---------- list / view / status ----------
 
 @main.command(name="list")

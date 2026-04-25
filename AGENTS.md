@@ -73,3 +73,14 @@ ln -s memory/semantic.md MEMORY.md
 ```
 
 The project's `memory/semantic.md` remains the single source of truth.
+
+<!-- skills:pm:start -->
+## PM Skills
+
+### sprint-scoping
+Given a sprint plan (goals, architecture, resolved tier-1 design decisions), produce a set of actionable, sequenced, unambiguous implementation tickets that an autonomous agent or engineer can execute without asking clarifying questions
+
+**When to use:** User provides a sprint plan and wants it translated into executable implementation tickets, or is scoping a sprint and wants to produce agent-ready work items.
+
+**Full skill:** See `CLAUDE.md` → PM Skills → sprint-scoping.
+<!-- skills:pm:end -->
