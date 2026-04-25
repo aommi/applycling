@@ -1938,8 +1938,12 @@ def answer(job_id: str, model_arg: str, provider_arg: str) -> None:
         p = folder / fname
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
+    if not _read_artifact("resume.md"):
+        console.print(f"[red]Package folder is missing resume.md — folder may be incomplete:[/red] {folder}")
+        sys.exit(1)
+
     _ap_block = _pipeline._applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else ""
-    _resume = _read_artifact("resume.md") or ctx.resume
+    _resume = _read_artifact("resume.md")
     _role_intel = _read_artifact("strategy.md")
     _company_context = _read_artifact("company_context.md")
     _positioning_brief = _read_artifact("positioning_brief.md")
