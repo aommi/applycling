@@ -572,3 +572,26 @@ def refine_email_inmail(
         role_intel=role_intel,
     )
     yield from _stream_chat(model, prompt, provider)
+
+
+def answer_questions(
+    resume: str,
+    stories: str,
+    role_intel: str,
+    company_context: str,
+    positioning_brief: str,
+    applicant_profile: str,
+    questions: str,
+    model: str,
+    provider: str = "ollama",
+) -> Iterator[str]:
+    prompt = load_skill("answer_questions").render(
+        resume=resume,
+        stories=stories or "(not provided)",
+        role_intel=role_intel or "(not provided)",
+        company_context=company_context or "(not provided)",
+        positioning_brief=positioning_brief or "(not provided)",
+        applicant_profile=f"\n=== APPLICANT PROFILE ===\n{applicant_profile}" if applicant_profile else "",
+        questions=questions,
+    )
+    yield from _stream_chat(model, prompt, provider)
