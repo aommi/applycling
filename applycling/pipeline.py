@@ -910,7 +910,12 @@ def answer_questions(
         raise ValueError(f"Job {job_id} has no package folder. Run 'applycling add' first.")
 
     folder = Path(job.package_folder)
+    if not folder.exists():
+        raise ValueError(f"Package folder not found on disk: {folder}")
+
     artifacts = load_package_artifacts(folder)
+    if not artifacts.get("resume"):
+        raise ValueError(f"Package folder is missing resume.md — folder may be incomplete: {folder}")
     ap_block = _applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else ""
 
     parts: list[str] = []

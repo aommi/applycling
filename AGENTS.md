@@ -82,5 +82,5 @@ Given a sprint plan (goals, architecture, resolved tier-1 design decisions), pro
 
 **When to use:** User provides a sprint plan and wants it translated into executable implementation tickets, or is scoping a sprint and wants to produce agent-ready work items.
 
-**Full skill:** Read `skills/pm/sprint-scoping/SKILL.md` before responding.
+**Full skill:** See `CLAUDE.md` → PM Skills → sprint-scoping.
 <!-- skills:pm:end -->
