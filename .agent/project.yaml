@@ -90,6 +90,9 @@ agents:
 memory:
   semantic_max_lines: 500
   working_max_lines: 300
+  capture_at:
+  - response
+  - merge
   files:
     semantic: memory/semantic.md
     working: memory/working.md

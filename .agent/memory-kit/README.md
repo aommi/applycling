@@ -59,43 +59,17 @@ cp -r ~/projects/applycling/.agent/memory-kit .agent-memory-kit
 cp -r ~/projects/applycling/.agent/memory-kit .agent/
 ```
 
-### Step 2: Create project.yaml
+### Step 2: Scaffold project config
+
+Run the interactive init command — it creates `.agent/project.yaml` and seeds `memory/semantic.md` + `memory/working.md`:
 
 ```bash
-cat > .agent/project.yaml << 'EOF'
-project:
-  name: my-new-project
-  description: A web service that does X. Supports Y and Z.
-  llm_providers:
-    - openai
-    - anthropic
-
-architecture:
-  file: ARCHITECTURE.md
-
-conventions:
-  - "Use pytest for all tests"
-  - "API keys live in .env"
-
-skills:
-  enabled: false
-
-agents:
-  claude_code:
-    enabled: true
-    hooks:
-      preprompt: true
-      stop: true
-  hermes:
-    enabled: true
-  openclaw:
-    enabled: true
-  codex:
-    enabled: true
-  antigravity:
-    enabled: true
-EOF
+python .agent/memory-kit/generate.py init
 ```
+
+You'll be prompted for project name, description, architecture file path, and which agents to enable. Sensible defaults are provided for everything.
+
+If you prefer to write the YAML by hand, see `templates/ARCHITECTURE_EXAMPLE.md` for a full reference.
 
 ### Step 3: Create your architecture doc
 
@@ -147,10 +121,11 @@ python .agent/memory-kit/generate.py claude-code
 
 ### Step 5: Create runtime memory files
 
+If you used `generate.py init`, `memory/semantic.md` and `memory/working.md` were already created. Otherwise:
+
 ```bash
 mkdir -p memory dev
-# Seed with empty templates or copy from another repo
-touch DECISIONS.md
+touch memory/semantic.md memory/working.md DECISIONS.md
 ```
 
 ---
@@ -173,67 +148,105 @@ touch DECISIONS.md
 4. Agent asks about intent if unclear, then proposes `semantic.md` / `DECISIONS.md` updates
 5. Approve or correct. `working.md` updates automatically
 
+#### Memory capture levels (`memory.capture_at`)
+
+Controls when the Claude Code stop hook fires. Set this in `.agent/project.yaml`:
+
+```yaml
+memory:
+  capture_at:
+    - response   # every response with tracked changes (default, current behavior)
+    - commit     # when a non-merge commit is detected since last hook run
+    - merge      # when a merge commit is detected since last hook run
+```
+
+| Level | Fires when | Default |
+|---|---|---|
+| `response` | Tracked changes relative to HEAD exist after a response | Yes |
+| `commit` | A non-merge commit appears in the range since the last hook run | No |
+| `merge` | A merge commit (2+ parents) appears in the range since the last hook run | Yes |
+
+If `memory.capture_at` is missing, the adapter uses the backward-compatible default: `response` and `merge`.
+
+How commit/merge detection works: the hook caches HEAD in `.agent/.last_checked_commit` after each run. On the next run, it scans all commits in the `PREV_HEAD..CURRENT_HEAD` range and classifies each by parent count. If `PREV_HEAD` is no longer an ancestor because of a rebase/reset, the hook inspects current HEAD instead.
+
+GitHub merge styles:
+- "Create a merge commit" → caught by `merge`
+- "Squash and merge" / "Rebase and merge" → single-parent commits, caught by `commit`
+- Enable both `commit` and `merge` if your repos use mixed merge styles.
+
+`capture_at: []` is valid and generates a warning-only hook instead of silently doing nothing.
+
+`.agent/.last_checked_commit` is runtime state and is gitignored automatically by `init` and by `generate.py claude-code`.
+
+**Updating existing repos that already use this system:**
+
+1. Update the vendored kit files in that repo's `.agent/memory-kit/` from this version.
+2. Add your desired `memory.capture_at` to `.agent/project.yaml`, or omit it to use the default `response + merge` behavior.
+3. Re-run only the generated agent config, e.g. `python .agent/memory-kit/generate.py claude-code` or `python .agent/memory-kit/generate.py all`.
+4. Existing memory content is preserved. `memory/semantic.md`, `memory/working.md`, and `DECISIONS.md` are not overwritten by generation. `CLAUDE.md` is sentinel-managed: only the block between `<!-- amk:start -->` and `<!-- amk:end -->` is updated; custom content outside that block remains intact.
+5. Check `git diff` before committing if you want to verify exactly what changed.
+
 **If something breaks:**
 - Hooks not firing? Check `.claude/settings.json` exists and `hooks/stop.sh` is executable (`chmod +x`)
 - Agent forgetting context? Say "re-read semantic.md"
 - Agent skipping hook output in long sessions? Say "check the diff and propose memory updates"
 
+**Regenerating CLAUDE.md safely:**
+
+`CLAUDE.md` uses a sentinel-based update system. The adapter manages only the block between `<!-- amk:start -->` and `<!-- amk:end -->`. Anything you write outside that block (above or below) is never touched on regen.
+
+```bash
+python .agent/memory-kit/generate.py claude-code
+# → "CLAUDE.md (unchanged)"          if config hasn't changed
+# → "CLAUDE.md (amk section updated)" + diff  if it changed
+# → "CLAUDE.md (amk section appended)" if no sentinels found yet
+```
+
+The project header (title + description) is written once above the sentinel on first create and never regenerated — edit it freely.
+
 ---
 
-### Hermes (MEDIUM confidence — instruction-driven)
+### Hermes (MEDIUM confidence — best effort, no hook mechanism)
 
 **Files:** `AGENTS.md`
 
 **How it works:**
 - Hermes reads `AGENTS.md` at project root as workspace context
-- No hooks. The per-turn instructions are embedded in `AGENTS.md` as static text
+- No hooks. Per-turn instructions are embedded as static text — relies on LLM instruction-following to reload context
 - Hermes also has native `MEMORY.md` / `USER.md` persistence
+
+**Limitation:** Medium confidence is a platform constraint, not an implementation bug. Hermes exposes no hook extension points, so context drift in long sessions cannot be solved by better prompting — it's an architecture gap in the agent itself.
 
 **Your workflow:**
 1. Open Hermes in the repo
 2. Agent reads `AGENTS.md` at session start
-3. Because there are no hooks, you must manually prompt: "Read memory/working.md before answering"
+3. Manually prompt before each task: "Read memory/working.md before answering"
 4. After significant changes, prompt: "Inspect the diff and propose memory updates"
 
 **Synergy with Hermes native memory:**
 ```bash
 ln -s memory/semantic.md MEMORY.md
 ```
-This mirrors your file-based memory into Hermes's built-in persistence. `memory/semantic.md` remains the source of truth.
+This mirrors your file-based memory into Hermes's built-in persistence. `memory/semantic.md` remains the source of truth. Note: if Hermes only loads `MEMORY.md` at session start, updates made mid-session by other agents won't be visible until the next session.
 
 ---
 
-### OpenClaw (MEDIUM-HIGH confidence — system prompt)
-
-**Files:** `.openclaw-system.md`
-
-**How it works:**
-- `.openclaw-system.md` is injected into the system prompt on every turn
-- Stronger than Hermes/Codex because it lives in the system context, not just an entry-point file
-- No post-response hooks
-
-**Your workflow:**
-1. Configure OpenClaw to use `.openclaw-system.md` as `system_prompt_file`
-2. The memory rules are present on every response
-3. After significant changes, manually prompt: "Propose memory updates"
-
----
-
-### Codex (LOW-MEDIUM confidence — instruction-driven)
+### Codex (LOW-MEDIUM confidence — best effort, no hook mechanism)
 
 **Files:** `AGENTS.md` (Hermes version overwrites this if you run `all`)
 
 **How it works:**
-- Same as Hermes but without the `agentskills.io` note
-- Codex's `AGENTS.md` support is less documented and evolves rapidly
-- No hooks
+- Same structure as Hermes but without the `agentskills.io` note
+- No hooks — same platform-level limitation as Hermes
+- Codex's `AGENTS.md` behaviour evolves rapidly and is less documented
 
 **Your workflow:**
-- Same as Hermes, but less reliable. If Codex drifts, explicitly say: "Read memory/semantic.md and memory/working.md"
+- Same as Hermes. If Codex drifts, explicitly say: "Read memory/semantic.md and memory/working.md"
 
 ---
 
-### Antigravity (MEDIUM-HIGH confidence — Rules + Workflows)
+### Antigravity (HIGH confidence — Rules enforced, Workflows manual)
 
 **Files:** `.agents/rules/memory-system.md`, `.agents/rules/project-context.md`, `.agents/workflows/memory-update.md`, `.agents/workflows/task-switch.md`
 
@@ -249,7 +262,7 @@ This mirrors your file-based memory into Hermes's built-in persistence. `memory/
 3. Work normally. After significant changes, invoke `/memory-update`
 4. To switch tasks mid-session, invoke `/task-switch`
 
-**Note:** Because Antigravity rules are limited to 12,000 characters each, large architecture docs are split across `memory-system.md` (protocol) and `project-context.md` (architecture).
+**Note:** Rules are limited to 12,000 characters each (verified against official docs). Activation mode (Always On / Manual / Glob) is set in the UI only — it cannot be set in the file itself. The one-time UI step is unavoidable.
 
 ---
 
@@ -322,6 +335,8 @@ Do not over-engineer this. For 1–5 repos, copy-paste is faster than any automa
 | Agent stops proposing updates | Context pressure suppressing hook | "Inspect diff since last memory check and propose updates" |
 | Agent asks same question across sessions | Assumptions not logged | Check `dev/[task]/context.md` Assumptions section |
 | Claude Code hooks not firing | `settings.json` missing or `stop.sh` not executable | `chmod +x hooks/stop.sh`; verify `.claude/settings.json` |
+| Stop hook: `No such file or directory` | Hook paths are stale (absolute or relative) | Re-run `generate.py claude-code` — hook commands now use `$CLAUDE_PROJECT_DIR` which Claude Code resolves correctly regardless of cwd |
+| `CLAUDE.md` regen clobbered my content | File had no sentinel block | Content below `<!-- amk:start/end -->` is always preserved; content above was never managed — add a sentinel block and keep your additions outside it |
 | Generated files missing architecture section | `ARCHITECTURE_VISION.md` (or configured arch file) not found | Create it, or the adapter falls back to `.agent/templates/architecture.md` |
 
 ---

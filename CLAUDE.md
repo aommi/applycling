@@ -23,3 +23,13 @@
 
 Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
 <!-- amk:end -->
+<!-- skills:pm:start -->
+## PM Skills
+
+### sprint-scoping
+Given a sprint plan (goals, architecture, resolved tier-1 design decisions), produce a set of actionable, sequenced, unambiguous implementation tickets that an autonomous agent or engineer can execute without asking clarifying questions
+
+**When to use:** User provides a sprint plan and wants it translated into executable implementation tickets, or is scoping a sprint and wants to produce agent-ready work items.
+
+**Full skill:** Read `skills/pm/sprint-scoping/SKILL.md` before responding.
+<!-- skills:pm:end -->

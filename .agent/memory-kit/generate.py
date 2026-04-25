@@ -54,6 +54,7 @@ from adapters.windsurf import generate as generate_windsurf
 from adapters.openclaw import generate as generate_openclaw
 from adapters.hermes import generate as generate_hermes
 from adapters.antigravity import generate as generate_antigravity
+from adapters.utils import ensure_gitignored
 
 import yaml
 
@@ -143,6 +144,27 @@ def cmd_init(project_root: Path) -> None:
             enabled = answer in ("y", "yes")
         agents_section[agent.replace("-", "_")] = {"enabled": enabled}
 
+    print("\nMemory capture — when should the Claude Code stop hook trigger? (Enter to accept default)")
+    print("  'merge' catches local merges and GitHub PR merges made via merge commit.")
+    print("  'commit' catches regular commits, including GitHub squash/rebase merge styles.")
+    capture_defaults = [
+        ("response", True, "Every response with tracked code changes (current behavior)"),
+        ("commit", False, "When a new non-merge commit is detected since last run (noisier)"),
+        ("merge", True, "When a merge commit is detected since last run"),
+    ]
+    capture_at = []
+    for level, default, description in capture_defaults:
+        hint = "Y/n" if default else "y/N"
+        print(f"  {description}")
+        answer = input(f"  Enable '{level}' [{hint}]: ").strip().lower()
+        enabled = default if answer == "" else answer in ("y", "yes")
+        if enabled:
+            capture_at.append(level)
+
+    if not capture_at:
+        print("\n  Note: no capture levels selected. The stop hook will warn instead of capture.")
+        print("  Edit memory.capture_at in .agent/project.yaml to enable levels later.")
+
     config = {
         "project": {"name": name, "description": description},
         "architecture": {"file": arch_file},
@@ -151,6 +173,7 @@ def cmd_init(project_root: Path) -> None:
         "memory": {
             "semantic_max_lines": 500,
             "working_max_lines": 300,
+            "capture_at": capture_at,
             "files": {
                 "semantic": "memory/semantic.md",
                 "working": "memory/working.md",
@@ -175,6 +198,8 @@ def cmd_init(project_root: Path) -> None:
             created.append(f"memory/{fname}")
     if created:
         print("Created: " + ", ".join(created))
+
+    ensure_gitignored(project_root, ".agent/.last_checked_commit")
 
     print("\nNext steps:")
     print("  python .agent/memory-kit/generate.py all")

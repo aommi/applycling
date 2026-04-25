@@ -1,6 +1,11 @@
 #!/bin/bash
-# stop.sh — fires after each response
-# Goal: remind agent to inspect diff and propose memory updates if significant
+# stop.sh — REFERENCE TEMPLATE (not used directly by the Claude Code adapter)
+# The claude_code adapter generates hooks/stop.sh dynamically from
+# memory.capture_at in .agent/project.yaml. Editing this file has NO effect
+# on generated hooks. See adapters/claude_code.py::_build_stop_sh() instead.
+#
+# The legacy response-level behavior was:
+#   git diff HEAD --name-only -> emit the memory reminder if tracked changes exist.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
