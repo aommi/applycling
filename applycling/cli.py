@@ -1933,16 +1933,20 @@ def answer(job_id: str, model_arg: str, provider_arg: str) -> None:
     step_logs: list[dict] = []
     current_answer = ""
 
+    def _read_artifact(fname: str) -> str:
+        p = folder / fname
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
     while True:
         _s = _Step("answer_questions", step_logs, output_file="answers.md")
         try:
             with _s, console.status("[cyan]Drafting answers...[/cyan]", spinner="dots"):
                 for chunk in llm.answer_questions(
-                    resume=ctx.resume,
+                    resume=_read_artifact("resume.md") or ctx.resume,
                     stories=ctx.stories,
-                    role_intel=(folder / "strategy.md").read_text(encoding="utf-8") if (folder / "strategy.md").exists() else "",
-                    company_context="",
-                    positioning_brief=(folder / "positioning_brief.md").read_text(encoding="utf-8") if (folder / "positioning_brief.md").exists() else "",
+                    role_intel=_read_artifact("strategy.md"),
+                    company_context=_read_artifact("company_context.md"),
+                    positioning_brief=_read_artifact("positioning_brief.md"),
                     applicant_profile=_pipeline._applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else "",
                     questions=questions,
                     model=model,

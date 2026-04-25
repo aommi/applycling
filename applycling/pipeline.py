@@ -873,6 +873,7 @@ def load_package_artifacts(package_folder: Path) -> dict[str, str]:
         "email_inmail": "email_inmail.md",
         "job_description": "job_description.md",
         "fit_summary": "fit_summary.md",
+        "company_context": "company_context.md",
     }
 
     for name, filename in artifact_files.items():
