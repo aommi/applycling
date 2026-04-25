@@ -8,6 +8,7 @@ inputs:
   - job_title
   - company
   - voice_tone_section
+  - applicant_profile_section
 output_file: email_inmail.md
 ---
 Write a short application email and a LinkedIn InMail for a job application.{voice_tone_section}
@@ -45,3 +46,4 @@ Output as two sections with headers:
 
 === COMPANY ===
 {company}
+{applicant_profile_section}

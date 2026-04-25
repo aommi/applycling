@@ -71,6 +71,9 @@ class PipelineContext:
     # Tracker store for persisting jobs
     tracker_store: tracker.TrackerStore
 
+    # Optional applicant profile (from data/applicant_profile.json)
+    applicant_profile: dict[str, Any] = field(default_factory=dict)
+
     @classmethod
     def from_config(
         cls,
@@ -116,6 +119,8 @@ class PipelineContext:
         # Get tracker store
         store = tracker.get_store()
 
+        applicant_profile = storage.load_applicant_profile()
+
         return cls(
             data_dir=Path(data_dir or storage.DATA_DIR),
             output_dir=output,
@@ -123,6 +128,7 @@ class PipelineContext:
             resume=resume or "",
             stories=stories or "",
             linkedin_profile=linkedin_profile,
+            applicant_profile=applicant_profile,
             config=config,
             model=final_model,
             provider=final_provider,
@@ -436,6 +442,33 @@ def compute_token_costs(
     return totals, cost_estimates
 
 
+def _applicant_profile_block(profile: dict) -> str:
+    """Serialize applicant profile dict to a key: value block for prompt injection."""
+    labels = [
+        ("work_auth", "Work authorization"),
+        ("sponsorship_needed", "Sponsorship needed"),
+        ("relocation", "Open to relocation"),
+        ("relocation_cities", "Relocation cities"),
+        ("remote_preference", "Remote preference"),
+        ("comp_expectation", "Compensation expectations"),
+        ("notice_period", "Notice period"),
+        ("earliest_start_date", "Earliest start date"),
+    ]
+    lines = []
+    for k, label in labels:
+        v = profile.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            lines.append(f"{label}: {'yes' if v else 'no'}")
+        elif isinstance(v, list):
+            if v:  # skip empty lists
+                lines.append(f"{label}: {', '.join(v)}")
+        elif v:  # skip empty strings
+            lines.append(f"{label}: {v}")
+    return "\n".join(lines)
+
+
 def _profile_header_markdown(profile: dict) -> str:
     """Build the static top section of the resume from stored profile fields."""
     lines = []
@@ -671,10 +704,15 @@ def run_add(
         on_status("Writing cover letter...")
 
     _vt = f" Candidate's voice and tone: {context.profile['voice_tone']}" if context.profile and context.profile.get("voice_tone") else ""
+    _ap_section = (
+        f"\n=== APPLICANT PROFILE ===\n{_applicant_profile_block(context.applicant_profile)}"
+        if context.applicant_profile else ""
+    )
     step = PipelineStep("cover_letter", output_file="cover_letter.md")
     step.prompt = load_skill("cover_letter").render(
         role_intel=strategy, tailored_resume=tailored,
         job_description=job_description, voice_tone_section=_vt,
+        applicant_profile_section=_ap_section,
     )
     try:
         with step.streaming(on_chunk=on_chunk, on_status=on_status) as collect:
@@ -682,6 +720,7 @@ def run_add(
                 strategy, tailored, job_description, context.model,
                 voice_tone=context.profile.get("voice_tone") if context.profile else None,
                 provider=context.provider,
+                applicant_profile_section=_ap_section,
             ):
                 collect(chunk)
     except llm.LLMError:
@@ -706,6 +745,7 @@ def run_add(
             role_intel=strategy, candidate_name=context.profile.get("name", ""),
             candidate_contact=contact_line, job_title=job_title,
             company=job_company, voice_tone_section=_vt,
+            applicant_profile_section=_ap_section,
         )
         try:
             with step.streaming(on_chunk=on_chunk, on_status=on_status) as collect:
@@ -714,6 +754,7 @@ def run_add(
                     job_title, job_company, context.model,
                     voice_tone=context.profile.get("voice_tone"),
                     provider=context.provider,
+                    applicant_profile_section=_ap_section,
                 ):
                     collect(chunk)
         except llm.LLMError:
@@ -984,6 +1025,7 @@ def run_add_notify(
     profile = storage.load_profile() or {}
     stories = storage.load_stories() or ""
     linkedin_profile = storage.load_linkedin_profile() if cfg.get("use_linkedin_profile", True) else None
+    applicant_profile = storage.load_applicant_profile()
 
     ctx = PipelineContext(
         data_dir=storage.DATA_DIR,
@@ -992,6 +1034,7 @@ def run_add_notify(
         resume=storage.load_resume(),
         stories=stories,
         linkedin_profile=linkedin_profile,
+        applicant_profile=applicant_profile,
         config=cfg,
         model=final_model,
         provider=final_provider,
