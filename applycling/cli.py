@@ -388,26 +388,36 @@ def setup() -> None:
         result: dict = {}
         skipped: list[str] = []
 
+        def _show_current(key: str, label: str, formatter=str) -> None:
+            value = existing.get(key)
+            if value not in (None, "", []):
+                console.print(f"  [dim]current {label}: {formatter(value)}[/dim]")
+
         # --- work_auth ---
         console.print()
+        _show_current("work_auth", "work auth")
         val = Prompt.ask(
             'Work authorization (e.g. "Canadian PR", "needs H1B") — press Enter to skip',
-            default=existing.get("work_auth", ""),
+            default="",
+            show_default=False,
         ).strip()
         if val:
             console.print(f"  [dim]got it — work auth: {val}. ✓[/dim]")
             result["work_auth"] = val
         else:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            result["work_auth"] = ""
             skipped.append("work auth")
 
         # --- sponsorship_needed ---
         console.print()
         existing_sponsor = existing.get("sponsorship_needed")
-        sponsor_default = "y" if existing_sponsor is True else ("n" if existing_sponsor is False else "")
+        if existing_sponsor is not None:
+            console.print(f"  [dim]current sponsorship needed: {'yes' if existing_sponsor else 'no'}[/dim]")
         val = Prompt.ask(
             "Sponsorship needed? [y/n] — press Enter to skip",
-            default=sponsor_default,
+            default="",
+            show_default=False,
         ).strip().lower()
         if val in ("y", "yes"):
             console.print("  [dim]got it — sponsorship needed: yes. ✓[/dim]")
@@ -417,20 +427,25 @@ def setup() -> None:
             result["sponsorship_needed"] = False
         else:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            result["sponsorship_needed"] = None
             skipped.append("sponsorship")
 
         # --- relocation ---
         console.print()
         existing_reloc = existing.get("relocation")
-        reloc_default = "y" if existing_reloc is True else ("n" if existing_reloc is False else "")
+        if existing_reloc is not None:
+            console.print(f"  [dim]current open to relocation: {'yes' if existing_reloc else 'no'}[/dim]")
         val = Prompt.ask(
             "Open to relocation? [y/n] — press Enter to skip",
-            default=reloc_default,
+            default="",
+            show_default=False,
         ).strip().lower()
         if val in ("y", "yes"):
+            _show_current("relocation_cities", "preferred cities", lambda cities: ", ".join(cities))
             cities_input = Prompt.ask(
                 "Preferred cities (comma-separated) — press Enter to skip",
-                default=", ".join(existing.get("relocation_cities", [])),
+                default="",
+                show_default=False,
             ).strip()
             relocation_cities = [c.strip() for c in cities_input.split(",") if c.strip()]
             if relocation_cities:
@@ -438,6 +453,7 @@ def setup() -> None:
                 result["relocation_cities"] = relocation_cities
             else:
                 console.print("  [dim]got it — open to relocation (cities tbd). ✓[/dim]")
+                result["relocation_cities"] = []
             result["relocation"] = True
         elif val in ("n", "no"):
             console.print("  [dim]got it — not open to relocation. ✓[/dim]")
@@ -445,6 +461,8 @@ def setup() -> None:
             result["relocation_cities"] = []  # clear any stale cities from a previous yes
         else:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            result["relocation"] = None
+            result["relocation_cities"] = []
             skipped.append("relocation")
 
         # --- remote_preference (always filled; default: flexible) ---
@@ -477,41 +495,51 @@ def setup() -> None:
             existing_comp_str = ", ".join(comp_parts) + (f" {currency}" if currency else "")
         else:
             existing_comp_str = existing_comp or ""
+        if existing_comp_str:
+            console.print(f"  [dim]current comp expectations: {existing_comp_str}[/dim]")
         val = Prompt.ask(
             "Compensation expectations (e.g. $150-200k CAD) — press Enter to skip",
-            default=existing_comp_str,
+            default="",
+            show_default=False,
         ).strip()
         if val:
             console.print(f"  [dim]got it — comp expectations: {val}. ✓[/dim]")
             result["comp_expectation"] = val
         else:
             console.print("  [dim]skipped for now. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            result["comp_expectation"] = ""
             skipped.append("comp expectations")
 
         # --- notice_period ---
         console.print()
+        _show_current("notice_period", "notice period")
         val = Prompt.ask(
             "Notice period (e.g. 2 weeks, immediate) — press Enter to skip",
-            default=existing.get("notice_period", ""),
+            default="",
+            show_default=False,
         ).strip()
         if val:
             console.print(f"  [dim]got it — notice period: {val}. ✓[/dim]")
             result["notice_period"] = val
         else:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            result["notice_period"] = ""
             skipped.append("notice period")
 
         # --- earliest_start_date ---
         console.print()
+        _show_current("earliest_start_date", "earliest start")
         val = Prompt.ask(
             "Earliest start date — press Enter to skip",
-            default=existing.get("earliest_start_date", ""),
+            default="",
+            show_default=False,
         ).strip()
         if val:
             console.print(f"  [dim]got it — earliest start: {val}. ✓[/dim]")
             result["earliest_start_date"] = val
         else:
             console.print("  [dim]skipped. you can add this anytime with [bold]applycling setup[/bold].[/dim]")
+            result["earliest_start_date"] = ""
             skipped.append("earliest start")
 
         # --- Summary block ---
@@ -530,6 +558,8 @@ def setup() -> None:
             if key not in result:
                 continue
             v = result[key]
+            if v in (None, "", []):
+                continue
             if key == "relocation" and result.get("relocation_cities"):
                 summary_lines.append(f"- {label}: yes ({', '.join(result['relocation_cities'])})")
             elif isinstance(v, bool):
