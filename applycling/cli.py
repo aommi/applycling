@@ -1932,23 +1932,44 @@ def answer(job_id: str, model_arg: str, provider_arg: str) -> None:
 
     step_logs: list[dict] = []
     current_answer = ""
+    feedback_lines: list[str] = []
 
     def _read_artifact(fname: str) -> str:
         p = folder / fname
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
+    _ap_block = _pipeline._applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else ""
+    _resume = _read_artifact("resume.md") or ctx.resume
+    _role_intel = _read_artifact("strategy.md")
+    _company_context = _read_artifact("company_context.md")
+    _positioning_brief = _read_artifact("positioning_brief.md")
+
     while True:
+        # Build questions block: original questions + any accumulated feedback.
+        questions_block = questions
+        if feedback_lines:
+            questions_block += "\n\n" + "\n".join(f"Refinement request: {f}" for f in feedback_lines)
+
         _s = _Step("answer_questions", step_logs, output_file="answers.md")
+        _s.prompt_text = load_skill("answer_questions").render(
+            resume=_resume,
+            stories=ctx.stories or "(not provided)",
+            role_intel=_role_intel or "(not provided)",
+            company_context=_company_context or "(not provided)",
+            positioning_brief=_positioning_brief or "(not provided)",
+            applicant_profile=f"\n=== APPLICANT PROFILE ===\n{_ap_block}" if _ap_block else "",
+            questions=questions_block,
+        )
         try:
             with _s, console.status("[cyan]Drafting answers...[/cyan]", spinner="dots"):
                 for chunk in llm.answer_questions(
-                    resume=_read_artifact("resume.md") or ctx.resume,
+                    resume=_resume,
                     stories=ctx.stories,
-                    role_intel=_read_artifact("strategy.md"),
-                    company_context=_read_artifact("company_context.md"),
-                    positioning_brief=_read_artifact("positioning_brief.md"),
-                    applicant_profile=_pipeline._applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else "",
-                    questions=questions,
+                    role_intel=_role_intel,
+                    company_context=_company_context,
+                    positioning_brief=_positioning_brief,
+                    applicant_profile=_ap_block,
+                    questions=questions_block,
                     model=model,
                     provider=provider,
                 ):
@@ -1970,14 +1991,21 @@ def answer(job_id: str, model_arg: str, provider_arg: str) -> None:
         if choice == "accept":
             break
         elif choice == "edit":
-            edited = click.edit(current_answer, extension=".md")
+            try:
+                edited = click.edit(current_answer, extension=".md")
+            except click.UsageError:
+                console.print("[yellow]Could not open editor ($EDITOR unset?) — keeping current draft.[/yellow]")
+                edited = None
             if edited is not None:
-                current_answer = edited.strip()
+                stripped = edited.strip()
+                current_answer = stripped if stripped else current_answer
             break
         elif choice == "refine":
             feedback = Prompt.ask("Feedback (describe what to change)")
             if feedback.strip():
-                questions = questions + f"\n\nFeedback: {feedback}"
+                feedback_lines.append(feedback.strip())
+            else:
+                console.print("[dim]No feedback given — re-running with same prompt.[/dim]")
         elif choice == "quit":
             console.print("[dim]Discarded — nothing saved.[/dim]")
             return
