@@ -918,7 +918,7 @@ def answer_questions(
         resume=artifacts.get("resume", ctx.resume),
         stories=ctx.stories,
         role_intel=artifacts.get("strategy", ""),
-        company_context="",
+        company_context=artifacts.get("company_context", ""),
         positioning_brief=artifacts.get("positioning_brief", ""),
         applicant_profile=ap_block,
         questions=questions,
