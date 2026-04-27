@@ -27,12 +27,12 @@ fi
 BOT_TOKEN=$(python3 -c "import json; print(json.load(open('$TELEGRAM_JSON'))['bot_token'])")
 CHAT_ID=$(python3 -c "import json; print(json.load(open('$TELEGRAM_JSON'))['chat_id'])")
 
-echo "Bot token:  ${BOT_TOKEN:0:10}... (${#BOT_TOKEN} chars)"
+echo "Bot token:  (${#BOT_TOKEN} chars, not shown)"
 echo "Chat ID:    $CHAT_ID"
 
 # ── Create profile (idempotent) ─────────────────────────────────────
 PROFILE="applycling"
-if hermes profile list 2>/dev/null | grep -q "$PROFILE"; then
+if hermes profile list 2>/dev/null | grep -qE "(^|[[:space:]])$PROFILE($|[[:space:]])"; then
   echo "Profile '$PROFILE' already exists — skipping creation."
 else
   echo "Creating Hermes profile '$PROFILE'..."
@@ -77,6 +77,7 @@ if $NEEDS_ENV; then
 TELEGRAM_BOT_TOKEN=$BOT_TOKEN
 TELEGRAM_ALLOWED_USERS=$CHAT_ID
 EOF
+  chmod 600 "$ENV_FILE"
 else
   echo ".env already up to date — skipping."
 fi
@@ -112,12 +113,14 @@ with open(parent) as f:
 with open(env_file, 'w') as f:
     for k, v in target.items():
         f.write(f'{k}={v}\n')
+import os as _os
+_os.chmod(env_file, 0o600)
 "
 fi
 
 # ── Validate provider key exists ──────────────────────────────────────
 PROVIDER=$("$HERMES_WRAPPER" config 2>/dev/null | grep -A1 'model:' | grep 'provider:' | awk '{print $2}' || echo "deepseek")
-PROVIDER_KEY="${PROVIDER^^}_API_KEY"
+PROVIDER_KEY="$(echo "$PROVIDER" | tr '[:lower:]' '[:upper:]')_API_KEY"
 if ! grep -q "^${PROVIDER_KEY}=" "$ENV_FILE" 2>/dev/null; then
   echo "WARNING: Provider '$PROVIDER' is configured but $PROVIDER_KEY is not set in $ENV_FILE"
   echo "  The gateway will fail on first message. Add it or switch providers."

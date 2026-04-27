@@ -2305,7 +2305,7 @@ def telegram_setup() -> None:
     )
     token = Prompt.ask("Bot token (from @BotFather)", password=True)
     raw_chat_id = Prompt.ask("Your chat ID")
-    # Strip copy-paste artifacts: leading dash-space, whitespace, non-digits
+    # Strip copy-paste artifacts: leading dash-space, surrounding whitespace
     chat_id = _clean_chat_id(raw_chat_id)
     storage.save_telegram_config(token.strip(), chat_id)
     console.print("[green]Telegram config saved.[/green]")

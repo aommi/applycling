@@ -65,7 +65,7 @@ class TelegramNotifier:
         if not result.get("ok"):
             raise TelegramError(f"sendDocument failed: {result}")
 
-    def _post(self, method: str, payload: dict, timeout: int = 15) -> dict:
+    def _post(self, method: str, payload: dict) -> dict:
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
             f"{self._base}/{method}",
@@ -73,7 +73,7 @@ class TelegramNotifier:
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 result = json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             raise TelegramError(f"{method} HTTP {exc.code}: {exc.read().decode(errors='replace')}") from exc
