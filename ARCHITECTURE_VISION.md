@@ -46,8 +46,9 @@ a documented on-ramp to full agent behavior.
 | `generate_application_package` capability | Linear pipeline of 8 skills: `role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary` | Shipped (T1–T3) |
 | `interview_prep` capability | Composes `interview_prep` + `questions` skills | Shipped — usable today |
 | `follow_up_outreach` capability | Composes follow-up skills | Shipped — usable today |
-| Application tracker (SQLite) | `applycling/tracker/sqlite_store.py` — canonical source of truth | Shipped |
-| Notion integration | `applycling/tracker/notion_store.py` — enhancement/view layer; `get_store()` prefers it when connected, but SQLite is always authoritative | Shipped |
+| Application tracker (SQLite) | `applycling/tracker/sqlite_store.py` — canonical source of truth for **local/personal mode**. In hosted mode, Postgres is canonical. See `docs/planning/DB_TECH_DESIGN.md`. | Shipped |
+| Notion integration | `applycling/tracker/notion_store.py` — optional enhancement/view layer for local mode only. `get_store()` honors `APPLYCLING_DB_BACKEND` first; hosted mode skips Notion entirely (Notion deferred until post-public-beta as one-way sync). | Shipped (local only) |
+| Hosted persistence (Postgres) | `users` / `user_contexts` / `jobs` / `pipeline_runs` schema with UUID PKs, tenant isolation, active-run guard, `ArtifactStore` abstraction. Phased plan in `docs/planning/DB_TECH_DESIGN.md`. | **Not built (Phase 3)** |
 | Renderer | `applycling/render.py` — markdown → HTML → PDF | Shipped |
 | Queue + multi-source intake | `applycling/queue.py` | Partial — drives OpenClaw integration |
 | Resolvers (context → variant skill) | — | **Not built (T8)** |
@@ -116,9 +117,9 @@ The pipeline is initiated by many sources today and in the near future:
 
 ```
 ┌─────────────┐   ┌─────────────┐   ┌──────────────┐   ┌─────────────┐
-│     CLI     │   │  OpenClaw   │   │  Web UI /    │   │  Computer   │
-│ applycling  │   │  (Telegram, │   │  MCP tool    │   │  use agent  │
-│    add      │   │    queue)   │   │   (future)   │   │   (T11+)    │
+│     CLI     │   │ Hermes /    │   │  Web UI /    │   │  Computer   │
+│ applycling  │   │ OpenClaw    │   │  MCP tool    │   │  use agent  │
+│    add      │   │ (Telegram)  │   │   (future)   │   │   (T11+)    │
 └──────┬──────┘   └──────┬──────┘   └──────┬───────┘   └──────┬──────┘
        │                 │                 │                   │
        └─────────────────┴──────┬──────────┴───────────────────┘
@@ -141,7 +142,7 @@ The pipeline is initiated by many sources today and in the near future:
                  └──────────────────────────────┘
 ```
 
-The interface layer is intentionally thin. The local CLI, Telegram/Discord/WhatsApp/Slack (via OpenClaw as messaging gateway), MCP tools, and future Web UI are all entry points that call the same `applycling.pipeline` library. Switching to a new interface requires only a new ~100-line adapter — no pipeline changes.
+The interface layer is intentionally thin. The local CLI, Telegram/Discord/WhatsApp/Slack (via Hermes/OpenClaw-style messaging gateways), MCP tools, and future Web UI are all entry points that call the same `applycling.pipeline` library. Switching to a new interface requires only a small adapter — no pipeline changes.
 
 **Key invariants:**
 
@@ -189,6 +190,22 @@ discovery, capability advertisement, invocation routing) is not yet documented.
 This is a manual integration today and will be clarified in T8+ when resolvers
 make skills directly discoverable.
 
+### Hermes Telegram validation
+
+**[CURRENT — Sprint 1]**
+
+For Phase 1 local Telegram validation, inbound Telegram intake is delegated to
+a Hermes profile/gateway rather than implemented as bespoke polling inside
+applycling. Hermes receives the job URL from Telegram and invokes applycling's
+terminal entry point, currently `applycling telegram _run <url>` (or an
+equivalent local command). applycling remains responsible for pipeline
+execution, outbound progress messages, PDF delivery, local output artifacts,
+and worker logs.
+
+This keeps Phase 1 focused on the product loop while avoiding a throwaway
+Telegram listener in applycling. Hosted SaaS intake later should use dedicated
+gateway/webhook infrastructure, not the Hermes personal-profile path.
+
 ---
 
 ## 5. Phase Roadmap
@@ -205,6 +222,49 @@ make skills directly discoverable.
   letter, brief, email, fit summary) from any job URL.
 - Anthropic / Google / Ollama / OpenAI providers selectable via config.
 - SQLite tracker (canonical); Notion as optional enhancement layer.
+
+### Phase 1 — Current: Local Telegram validation
+
+**See:** `docs/planning/DB_TECH_DESIGN.md` and `docs/planning/SPRINT_1_LOCAL_TELEGRAM_VALIDATION.md`.
+
+**Goal:** Validate the highest-risk product loop (Telegram URL -> pipeline -> PDFs delivered) before investing in hosted infrastructure.
+
+**Engineering:**
+- Run the Hermes Telegram gateway/profile path end-to-end against real job URLs,
+  with Hermes invoking `applycling telegram _run <url>`.
+- Keep `applycling telegram add <url>` as a terminal fallback/manual smoke path.
+- Fix gaps in progress messaging, failure visibility, and completion contract.
+- Keep SQLite/local files as-is. No Postgres, Docker, or hosted persistence.
+
+**Product:**
+- A real phone can submit a job URL and receive progress messages + generated PDFs in Telegram.
+- Failures are visible in Telegram or worker logs.
+- Local package folder exists under `output/`.
+
+**Exit criteria:** Sprint 1 exit criteria in `SPRINT_1_LOCAL_TELEGRAM_VALIDATION.md`.
+
+### Phase 2 — Next: Dockerized runtime + local Postgres + schema
+
+**See:** `docs/planning/DB_TECH_DESIGN.md` §12 Phase 2.
+
+**Goal:** Make the runtime reproducible and stand up the SaaS schema locally before committing to a hosted environment.
+
+**Engineering:**
+- `Dockerfile` + `docker-compose.yml` with app + local Postgres.
+- `psycopg` v3, Alembic initialized, initial migration (`users`, `user_contexts`, `jobs`, `pipeline_runs`).
+- `PostgresStore` skeleton implementing `TrackerStore`.
+- Direct Python CLI path preserved.
+
+### Phase 3 — After: Hosted SaaS persistence + private-beta gate
+
+**See:** `docs/planning/DB_TECH_DESIGN.md` §12 Phase 3.
+
+**Goal:** Admit external users safely with tenant isolation, rate limits, and operational guarantees.
+
+**Engineering:**
+- User-scoped store lifecycle, hosted `user_contexts` load/import path, active-run guard, stale-run cleanup, daily rate limits, user blocking.
+- Transient Postgres retry, `ArtifactStore` local backend + contract test, PII inventory, restore drill.
+- Tenant-isolation integration test.
 
 ### T7 — Shipped: Skill migration
 
@@ -333,19 +393,22 @@ confirm nothing blocks it.
 
 | SaaS concern | Current architecture status |
 |--------------|------------------------------|
-| Multi-tenancy | `PipelineContext` already encapsulates per-user data (`data_dir`, `output_dir`, `profile`, `resume`). Swap disk-backed storage for per-tenant DB rows. No pipeline changes. |
+| Multi-tenancy | `PipelineContext` keeps the pipeline per-run and in-memory. Hosted mode loads profile, resume, stories, and applicant profile from tenant-scoped `user_contexts` rows instead of local `data/*` files; the context-loading adapter changes, not the generation pipeline. |
 | Per-user skill overrides | `~/.applycling/skills/` already overrides built-in `applycling/skills/`. On SaaS, resolve user skills from a DB before built-ins. Same precedence, different store. |
 | Provider keys per tenant | `llm.py` already takes provider/model per call. Inject per-tenant keys via `PipelineContext.config`. |
 | Long-running jobs | `pipeline.run_add()` is already stream-friendly via `on_status`. A web worker picks up queued jobs (same `queue.py` pattern used for OpenClaw). |
 | Observability | `run_log.json` is already structured. Ship it to a log sink on SaaS. |
 | Cost controls | Token counts are already tracked per step. Enforce tenant budgets in the pipeline wrapper. |
 | Skill sharing / marketplace | Skills are self-contained `SKILL.md` files. A marketplace is a registry + download into the user's skill dir. |
-| Notion as enhancement layer | `notion_page_id` will be stored on `Job` (planned); SQLite remains canonical. Bidirectional sync (Notion card moves → SQLite state updates) deferred to post-T8. Repository pattern (`get_store()`) already abstracts the backend. |
+| Hosted persistence | Phased plan locked: Phase 1 SQLite/local validation → Phase 2 Docker + local Postgres + initial schema including `user_contexts` → Phase 3 hosted Postgres with tenant isolation, hosted context loading, `pipeline_runs`, rate limits, blocking, restore drill, `ArtifactStore`. Full design in `docs/planning/DB_TECH_DESIGN.md`. |
+| Notion as enhancement layer | Local mode only. In hosted mode Notion is deferred entirely until after public beta, then planned as one-way Postgres → Notion sync (not bidirectional, not canonical). `notion_page_id` ships in the hosted `jobs` table as a per-job display-only enrichment link, not a sync hook. |
 
-**The two things SaaS would require that don't exist yet:**
+**The three things SaaS would require that don't exist yet:**
 1. Auth + tenant isolation at the storage layer (trivial — `storage.py` is a
    file-path-based facade).
-2. A hosted queue + worker pool (already partially designed for OpenClaw via
+2. Hosted user context persistence (`user_contexts`) plus an import/onboarding
+   path so SaaS generation never depends on local `data/*` files.
+3. A hosted queue + worker pool (already partially designed for OpenClaw via
    `queue.py`).
 
 Neither forces architectural change. The thin-harness / fat-skills split is
@@ -372,8 +435,23 @@ stays small.
 
 ## 9. What to Build Next (Actionable Checklist)
 
-**Immediate (complete T8):**
-- [ ] Add `notion_page_id` field to `Job` dataclass — prerequisite for Notion→SQLite state sync when user moves Kanban cards.
+**Current (Sprint 1 — Telegram validation):**
+See `docs/planning/SPRINT_1_LOCAL_TELEGRAM_VALIDATION.md` for full ticket breakdown.
+
+- [ ] Run Hermes Telegram profile/gateway -> `applycling telegram _run <real_job_url>` end-to-end.
+- [ ] Keep `applycling telegram add <real_job_url>` working as a fallback/manual smoke path.
+- [ ] Fix gaps in progress messages, failure visibility, and completion contract.
+- [ ] Ensure completion message does not require Notion.
+- [ ] Ensure PDF send failures are visible to the user.
+
+**Next (Phase 2 — Docker + local Postgres + schema):**
+- [ ] `Dockerfile` for app runtime.
+- [ ] `docker-compose.yml` with app + local Postgres.
+- [ ] Alembic initialized, initial migration (`users`, `user_contexts`, `jobs`, `pipeline_runs`).
+- [ ] `PostgresStore` skeleton implementing `TrackerStore`.
+- [ ] `.env.example` with documented variables.
+
+**Next (T8 — Context-based resolvers):**
 - [ ] Extend `Skill` dataclass in `skills/loader.py` with optional `trigger`,
       `when`, `variant_of` fields.
 - [ ] Build `skills/resolver.py` with a minimal `when` expression evaluator
@@ -499,7 +577,7 @@ See `.agent/README.md` for details.
 ## 12. What This Document Is Not
 
 - Not a user guide — see `README.md`.
-- Not a sprint plan — see `TOREVIEW/PERSONAL_USE_PLAN.md`.
+- Not a sprint plan — see `docs/planning/SPRINT_1_LOCAL_TELEGRAM_VALIDATION.md` (current) and `docs/planning/DB_TECH_DESIGN.md` (roadmap).
 - Not an API reference — see docstrings in `pipeline.py` and `skills/loader.py`.
 - Not a marketing doc — there are no claims about the product, only about the
   architecture.

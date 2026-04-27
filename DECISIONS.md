@@ -83,6 +83,63 @@ Append-only architectural decisions log. To reverse a prior decision, append a n
 
 ---
 
+## 2026-04-27 — Hermes Gateway For Telegram Intake
+
+**Decision:** Use Hermes Agent's Telegram gateway (via a dedicated `applycling` profile) for inbound job URL intake, rather than building a custom Telegram polling listener inside applycling.
+
+**Reasoning:**
+- Hermes already ships a production-grade Telegram gateway with long-polling, multi-chat routing, DM pairing, slash commands, error recovery, and platform parity (Discord, Slack, WhatsApp share the same gateway layer).
+- Building a custom listener inside applycling (~90 lines of `get_updates()`/`poll()` code) reinvents this surface with zero hardening: no multi-chat support, no auth, no error recovery, no background service management.
+- Hermes profiles provide full isolation: the applycling bot gets its own Telegram token, model config, toolsets, SOUL.md, and session store. Adding a second bot later costs nothing.
+- The Hermes profile is the Phase 1 validation vehicle. When applycling reaches SaaS scale (Phase 3), it gets its own standalone gateway — the Hermes profile outlives its usefulness gracefully.
+
+**Impact:**
+- Inbound Telegram intake: the `applycling-hermes` wrapper for `~/.hermes/profiles/applycling/` receives the URL, runs `.venv/bin/python -m applycling.cli telegram _run <url>`, pipeline delivers results via outbound `TelegramNotifier`.
+- Hermes profile toolsets locked to `terminal` only — no browser, file system, or other tool access.
+- `scripts/setup_hermes_telegram.sh` automates the entire profile provisioning (idempotent) and creates the `applycling-hermes` wrapper alias.
+- Removed: custom `TelegramNotifier.get_updates()`, `poll()`, `telegram listen` command, `test_telegram_listener_contract.py`.
+- Kept: outbound `TelegramNotifier.notify()` and `send_document()` — the delivery channel.
+
+**Rejected alternatives:**
+- Custom polling listener in applycling (redundant with Hermes gateway, ~90 lines of untested networking code, no multi-chat, no production hardening).
+- Webhook-based intake (requires public HTTPS endpoint, DNS, TLS certs — Phase 3 infrastructure, not Phase 1).
+- OpenClaw gateway (already the architecture vision's aspirational path, but Hermes is lighter-weight and already installed for the user's workflow).
+
+**Affects:** `applycling/telegram_notify.py`, `applycling/cli.py`, `scripts/setup_hermes_telegram.sh`, docs/planning/, ARCHITECTURE_VISION.md
+
+---
+
+## 2026-04-27 — Two-Layer LLM Architecture
+
+**Decision:** Decouple the LLM that handles Telegram message routing from the LLM that generates application packages. They use different providers, models, and config files.
+
+**Reasoning:**
+- The Hermes applycling profile needs a fast, cheap model for message comprehension and command dispatch (DeepSeek v4 Pro). The applycling pipeline needs a high-quality model for resume and cover letter generation (Anthropic Claude Sonnet 4.6).
+- Mixing concerns would force suboptimal choices: either overpaying for the routing layer or underpowering the generation layer.
+- Hermes profiles have isolated `.env` files — the setup script auto-merges parent API keys so both layers work without manual key duplication.
+
+**Architecture:**
+```
+Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (claude-sonnet-4-6) → PDFs
+           │  ~/.hermes/profiles/         │              data/config.json
+           │  applycling/config.yaml      │              .env (ANTHROPIC_API_KEY)
+           │  .env (DEEPSEEK_API_KEY)      │
+           └─ routing only ───────────────┘─ generation only ──────────────────────┘
+```
+
+**Impact:**
+- `.env.example` updated to clarify which API keys belong to which layer
+- `scripts/setup_hermes_telegram.sh` validates that the configured Hermes provider has a corresponding API key
+- Applying a new machine: run `applycling telegram setup` once, then `scripts/setup_hermes_telegram.sh`
+
+**Rejected alternatives:**
+- Single model for both routing and generation (routing doesn't need Claude quality; using DeepSeek for generation produces inferior resumes).
+- Same provider for both layers (locks the user into one ecosystem; Anthropic outage would kill both routing and generation).
+
+**Affects:** `.env.example`, `scripts/setup_hermes_telegram.sh`, docs/
+
+---
+
 ## 2026-04-23 — Skill Template Engine: str.format vs Jinja2
 
 **Decision:** Use Python's built-in `str.format` as the sole template engine for skill files. Jinja2 is forbidden.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import subprocess
 import sys
 import uuid as _uuid
 from pathlib import Path
@@ -115,6 +116,49 @@ def _require_resume() -> str:
             "[red]No base resume found.[/red] Run [bold]applycling setup[/bold] first."
         )
         sys.exit(1)
+
+
+def _clean_chat_id(raw: str) -> str:
+    """Strip copy-paste artifacts from a chat ID.
+
+    Users often copy ``"- 12345678"`` from getUpdates JSON formatting.
+    We strip leading dash-space and whitespace while preserving a genuine
+    negative group chat ID (e.g., ``-12345678``).
+    """
+    raw = raw.strip()
+    # Dash then space (copy artifact) — strip both
+    while raw.startswith("- "):
+        raw = raw[2:].strip()
+    # Lone leading dash attached to digits — keep it (group chat)
+    return raw
+
+
+def _spawn_telegram_worker(
+    url: str,
+    *,
+    cfg: dict,
+    model_arg: str = "",
+    provider_arg: str = "",
+) -> tuple[subprocess.Popen, Path]:
+    """Start the Telegram worker subprocess and return the process/log path."""
+    worker_cmd = [sys.executable, "-m", "applycling.cli", "telegram", "_run", url]
+    if model_arg:
+        worker_cmd += ["--model", model_arg]
+    if provider_arg:
+        worker_cmd += ["--provider", provider_arg]
+
+    log_dir = Path(cfg.get("output_dir", "./output")).expanduser()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "telegram_worker.log"
+
+    with open(log_path, "a") as log_file:
+        proc = subprocess.Popen(
+            worker_cmd,
+            stdout=log_file,
+            stderr=log_file,
+            start_new_session=True,
+        )
+    return proc, log_path
 
 
 class _Step:
@@ -2254,20 +2298,23 @@ def telegram_setup() -> None:
     console.print(
         "\n[dim]You need a Telegram bot token and your chat ID.\n"
         "Create a bot via @BotFather and get its token.\n"
-        "Send a message to the bot, then visit:\n"
+        "Send a message to the bot, then paste this URL in your browser\n"
+        "  replacing <TOKEN> with the real token (don't type the brackets):\n"
         "  https://api.telegram.org/bot<TOKEN>/getUpdates\n"
-        "to find your chat_id.[/dim]\n"
+        "The response will show your chat_id.[/dim]\n"
     )
-    token = Prompt.ask("Bot token (from @BotFather)")
-    chat_id = Prompt.ask("Your chat ID")
-    storage.save_telegram_config(token.strip(), chat_id.strip())
+    token = Prompt.ask("Bot token (from @BotFather)", password=True)
+    raw_chat_id = Prompt.ask("Your chat ID")
+    # Strip copy-paste artifacts: leading dash-space, whitespace, non-digits
+    chat_id = _clean_chat_id(raw_chat_id)
+    storage.save_telegram_config(token.strip(), chat_id)
     console.print("[green]Telegram config saved.[/green]")
 
     # Quick connectivity test
     from .telegram_notify import TelegramNotifier, TelegramError
     try:
         notifier = TelegramNotifier(token.strip(), chat_id.strip())
-        notifier.notify("✅ applycling connected! Send me a job URL to get started.")
+        notifier.notify("✅ applycling connected. Hermes can now trigger applycling jobs and I will send progress updates here.")
         console.print("[green]Test message sent — check Telegram.[/green]")
     except TelegramError as e:
         console.print(f"[yellow]Config saved but test message failed:[/yellow] {e}")
@@ -2280,7 +2327,7 @@ def telegram_setup() -> None:
 def telegram_add(url: str, model_arg: str, provider_arg: str) -> None:
     """Queue a job URL for background processing with Telegram status updates."""
     try:
-        tg_cfg = storage.load_telegram_config()
+        storage.load_telegram_config()
     except storage.StorageError:
         console.print("[red]Telegram not configured.[/red] Run: applycling telegram setup")
         sys.exit(1)
@@ -2288,26 +2335,21 @@ def telegram_add(url: str, model_arg: str, provider_arg: str) -> None:
     cfg = _require_config()
     _require_resume()
 
-    # Build args for the background worker
-    import subprocess
-    worker_cmd = [sys.executable, "-m", "applycling.cli", "telegram", "_run", url]
-    if model_arg:
-        worker_cmd += ["--model", model_arg]
-    if provider_arg:
-        worker_cmd += ["--provider", provider_arg]
+    proc, log_path = _spawn_telegram_worker(
+        url,
+        cfg=cfg,
+        model_arg=model_arg,
+        provider_arg=provider_arg,
+    )
 
-    import os
-    log_dir = Path(cfg.get("output_dir", "./output")).expanduser()
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "telegram_worker.log"
-
-    with open(log_path, "a") as log_file:
-        subprocess.Popen(
-            worker_cmd,
-            stdout=log_file,
-            stderr=log_file,
-            start_new_session=True,
-        )
+    try:
+        proc.wait(timeout=1.5)
+    except subprocess.TimeoutExpired:
+        pass
+    else:
+        console.print("[red]Worker exited immediately.[/red] Check the log before retrying.")
+        console.print(f"[dim]Worker log: {log_path}[/dim]")
+        sys.exit(proc.returncode or 1)
 
     console.print(f"[green]Queued.[/green] Processing in background — check Telegram for updates.")
     console.print(f"[dim]Worker log: {log_path}[/dim]")

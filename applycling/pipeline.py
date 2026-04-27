@@ -1048,9 +1048,15 @@ def run_add_notify(
     """
     from . import scraper, storage, tracker
 
+    def _clip(text: str, limit: int = 3500) -> str:
+        """Keep Telegram messages under practical limits while preserving context."""
+        if len(text) <= limit:
+            return text
+        return text[: limit - 80].rstrip() + "\n\n[truncated; see worker log or local package]"
+
     def _safe(text: str) -> None:
         try:
-            notifier.notify(text)
+            notifier.notify(_clip(text))
         except Exception:
             pass
 
@@ -1060,7 +1066,7 @@ def run_add_notify(
     final_provider = provider or cfg.get("provider", "ollama")
     out_root = output_root or (Path(cfg.get("output_dir", "./output")).expanduser())
 
-    _safe(f"⚙️ Queued: {url}\nProcessing will begin shortly…")
+    _safe(f"⚙️ Starting: {url}\nProcessing locally on this machine.")
 
     # Scrape
     _safe("📄 Scraping job description…")
@@ -1146,38 +1152,37 @@ def run_add_notify(
         raise
 
     # Send documents
+    _safe("📤 Sending generated PDFs…")
     for pdf_name, caption in [
         ("resume.pdf", f"Resume — {title} @ {company}"),
         ("cover_letter.pdf", f"Cover Letter — {title} @ {company}"),
     ]:
         pdf_path = folder / pdf_name
-        if pdf_path.exists():
-            try:
-                notifier.send_document(pdf_path, caption=caption)
-            except Exception as e:
-                _safe(f"⚠️ Could not send {pdf_name}: {e}")
+        if not pdf_path.exists():
+            _safe(f"⚠️ Missing {pdf_name}; package exists locally at {folder}")
+            continue
+        size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        if size_mb > 50:
+            _safe(
+                f"⚠️ {pdf_name} is {size_mb:.1f} MB, above Telegram's 50 MB send limit. "
+                f"Use the local copy at {pdf_path}"
+            )
+            continue
+        try:
+            notifier.send_document(pdf_path, caption=caption)
+        except Exception as e:
+            _safe(f"⚠️ Could not send {pdf_name}: {e}")
 
     # Completion summary
     fit = (result.fit_summary or "").strip()
     lines = [
         f"✅ Done! {title} @ {company}",
         f"Job ID: {result.job.id}",
-        f"📁 {folder}",
+        f"Local package: {folder}",
+        "Storage: local validation/private-use artifacts.",
     ]
     if fit:
         lines.append(f"\n📊 Fit summary:\n{fit}")
-
-    # Notion DB link if configured
-    try:
-        notion_path = storage.DATA_DIR / "notion.json"
-        if notion_path.exists():
-            import json as _json
-            nc = _json.loads(notion_path.read_text(encoding="utf-8"))
-            db_id = nc.get("database_id", "")
-            if db_id:
-                lines.append(f"\n🔗 Notion: https://notion.so/{db_id.replace('-', '')}")
-    except Exception:
-        pass
 
     _safe("\n".join(lines))
     return folder
