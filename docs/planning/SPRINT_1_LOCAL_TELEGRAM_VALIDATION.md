@@ -493,6 +493,20 @@ hermes gateway --help
 
 Result: Hermes is installed locally. At the time of this check, profiles showed only `default`; no `applycling` profile was present yet. The setup script now creates an `applycling-hermes` wrapper alias for profile-scoped commands; use that wrapper as the canonical path even if `hermes --profile applycling` also works locally.
 
+### 2026-04-27 — Live Smoke (E2E Telegram Validation)
+
+Full end-to-end test of the Hermes gateway → applycling pipeline loop:
+
+- Sent a real public job URL to the applycling Telegram bot.
+- Hermes received the URL, invoked `.venv/bin/python -m applycling.cli telegram _run <url>`.
+- Progress messages arrived in Telegram: scraping, role analysis, resume tailoring, cover letter, fit summary, PDF delivery.
+- `resume.pdf` and `cover_letter.pdf` delivered in Telegram.
+- Local package folder created under `output/` (default: `/Users/amirali/Documents/ApplyCling-Output/`).
+- Worker log at `output/telegram_worker.log` captured the full run.
+- No errors in gateway log.
+
+**Result: PASS.** Sprint 1 acceptance criteria met. The Hermes profile + applycling pipeline loop works end-to-end on a real job URL.
+
 ---
 
 ## Review (Hermes Agent)
