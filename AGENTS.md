@@ -57,22 +57,25 @@ These skill files follow the agentskills.io frontmatter standard — Hermes's `/
 - storage.save_config() merges — never call it with only partial keys unless merging is the intent
 - Skill templates use `str.format` — escape braces with `{{` and `}}`
 - Conditional logic stays in Python, not skill templates
-- All API keys live in .env at repo root (gitignored)
+- applycling pipeline API keys live in `.env` at repo root (gitignored). Hermes gateway keys live in `~/.hermes/profiles/applycling/.env`, populated by `scripts/setup_hermes_telegram.sh`. See `.env.example` for which keys power which layer.
+- **Two-layer LLM architecture:** Hermes (DeepSeek) routes Telegram messages; applycling pipeline (Anthropic Claude) generates packages. See `DECISIONS.md` §2026-04-27.
+- **Hermes applycling profile:** Inbound Telegram intake runs through the `applycling-hermes` wrapper for `~/.hermes/profiles/applycling/`. Profile has toolsets locked to `terminal` only. Provision via `scripts/setup_hermes_telegram.sh`.
 - Keep ARCHITECTURE_VISION.md canonical — update it when adding/removing skills, changing pipeline contract, introducing new providers, shipping phases, or discovering risks
 
 ---
 
-## Optional: Hermes Memory Mirroring
+## Hermes Profile (Telegram Gateway)
 
-Hermes has its own `MEMORY.md` / `USER.md` persistence layer. These are complementary,
-not replacements, for this project's `memory/` files. If you want high-signal lessons
-visible inside Hermes's built-in persistence, you can symlink:
+The project ships a dedicated Hermes profile for Telegram intake: `~/.hermes/profiles/applycling/`.
 
-```bash
-ln -s memory/semantic.md MEMORY.md
-```
-
-The project's `memory/semantic.md` remains the single source of truth.
+- **Provision:** `./scripts/setup_hermes_telegram.sh` (idempotent)
+- **Start/install:** `applycling-hermes gateway install`
+- **Status:** `applycling-hermes gateway status`
+- **Logs:** `~/.hermes/profiles/applycling/logs/gateway.log`
+- **SOUL.md:** Located at `~/.hermes/profiles/applycling/SOUL.md` — single-purpose: receives URL, runs `.venv/bin/python -m applycling.cli telegram _run <url>`
+- **Toolsets:** Terminal only. All other tools (browser, vision, file, etc.) are disabled.
+- **Model:** deepseek-v4-pro (routing only — pipeline uses its own config)
+- **Naming caution:** `hermes profile create applycling` may also create a bare `applycling` wrapper in `~/.local/bin`. Use `applycling-hermes` for Hermes commands and `python3 -m applycling.cli ...` for the project CLI.
 
 <!-- skills:pm:start -->
 ## PM Skills
