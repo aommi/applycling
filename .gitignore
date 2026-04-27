@@ -47,3 +47,6 @@ output/*
 # Stray screenshots / image dumps — commit images explicitly under docs/ if intended
 images/
 .agent/.last_checked_commit
+
+# Local planning notes
+docs/planning/

@@ -21,7 +21,7 @@ Run `applycling add` with a job URL and get a complete package:
 5. **Drafts an application email and LinkedIn InMail** — direct, no fluff.
 6. **Generates a positioning brief** — positioning decisions, application strength, gap prep with bridge answers, ATS before/after score.
 7. **Assembles a package** — resume (md/html/pdf), cover letter (md/html/pdf), positioning brief, email/InMail, strategy, all in one folder.
-8. **Tracks everything** — in Notion (recommended) or local SQLite.
+8. **Tracks everything** — in Notion (optional) or local SQLite.
 
 Once you have a package, the toolkit keeps going:
 
@@ -418,3 +418,46 @@ When structured data is available (LinkedIn, sites with JSON-LD), the job scrapi
 - **`playwright install` fails** — run `.venv/bin/playwright install chromium` manually.
 - **JD paste hangs** — type `---` on a new line and press Enter to submit.
 - **Notion unreachable warning** — check that the integration has access to the page (··· → Connections → add integration).
+
+---
+
+## Telegram bot (send job URLs from your phone)
+
+applycling can listen for job URLs sent to a Telegram bot and generate application packages automatically. The intake uses Hermes Agent's Telegram gateway.
+
+### Architecture
+
+```
+Your phone → Telegram bot → Hermes (deepseek, routing) → applycling pipeline (Claude, generation) → PDFs back to Telegram
+```
+
+Two separate LLMs, two separate configs — no single point of failure. See `DECISIONS.md` §2026-04-27 for rationale.
+
+### Setup
+
+```bash
+# 1. Configure Telegram credentials (one-time)
+python3 -m applycling.cli telegram setup
+
+# 2. Provision the Hermes profile + gateway (idempotent)
+./scripts/setup_hermes_telegram.sh
+```
+
+The script creates an isolated Hermes profile with:
+- Its own Telegram bot token
+- Toolsets locked to terminal only (no browser or file tools)
+- API keys merged from your main Hermes config
+- A launchd background service that survives reboots
+- A profile wrapper command: `applycling-hermes`
+
+### Usage
+
+Send a job URL to your applycling bot on Telegram. Progress messages and generated PDFs (resume, cover letter) arrive in the same chat.
+
+```bash
+# Check gateway status
+applycling-hermes gateway status
+
+# View logs
+tail -f ~/.hermes/profiles/applycling/logs/gateway.log
+```
