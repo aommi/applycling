@@ -59,27 +59,43 @@ echo "Using: $HERMES_WRAPPER"
 echo "Configuring Telegram platform..."
 "$HERMES_WRAPPER" config set gateway.platforms.telegram.enabled true
 
-# Write .env with Telegram secrets (only if missing or changed)
+# Write .env with Telegram secrets. Always update the managed keys
+# (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS) while preserving any other
+# keys that may have been added (provider API keys from parent merge, etc.).
 ENV_FILE="$HOME/.hermes/profiles/$PROFILE/.env"
-NEEDS_ENV=false
 if [ ! -f "$ENV_FILE" ]; then
-  NEEDS_ENV=true
-else
-  CURRENT_TOKEN=$(grep TELEGRAM_BOT_TOKEN "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
-  if [ "$CURRENT_TOKEN" != "$BOT_TOKEN" ]; then
-    NEEDS_ENV=true
-  fi
-fi
-
-if $NEEDS_ENV; then
-  echo "Writing $ENV_FILE..."
+  echo "Creating $ENV_FILE..."
   cat > "$ENV_FILE" <<EOF
 TELEGRAM_BOT_TOKEN=$BOT_TOKEN
 TELEGRAM_ALLOWED_USERS=$CHAT_ID
 EOF
   chmod 600 "$ENV_FILE"
 else
-  echo ".env already up to date — skipping."
+  echo "Updating managed keys in $ENV_FILE..."
+  python3 -c "
+import os
+env_file = os.path.expanduser('$ENV_FILE')
+lines = []
+seen = set()
+with open(env_file) as f:
+    for line in f:
+        line = line.rstrip('\n')
+        if line.startswith('TELEGRAM_BOT_TOKEN='):
+            lines.append('TELEGRAM_BOT_TOKEN=$BOT_TOKEN')
+            seen.add('TELEGRAM_BOT_TOKEN')
+        elif line.startswith('TELEGRAM_ALLOWED_USERS='):
+            lines.append('TELEGRAM_ALLOWED_USERS=$CHAT_ID')
+            seen.add('TELEGRAM_ALLOWED_USERS')
+        elif line.strip():
+            lines.append(line)
+if 'TELEGRAM_BOT_TOKEN' not in seen:
+    lines.append('TELEGRAM_BOT_TOKEN=$BOT_TOKEN')
+if 'TELEGRAM_ALLOWED_USERS' not in seen:
+    lines.append('TELEGRAM_ALLOWED_USERS=$CHAT_ID')
+with open(env_file, 'w') as f:
+    f.write('\n'.join(lines) + '\n')
+os.chmod(env_file, 0o600)
+"
 fi
 
 # ── Set model / provider (idempotent) ────────────────────────────────
@@ -135,7 +151,7 @@ You are the applycling bot. Your only job: when you receive a message containing
 When you see a job URL (something starting with https:// that looks like a job posting), do exactly this:
 
 1. Run the pipeline:
-   cd ~/Documents/dev/applycling && .venv/bin/python -m applycling.cli telegram _run <URL>
+   cd __REPO_ROOT__ && .venv/bin/python -m applycling.cli telegram _run <URL>
 
 2. The applycling pipeline sends its own progress messages and PDFs to the user via Telegram. You don't need to report results — the pipeline's outbound notifier handles all delivery.
 
@@ -146,6 +162,8 @@ For any message that does NOT contain a job URL, reply with:
 
 Do not chat, do not make small talk, do not offer help with anything else. You are a single-purpose bot for job application generation.
 SOUL_EOF
+# Replace placeholder with actual repo root (POSIX sed, safe for paths with slashes)
+sed -i '' "s|__REPO_ROOT__|$REPO_ROOT|g" "$SOUL_FILE"
 
 # ── Restrict toolsets to terminal only ────────────────────────────────
 echo "Locking down toolsets (terminal only)..."
