@@ -162,8 +162,9 @@ For any message that does NOT contain a job URL, reply with:
 
 Do not chat, do not make small talk, do not offer help with anything else. You are a single-purpose bot for job application generation.
 SOUL_EOF
-# Replace placeholder with actual repo root (POSIX sed, safe for paths with slashes)
-sed -i '' "s|__REPO_ROOT__|$REPO_ROOT|g" "$SOUL_FILE"
+# Substitute repo root with shell-safe quoting (handles spaces, special chars)
+SAFE_ROOT=$(printf '%q' "$REPO_ROOT")
+sed -i '' "s|__REPO_ROOT__|$SAFE_ROOT|g" "$SOUL_FILE"
 
 # ── Restrict toolsets to terminal only ────────────────────────────────
 echo "Locking down toolsets (terminal only)..."
