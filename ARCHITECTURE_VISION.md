@@ -365,8 +365,9 @@ Notes:
 - `_Step.__exit__` auto-appends to `step_logs` — no manual append needed.
 - Status is set to `"ok"`, `"skipped"`, or `"failed"` automatically.
 - Use `[red]` + `sys.exit(1)` for critical steps; `[yellow]` + `continue` for optional.
-- Update `memory/semantic.md` (Active Areas → ship it, Core Systems → add it) when the
-  step ships. Then mark it as built in Section 5 of this doc.
+- When the step ships: add it to `memory/semantic.md` (Core Systems) and remove it from
+  Section 5 of this doc (Vision: Planned Capabilities). Current state belongs in
+  `semantic.md`, not the vision doc.
 
 ---
 
