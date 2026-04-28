@@ -43,6 +43,7 @@ if [ -n "$PREV_HEAD" ] && [ -n "$CURRENT_HEAD" ] && [ "$CURRENT_HEAD" != "$PREV_
 
   if [ "$HAS_MERGE" = "true" ]; then
     echo "Merge commit detected — review architectural impact:"
+    echo "- Also check ARCHITECTURE_VISION.md: mark shipped capabilities as built, update Assumptions if any were invalidated"
     emit_memory_reminder
   fi
 fi
