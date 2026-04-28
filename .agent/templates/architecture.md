@@ -1,6 +1,6 @@
 ## Architecture
 
-Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, and design-decision rationale.
+Before implementing a feature, read `vision.md`. It is the canonical record of architectural principles, product direction, and design-decision rationale.
 
 ### Skills
 
@@ -46,7 +46,7 @@ Use the `TrackerStore` interface only — never call either store directly from 
 | `memory/working.md` | Live task state (≤300 tokens) |
 | `DECISIONS.md` | Append-only decisions log |
 | `dev/[task]/` | Active task context (plan.md, context.md, tasks.md) |
-| `ARCHITECTURE_VISION.md` | Canonical architectural reference |
+| `vision.md` | Canonical architectural reference |
 
 ---
 

@@ -247,7 +247,7 @@ Once a week:
 1. **Open `semantic.md`.** Skim for staleness. Anything no longer true? Tell the agent to propose a correction.
 2. **Open `DECISIONS.md`.** Any reversed decisions without a "Supersedes" entry? Add one.
 3. **Check `dev/`** for shipped tasks that didn't get archived. Move to `dev/archive/`.
-4. **Check `CLAUDE.md`** for dead rules. Remove them or start enforcing them — dead rules train the agent to ignore the live ones. [CHANGED: CLAUDE.md is now 77 lines — easier to scan. Reference content lives in ARCHITECTURE_VISION.md.]
+4. **Check `CLAUDE.md`** for dead rules. Remove them or start enforcing them — dead rules train the agent to ignore the live ones. [CHANGED: CLAUDE.md is now 77 lines — easier to scan. Reference content lives in vision.md.]
 
 That's it.
 
@@ -272,7 +272,7 @@ That's it.
 - **`memory/semantic.md`** — distilled project knowledge. What any agent needs to understand this codebase in 30 seconds. Curated by proposal, never free-growing.
 - **`memory/working.md`** — your desk right now. Ephemeral, freely updated, rewritten when stale.
 - **`DECISIONS.md`** — the engineering logbook. Append-only, never rewritten, superseded by later entries.
-- **`ARCHITECTURE_VISION.md`** — the *why* and *how-to*. Architectural rationale, product direction, and implementation patterns (including adding new pipeline steps). [CHANGED: now also the home for how-to patterns moved out of CLAUDE.md]
+- **`vision.md`** — the *why* and *how-to*. Architectural rationale, product direction, and implementation patterns (including adding new pipeline steps). [CHANGED: now also the home for how-to patterns moved out of CLAUDE.md]
 - **`dev/[task]/`** — your working folder for one feature. Create it, work in it, archive it when done.
 
 Everything else is just code.

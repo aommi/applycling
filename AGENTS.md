@@ -34,16 +34,23 @@ If reasoning becomes uncertain or inconsistent with prior context, re-read `memo
 
 ### Memory Discipline
 
-- `memory/semantic.md` — propose updates; wait for approval before writing
-- `memory/working.md` — update freely after each response; no approval needed
-- `DECISIONS.md` — append-only; propose entries for approval
+- `memory/semantic.md` — current build state; propose updates; wait for approval before writing
+- `memory/working.md` — live task state; update freely after each response; no approval needed
+- `DECISIONS.md` — append-only log of architectural decisions; propose entries for approval
+- `vision.md` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated; **never put current state here** (that's `semantic.md`), **never put planning details here** (tickets, checklists, phases)
 - `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed
+
+**DECISIONS.md vs. Assumptions distinction:**
+- `DECISIONS.md` = immutable log — "we chose X on date Y because Z" — never edited, only superseded by appending
+- `vision.md` Assumptions = live load-bearing premises — mutable; when invalidated, append a supersession to `DECISIONS.md` first, then update the assumption
+
+**On PR merge:** check `vision.md` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption.
 
 ---
 
-## Architecture
+## Architecture vision
 
-Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
+Before implementing a feature, read `vision.md`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
 
 These skill files follow the agentskills.io frontmatter standard — Hermes's `/skills` browser can enumerate them natively.
 
@@ -60,7 +67,7 @@ These skill files follow the agentskills.io frontmatter standard — Hermes's `/
 - applycling pipeline API keys live in `.env` at repo root (gitignored). Hermes gateway keys live in `~/.hermes/profiles/applycling/.env`, populated by `scripts/setup_hermes_telegram.sh`. See `.env.example` for which keys power which layer.
 - **Two-layer LLM architecture:** Hermes (DeepSeek) routes Telegram messages; applycling pipeline (Anthropic Claude) generates packages. See `DECISIONS.md` §2026-04-27.
 - **Hermes applycling profile:** Inbound Telegram intake runs through the `applycling-hermes` wrapper for `~/.hermes/profiles/applycling/`. Profile has toolsets locked to `terminal` only. Provision via `scripts/setup_hermes_telegram.sh`.
-- Keep ARCHITECTURE_VISION.md canonical — update it when adding/removing skills, changing pipeline contract, introducing new providers, shipping phases, or discovering risks
+- `vision.md` holds vision + assumptions only — on merge, move shipped capabilities to `memory/semantic.md` and remove from the Vision section; update Assumptions if a premise is invalidated
 
 ---
 
