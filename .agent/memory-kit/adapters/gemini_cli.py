@@ -23,7 +23,7 @@ def generate(project_root: Path, config: dict) -> str:
         + memory_protocol.strip()
         + "\n\n---\n\n"
         + "## Architecture\n\n"
-        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.\n"
+        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).\n"
         + "\n\n---\n\n"
         + "## Key conventions\n\n"
         + conventions_md
