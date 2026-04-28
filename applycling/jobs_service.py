@@ -42,6 +42,29 @@ _ARTIFACT_KINDS: tuple[str, ...] = (
     "job_description",
 )
 
+_ARTIFACT_FILES: dict[str, str] = {
+    "resume_pdf":          "resume.pdf",
+    "cover_letter_pdf":    "cover_letter.pdf",
+    "resume_md":           "resume.md",
+    "cover_letter_md":     "cover_letter.md",
+    "positioning_brief":   "positioning_brief.md",
+    "email_inmail":        "email_inmail.md",
+    "fit_summary":         "fit_summary.md",
+    "job_description":     "job_description.md",
+}
+
+_INFER_KIND: dict[str, str] = {
+    "resume.pdf": "resume_pdf", "resume.md": "resume_md", "resume.html": "resume_html", "resume.docx": "resume_docx",
+    "cover_letter.pdf": "cover_letter_pdf", "cover_letter.md": "cover_letter_md", "cover_letter.html": "cover_letter_html", "cover_letter.docx": "cover_letter_docx",
+    "positioning_brief.md": "positioning_brief",
+    "email_inmail.md": "email_inmail",
+    "fit_summary.md": "fit_summary",
+    "job_description.md": "job_description",
+    "strategy.md": "strategy",
+    "company_context.md": "company_context",
+    "run_log.json": "run_log",
+}
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def _job_to_dict(job: Job) -> dict[str, Any]:
@@ -201,8 +224,38 @@ def attach_artifact(job_id: str, kind: str, path: str) -> dict[str, Any]:
 
 
 def list_artifacts(job_id: str) -> list[dict[str, Any]]:
-    """Return all recorded artifacts for a job."""
-    return _read_artifacts_json(job_id).get("artifacts", [])
+    """Return all recorded artifacts for a job.
+    
+    Falls back to scanning the package folder for known files if no
+    artifacts JSON exists (e.g. jobs created via Telegram / CLI).
+    """
+    recorded = _read_artifacts_json(job_id).get("artifacts", [])
+    if recorded:
+        return recorded
+
+    # Fallback: scan the actual package folder
+    store = get_store()
+    try:
+        job = store.load_job(job_id)
+    except TrackerError:
+        return []
+
+    package = job.package_folder
+    if not package:
+        return []
+
+    pkg_path = Path(package)
+    if not pkg_path.exists():
+        return []
+
+    scanned: list[dict[str, Any]] = []
+    for entry in sorted(pkg_path.iterdir()):
+        if entry.is_file() and entry.suffix in ('.pdf', '.md', '.html', '.docx', '.json'):
+            name = entry.name
+            kind = _INFER_KIND.get(name, name.replace('.', '_'))
+            scanned.append({"kind": kind, "path": str(entry), "filename": name})
+
+    return scanned
 
 
 def run_pipeline(job_id: str) -> dict[str, Any]:
@@ -315,17 +368,6 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
 
     # ------------------------------------------------------------------
     # Attach generated artifacts
-    # ------------------------------------------------------------------
-    _ARTIFACT_FILES: dict[str, str] = {
-        "resume_pdf":          "resume.pdf",
-        "cover_letter_pdf":    "cover_letter.pdf",
-        "resume_md":           "resume.md",
-        "cover_letter_md":     "cover_letter.md",
-        "positioning_brief":   "positioning_brief.md",
-        "email_inmail":        "email_inmail.md",
-        "fit_summary":         "fit_summary.md",
-        "job_description":     "job_description.md",
-    }
     for kind, filename in _ARTIFACT_FILES.items():
         file_path = folder / filename
         if file_path.exists():
