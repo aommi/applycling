@@ -461,3 +461,32 @@ applycling-hermes gateway status
 # View logs
 tail -f ~/.hermes/profiles/applycling/logs/gateway.log
 ```
+
+---
+
+## Local Workbench (web UI)
+
+Start a local web dashboard to manage your job search pipeline visually.
+
+```bash
+# Start the workbench
+applycling ui serve
+
+# Index existing output packages
+applycling ui index-output
+```
+
+Open http://127.0.0.1:8080 in your browser. The workbench shows:
+
+- **Job board** — all jobs grouped by status (inbox, running, generated, reviewing, applied, skipped, failed)
+- **Job detail** — inspect generated artifacts (resume PDF/MD, cover letter PDF/MD, positioning brief, fit summary)
+- **Status actions** — mark jobs as reviewing, applied, or skipped with one click
+- **URL submission** — paste a job URL and trigger the full pipeline from the UI
+- **Index existing** — import previously generated packages from `output/` into the workbench
+
+### Known limitations
+
+- Local only (binds to 127.0.0.1) — no network exposure
+- No authentication — single-user local tool
+- Pipeline runs synchronously (blocks the request until generation completes)
+- SQLite by default; Postgres available via `APPLYCLING_DB_BACKEND=postgres DATABASE_URL=...`

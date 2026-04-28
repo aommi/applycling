@@ -2387,5 +2387,38 @@ def telegram_run(url: str, model_arg: str, provider_arg: str) -> None:
         sys.exit(1)
 
 
+# ---------- ui ----------
+
+
+@main.group()
+def ui() -> None:
+    """Local workbench commands."""
+
+
+@ui.command("index-output")
+@click.option("--output-dir", default="output", help="Output directory to scan for packages.")
+def ui_index_output(output_dir: str) -> None:
+    """Index existing output packages into the tracker."""
+    from applycling.import_existing import index_output_dir
+
+    result = index_output_dir(output_dir)
+    console.print(f"Imported: [green]{result['imported']}[/green]")
+    console.print(f"Skipped: [yellow]{result['skipped']}[/yellow]")
+    if result["errors"]:
+        console.print(f"Errors: [red]{len(result['errors'])}[/red]")
+        for err in result["errors"]:
+            console.print(f"  [dim]{err}[/dim]")
+
+
+@ui.command("serve")
+@click.option("--host", default="127.0.0.1", help="Host to bind to.")
+@click.option("--port", default=8080, help="Port to listen on.")
+def ui_serve(host: str, port: int) -> None:
+    """Start the local workbench web UI."""
+    import uvicorn
+    from applycling.ui import app
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     main()

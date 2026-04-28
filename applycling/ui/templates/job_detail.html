@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <a href="/" class="back-link">← Back to jobs</a>
+</div>
+
+<div class="job-detail-card">
+  <div class="job-detail-header">
+    <h1>{{ job.title or "Untitled" }}</h1>
+    <span class="status-badge status-badge-lg" style="background:{{ status_color(job.status) }}">
+      {{ job.status }}
+    </span>
+  </div>
+
+  <dl class="job-meta">
+    <dt>Company</dt>
+    <dd>{{ job.company or "—" }}</dd>
+
+    <dt>Source URL</dt>
+    <dd>
+      {% if job.source_url %}
+        <a href="{{ job.source_url }}" target="_blank" rel="noopener">{{ job.source_url }}</a>
+      {% else %}
+        —
+      {% endif %}
+    </dd>
+
+    <dt>Created</dt>
+    <dd>{{ job.date_added or "—" }}</dd>
+
+    <dt>Updated</dt>
+    <dd>{{ job.date_updated or "—" }}</dd>
+
+    <dt>Package</dt>
+    <dd>{{ job.package_folder or "Not generated" }}</dd>
+  </dl>
+
+  <!-- Status actions -->
+  <div class="status-actions">
+    {% if job.status == "generated" %}
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="reviewing">
+        <button class="btn btn-start">Start Review</button>
+      </form>
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="applied">
+        <button class="btn btn-apply">Mark Applied</button>
+      </form>
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="skipped">
+        <button class="btn btn-skip">Skip</button>
+      </form>
+    {% elif job.status == "reviewing" %}
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="applied">
+        <button class="btn btn-apply">Mark Applied</button>
+      </form>
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="skipped">
+        <button class="btn btn-skip">Skip</button>
+      </form>
+    {% elif job.status == "inbox" %}
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="skipped">
+        <button class="btn btn-skip">Skip</button>
+      </form>
+    {% elif job.status == "skipped" or job.status == "failed" %}
+      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+        <input type="hidden" name="status" value="inbox">
+        <button class="btn btn-reopen">Reopen</button>
+      </form>
+    {% elif job.status == "applied" %}
+      <span class="applied-mark">✓ Applied</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Artifacts -->
+<div class="artifacts-section">
+  <h2>Artifacts</h2>
+  {% set known_artifacts = [
+    ("resume_pdf", "resume.pdf", "Resume (PDF)"),
+    ("cover_letter_pdf", "cover_letter.pdf", "Cover Letter (PDF)"),
+    ("resume_md", "resume.md", "Resume (Markdown)"),
+    ("cover_letter_md", "cover_letter.md", "Cover Letter (Markdown)"),
+    ("positioning_brief", "positioning_brief.md", "Positioning Brief"),
+    ("email_inmail", "email_inmail.md", "Email / InMail"),
+    ("fit_summary", "fit_summary.md", "Fit Summary"),
+  ] %}
+  {% set artifact_map = {} %}
+  {% for a in artifacts %}
+    {% set _ = artifact_map.update({a.kind: a}) %}
+  {% endfor %}
+
+  <ul class="artifact-list">
+  {% for kind, filename, label in known_artifacts %}
+    <li class="artifact-item">
+      {% if kind in artifact_map %}
+        {% if filename.endswith(".pdf") %}
+          <a href="/artifacts/{{ job.id }}/{{ filename }}" class="artifact-link artifact-pdf">📄 {{ label }}</a>
+        {% else %}
+          <a href="/artifacts/{{ job.id }}/{{ filename }}" class="artifact-link artifact-md">📝 {{ label }}</a>
+        {% endif %}
+      {% else %}
+        <span class="artifact-missing">○ {{ label }} <em>(Not generated)</em></span>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>applycling workbench{% if job and job.title %} — {{ job.title }}{% endif %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark">
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <a href="/" class="brand-link">⚡ applycling</a>
+  </div>
+  <ul class="nav-list">
+    <li><a href="/" class="nav-item{% if not current_status %} active{% endif %}">All Jobs</a></li>
+    {% for s in statuses() %}
+    <li><a href="/?status={{ s }}" class="nav-item{% if current_status == s %} active{% endif %}">
+      <span class="status-dot" style="background:{{ status_color(s) }}"></span>
+      {{ s|capitalize }}
+    </a></li>
+    {% endfor %}
+  </ul>
+  <div class="sidebar-footer">
+    <a href="/submit" class="nav-item">+ Submit URL</a>
+  </div>
+</nav>
+<main class="content">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <h1>Jobs{% if current_status %} — {{ current_status|capitalize }}{% endif %}</h1>
+  <a href="/submit" class="btn btn-primary">+ Submit URL</a>
+</div>
+
+{% if jobs %}
+<table class="jobs-table">
+  <thead>
+    <tr>
+      <th>Company</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for job in jobs %}
+    <tr class="job-row">
+      <td class="cell-company">{{ job.company or "—" }}</td>
+      <td class="cell-title">
+        <a href="/jobs/{{ job.id }}" class="job-link">{{ job.title or "Untitled" }}</a>
+        {% if job.package_folder %}<span class="has-package" title="Package available">📦</span>{% endif %}
+      </td>
+      <td>
+        <span class="status-badge" style="background:{{ status_color(job.status) }}">
+          {{ job.status }}
+        </span>
+      </td>
+      <td class="cell-date">{{ job.date_added[:10] if job.date_added else "—" }}</td>
+      <td class="cell-actions">
+        {% if job.status == "generated" %}
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="reviewing">
+            <button class="btn btn-sm btn-start">Start Review</button>
+          </form>
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="applied">
+            <button class="btn btn-sm btn-apply">Mark Applied</button>
+          </form>
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="skipped">
+            <button class="btn btn-sm btn-skip">Skip</button>
+          </form>
+        {% elif job.status == "reviewing" %}
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="applied">
+            <button class="btn btn-sm btn-apply">Mark Applied</button>
+          </form>
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="skipped">
+            <button class="btn btn-sm btn-skip">Skip</button>
+          </form>
+        {% elif job.status == "inbox" %}
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="skipped">
+            <button class="btn btn-sm btn-skip">Skip</button>
+          </form>
+        {% elif job.status == "skipped" or job.status == "failed" %}
+          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+            <input type="hidden" name="status" value="inbox">
+            <button class="btn btn-sm btn-reopen">Reopen</button>
+          </form>
+        {% elif job.status == "applied" %}
+          <span class="applied-mark">✓ Applied</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+  <p>No jobs yet. <a href="/submit">Submit a URL</a> or index existing outputs.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <h1>Submit Job URL</h1>
+  <a href="/" class="back-link">← Back to jobs</a>
+</div>
+
+<div class="submit-form">
+  <h2>Submit a Job URL</h2>
+  <form method="post" action="/submit">
+    <input type="url" name="url" placeholder="https://example.com/jobs/..." required 
+           style="width: 100%; padding: 0.75rem; font-size: 1rem;">
+    <button type="submit" style="margin-top: 1rem; padding: 0.75rem 2rem;">Generate Package</button>
+  </form>
+  <p class="hint">Paste a job posting URL. applycling will scrape, analyze, and generate a complete application package.</p>
+</div>
+{% endblock %}
