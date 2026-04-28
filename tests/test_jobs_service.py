@@ -44,7 +44,7 @@ def inbox_job(isolated_store):
 def test_create_job_from_url_creates_inbox(isolated_store):
     job = jobs_service.create_job_from_url("https://example.com/jobs/456")
     assert "id" in job
-    assert job["status"] == "inbox"
+    assert job["status"] == "new"
     assert job["source_url"] == "https://example.com/jobs/456"
     # Title / company are empty until the pipeline runs.
     assert job["title"] == ""
@@ -67,13 +67,13 @@ def test_list_jobs_no_filter(inbox_job, isolated_store):
 
 
 def test_list_jobs_filter_matching(inbox_job, isolated_store):
-    jobs = jobs_service.list_jobs(status="inbox")
+    jobs = jobs_service.list_jobs(status="new")
     assert len(jobs) == 1
-    assert jobs[0]["status"] == "inbox"
+    assert jobs[0]["status"] == "new"
 
 
 def test_list_jobs_filter_non_matching(inbox_job, isolated_store):
-    jobs = jobs_service.list_jobs(status="generated")
+    jobs = jobs_service.list_jobs(status="reviewing")
     assert len(jobs) == 0
 
 
@@ -83,10 +83,10 @@ def test_list_jobs_multiple_statuses(isolated_store):
 
     # Set second job to a different status manually (bypass service validation)
     all_jobs = jobs_service.list_jobs()
-    isolated_store.update_job(all_jobs[1]["id"], status="skipped")
+    isolated_store.update_job(all_jobs[1]["id"], status="archived")
 
-    assert len(jobs_service.list_jobs(status="inbox")) == 1
-    assert len(jobs_service.list_jobs(status="skipped")) == 1
+    assert len(jobs_service.list_jobs(status="new")) == 1
+    assert len(jobs_service.list_jobs(status="archived")) == 1
     assert len(jobs_service.list_jobs()) == 2
 
 
@@ -95,7 +95,7 @@ def test_list_jobs_multiple_statuses(isolated_store):
 def test_get_job_returns_correct(inbox_job, isolated_store):
     job = jobs_service.get_job(inbox_job["id"])
     assert job["id"] == inbox_job["id"]
-    assert job["status"] == "inbox"
+    assert job["status"] == "new"
     assert job["source_url"] == inbox_job["source_url"]
 
 
@@ -107,17 +107,17 @@ def test_get_job_missing_raises(isolated_store):
 # ── Test: set_job_status ──────────────────────────────────────────────
 
 def test_set_job_status_valid_transition(inbox_job, isolated_store):
-    updated = jobs_service.set_job_status(inbox_job["id"], "running")
-    assert updated["status"] == "running"
+    updated = jobs_service.set_job_status(inbox_job["id"], "generating")
+    assert updated["status"] == "generating"
 
 
 def test_set_job_status_invalid_status_value(inbox_job, isolated_store):
-    with pytest.raises(ValueError, match="Invalid status"):
+    with pytest.raises(ValueError, match="Unknown status"):
         jobs_service.set_job_status(inbox_job["id"], "bogus")
 
 
 def test_set_job_status_disallowed_transition(inbox_job, isolated_store):
-    # inbox → applied is not allowed (must go through generated/reviewing)
+    # new -> applied is not allowed (must go through generating/reviewing/reviewed)
     with pytest.raises(ValueError, match="Cannot transition"):
         jobs_service.set_job_status(inbox_job["id"], "applied")
 
@@ -125,14 +125,14 @@ def test_set_job_status_disallowed_transition(inbox_job, isolated_store):
 def test_set_job_status_allowed_chain(isolated_store):
     j = jobs_service.create_job_from_url("https://example.com/x")
 
-    j = jobs_service.set_job_status(j["id"], "running")
-    assert j["status"] == "running"
-
-    j = jobs_service.set_job_status(j["id"], "generated")
-    assert j["status"] == "generated"
+    j = jobs_service.set_job_status(j["id"], "generating")
+    assert j["status"] == "generating"
 
     j = jobs_service.set_job_status(j["id"], "reviewing")
     assert j["status"] == "reviewing"
+
+    j = jobs_service.set_job_status(j["id"], "reviewed")
+    assert j["status"] == "reviewed"
 
     j = jobs_service.set_job_status(j["id"], "applied")
     assert j["status"] == "applied"
@@ -142,8 +142,8 @@ def test_set_job_status_failed_to_inbox(isolated_store):
     j = jobs_service.create_job_from_url("https://example.com/x")
     isolated_store.update_job(j["id"], status="failed")  # bypass validation
 
-    j = jobs_service.set_job_status(j["id"], "inbox")
-    assert j["status"] == "inbox"
+    j = jobs_service.set_job_status(j["id"], "new")
+    assert j["status"] == "new"
 
 
 def test_set_job_status_with_reason(inbox_job, isolated_store, tmp_path):
@@ -155,15 +155,15 @@ def test_set_job_status_with_reason(inbox_job, isolated_store, tmp_path):
 
     with patch.object(jobs_service, "_artifacts_path_for_job", side_effect=_fake_path):
         updated = jobs_service.set_job_status(
-            inbox_job["id"], "running", reason="Pipeline started"
+            inbox_job["id"], "generating", reason="Pipeline started"
         )
-        assert updated["status"] == "running"
+        assert updated["status"] == "generating"
 
         # Verify the reason was recorded
         data = jobs_service._read_artifacts_json(inbox_job["id"])
         reasons = data.get("status_reasons", [])
         assert len(reasons) == 1
-        assert reasons[0]["status"] == "running"
+        assert reasons[0]["status"] == "generating"
         assert reasons[0]["reason"] == "Pipeline started"
 
 
@@ -237,7 +237,7 @@ def test_service_functions_chain_with_sqlite(isolated_store, tmp_path):
         # Create
         j = jobs_service.create_job_from_url("https://example.com/jobs/chain-test")
         job_id = j["id"]
-        assert j["status"] == "inbox"
+        assert j["status"] == "new"
 
         # Get
         j2 = jobs_service.get_job(job_id)
@@ -248,12 +248,12 @@ def test_service_functions_chain_with_sqlite(isolated_store, tmp_path):
         assert any(x["id"] == job_id for x in jobs)
 
         # Status transitions
-        jobs_service.set_job_status(job_id, "running")
-        jobs_service.set_job_status(job_id, "generated")
+        jobs_service.set_job_status(job_id, "generating")
         jobs_service.set_job_status(job_id, "reviewing")
+        jobs_service.set_job_status(job_id, "reviewed")
 
         j3 = jobs_service.get_job(job_id)
-        assert j3["status"] == "reviewing"
+        assert j3["status"] == "reviewed"
 
         # Artifacts
         jobs_service.attach_artifact(job_id, "job_description", "/some/path/jd.md")
@@ -261,5 +261,5 @@ def test_service_functions_chain_with_sqlite(isolated_store, tmp_path):
         assert len(arts) == 1
 
         # List by status
-        assert len(jobs_service.list_jobs(status="reviewing")) == 1
-        assert len(jobs_service.list_jobs(status="inbox")) == 0
+        assert len(jobs_service.list_jobs(status="reviewed")) == 1
+        assert len(jobs_service.list_jobs(status="new")) == 0

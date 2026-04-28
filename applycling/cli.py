@@ -20,6 +20,7 @@ from . import llm, notion_connect, package, pdf_import, render, storage
 from .skills import load_skill
 from .text_utils import clean_llm_output as _clean_llm_output
 from .tracker import STATUSES, Job, TrackerError, get_store
+from .statuses import migrate_old_status, status_color
 
 console = Console()
 
@@ -28,13 +29,25 @@ def _utcnow() -> _dt.datetime:
     """Naive UTC now via non-deprecated API (replaces datetime.utcnow())."""
     return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
 
-STATUS_STYLES = {
-    "tailored": "blue",
-    "applied": "yellow",
-    "interview": "green",
-    "offer": "bold green",
-    "rejected": "dim",
+# Color map: hex color string → Rich style name
+_HEX_TO_RICH: dict[str, str] = {
+    "#6b7280": "dim",
+    "#3b82f6": "blue",
+    "#f59e0b": "yellow",
+    "#10b981": "green",
+    "#8b5cf6": "magenta",
+    "#ec4899": "bold magenta",
+    "#22c55e": "bold green",
+    "#fbbf24": "bold yellow",
+    "#ef4444": "red",
+    "#dc2626": "bold red",
+    "#374151": "dim",
 }
+
+
+def _status_style(status: str) -> str:
+    """Convert a status value to a Rich style string."""
+    return _HEX_TO_RICH.get(status_color(status), "white")
 
 
 def _pick(question: str, options: list[str], default: str = "") -> str:
@@ -2104,7 +2117,7 @@ def list_jobs() -> None:
     table.add_column("Date")
     table.add_column("Status")
     for j in jobs:
-        style = STATUS_STYLES.get(j.status, "white")
+        style = _status_style(j.status)
         table.add_row(
             j.id or "?",
             j.company or "?",
@@ -2129,7 +2142,7 @@ def status(job_id: str) -> None:
     console.print(
         f"Current status for [bold]{job.id}[/bold] "
         f"({job.company or '?'} — {job.title or '?'}): "
-        f"[{STATUS_STYLES.get(job.status, 'white')}]{job.status}[/]"
+        f"[{_status_style(job.status)}]{job.status}[/]"
     )
     new_status = Prompt.ask(
         "New status", choices=list(STATUSES), default=job.status

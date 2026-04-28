@@ -202,7 +202,7 @@ def test_tracker_job_dataclass():
         company="TechCorp",
         date_added="2025-01-01T00:00:00Z",
         date_updated="2025-01-01T00:00:00Z",
-        status="tailored",
+        status="reviewing",
         source_url="https://example.com/job",
         fit_summary="Strong match",
     )
@@ -210,7 +210,7 @@ def test_tracker_job_dataclass():
     assert job.id == "job_123"
     assert job.title == "Senior Engineer"
     assert job.company == "TechCorp"
-    assert job.status == "tailored"
+    assert job.status == "reviewing"
 
     # Can convert to dict
     d = job.to_dict()

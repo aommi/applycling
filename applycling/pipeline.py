@@ -807,7 +807,7 @@ def run_add(
         company=job_company,
         date_added="",
         date_updated="",
-        status="tailored",
+        status="reviewing",
         source_url=job_url or None,
         fit_summary=fit_summary or None,
     )

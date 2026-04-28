@@ -39,7 +39,7 @@ def upgrade() -> None:
             user_id UUID NOT NULL REFERENCES users(id),
             title TEXT NOT NULL,
             company TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'inbox',
+            status TEXT NOT NULL DEFAULT 'new',
             status_reason TEXT NULL,
             source_url TEXT NULL,
             application_url TEXT NULL,
@@ -51,13 +51,17 @@ def upgrade() -> None:
             deleted_at TIMESTAMPTZ NULL,
             CONSTRAINT chk_jobs_status CHECK (
                 status IN (
-                    'inbox',
-                    'running',
-                    'generated',
+                    'new',
+                    'generating',
                     'reviewing',
+                    'reviewed',
                     'applied',
-                    'skipped',
-                    'failed'
+                    'interviewing',
+                    'offered',
+                    'accepted',
+                    'rejected',
+                    'failed',
+                    'archived'
                 )
             )
         );
