@@ -35,11 +35,13 @@ MANAGED_CONTENT_TEMPLATE = """\
 
 **Mid-session drift:** If reasoning becomes uncertain or inconsistent with prior context, re-read `memory/semantic.md` before continuing.
 
+**When a PR merges:** In addition to `semantic.md` and `DECISIONS.md`, check `{arch_file}` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption. Planning details (tickets, checklists, phases) stay in planning docs, never in `{arch_file}`.
+
 ---
 
 ## Architecture vision
 
-Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks."""
+Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`)."""
 
 
 def _write_managed_section(claude_md_path: Path, header: str, content: str) -> str:
@@ -274,7 +276,7 @@ def generate(project_root: Path, config: dict) -> str:
     existing.setdefault("hooks", {}).update(our_hooks)
     settings_path.write_text(json.dumps(existing, indent=2) + "\n")
 
-    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
+    arch_file = config.get("architecture", {}).get("file", "vision.md")
     managed_content = MANAGED_CONTENT_TEMPLATE.format(arch_file=arch_file)
 
     # Project header — written once on first create, never regenerated

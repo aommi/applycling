@@ -15,7 +15,7 @@ def generate(project_root: Path, config: dict) -> str:
     memory_protocol = (templates / "memory_protocol.md").read_text()
 
     project = config["project"]
-    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
+    arch_file = config.get("architecture", {}).get("file", "vision.md")
     conventions = config.get("conventions", [])
     conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
 

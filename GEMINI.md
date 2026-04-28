@@ -43,7 +43,7 @@ If reasoning becomes uncertain or inconsistent with prior context, re-read `memo
 
 ## Architecture
 
-Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, product direction, design-decision rationale, and known risks.
+Before implementing a feature, read `vision.md`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
 
 
 ---
@@ -56,4 +56,4 @@ Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonica
 - Skill templates use `str.format` — escape braces with `{{` and `}}`
 - Conditional logic stays in Python, not skill templates
 - All API keys live in .env at repo root (gitignored)
-- Keep ARCHITECTURE_VISION.md canonical — update it when adding/removing skills, changing pipeline contract, introducing new providers, shipping phases, or discovering risks
+- vision.md holds vision + assumptions only — on merge, move shipped capabilities to memory/semantic.md and remove from the Vision section; update Assumptions if a premise is invalidated

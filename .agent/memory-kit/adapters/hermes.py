@@ -20,7 +20,7 @@ def generate(project_root: Path, config: dict) -> str:
 
     project = config["project"]
     skills = config.get("skills", {})
-    arch_file = config.get("architecture", {}).get("file", "ARCHITECTURE_VISION.md")
+    arch_file = config.get("architecture", {}).get("file", "vision.md")
 
     # Build conventions section
     conventions = config.get("conventions", [])

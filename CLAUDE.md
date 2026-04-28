@@ -17,13 +17,13 @@
 
 **Mid-session drift:** If reasoning becomes uncertain or inconsistent with prior context, re-read `memory/semantic.md` before continuing.
 
-**When a PR merges:** In addition to `semantic.md` and `DECISIONS.md`, check `ARCHITECTURE_VISION.md` — mark any shipped capabilities as built in the Vision section and update Assumptions if the merge invalidates one. Planning details (tickets, checklists, phases) stay in `docs/planning/`, never in `ARCHITECTURE_VISION.md`.
+**When a PR merges:** In addition to `semantic.md` and `DECISIONS.md`, check `vision.md` — move any shipped capabilities from the Vision section to `memory/semantic.md` and remove them from `vision.md`; update or remove Assumptions if the merge invalidates one (append a supersession to `DECISIONS.md` first). Planning details (tickets, checklists, phases) stay in `docs/planning/`, never in `vision.md`.
 
 ---
 
 ## Architecture vision
 
-Before implementing a feature, read `ARCHITECTURE_VISION.md`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
+Before implementing a feature, read `vision.md`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
 <!-- amk:end -->
 <!-- skills:pm:start -->
 ## PM Skills

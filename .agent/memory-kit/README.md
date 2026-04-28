@@ -34,7 +34,7 @@ This kit gives you:
 │  LAYER 2: PROJECT CONFIG (per repo)                         │
 │                                                             │
 │  - .agent/project.yaml         (name, description, arch)    │
-│  - ARCHITECTURE_VISION.md      (project-specific knowledge) │
+│  - vision.md      (project-specific knowledge) │
 │  - memory/semantic.md          (runtime: distilled facts)   │
 │  - memory/working.md           (runtime: current task)      │
 │  - DECISIONS.md                (runtime: decisions log)     │
@@ -337,7 +337,7 @@ Do not over-engineer this. For 1–5 repos, copy-paste is faster than any automa
 | Claude Code hooks not firing | `settings.json` missing or `stop.sh` not executable | `chmod +x hooks/stop.sh`; verify `.claude/settings.json` |
 | Stop hook: `No such file or directory` | Hook paths are stale (absolute or relative) | Re-run `generate.py claude-code` — hook commands now use `$CLAUDE_PROJECT_DIR` which Claude Code resolves correctly regardless of cwd |
 | `CLAUDE.md` regen clobbered my content | File had no sentinel block | Content below `<!-- amk:start/end -->` is always preserved; content above was never managed — add a sentinel block and keep your additions outside it |
-| Generated files missing architecture section | `ARCHITECTURE_VISION.md` (or configured arch file) not found | Create it, or the adapter falls back to `.agent/templates/architecture.md` |
+| Generated files missing architecture section | `vision.md` (or configured arch file) not found | Create it, or the adapter falls back to `.agent/templates/architecture.md` |
 
 ---
 

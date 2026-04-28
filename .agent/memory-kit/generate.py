@@ -121,7 +121,7 @@ def cmd_init(project_root: Path) -> None:
         print("Description is required.")
         sys.exit(1)
 
-    arch_file = input("Architecture file [ARCHITECTURE_VISION.md]: ").strip() or "ARCHITECTURE_VISION.md"
+    arch_file = input("Architecture file [vision.md]: ").strip() or "vision.md"
 
     print("\nWhich agents do you want to enable? (Enter to accept default)")
     agent_defaults = [
