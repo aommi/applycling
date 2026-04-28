@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from applycling import jobs_service
+from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
 
 router = APIRouter()
 
@@ -19,24 +20,11 @@ router = APIRouter()
 _templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
-# ── Status badge color mapping ────────────────────────────────────────
-STATUS_COLORS: dict[str, str] = {
-    "inbox": "#6b7280",
-    "running": "#3b82f6",
-    "generated": "#10b981",
-    "reviewing": "#f59e0b",
-    "applied": "#8b5cf6",
-    "skipped": "#ef4444",
-    "failed": "#dc2626",
-}
-
-_STATUSES: list[str] = [
-    "inbox", "running", "generated", "reviewing", "applied", "skipped", "failed",
-]
-
-# Register template globals so base.html can use them in any template.
-templates.env.globals["statuses"] = lambda: _STATUSES
-templates.env.globals["status_color"] = lambda s: STATUS_COLORS.get(s, "#6b7280")
+# Register template globals — data-driven from canonical state machine
+templates.env.globals["statuses"] = lambda: STATUS_VALUES
+templates.env.globals["status_color"] = status_color
+templates.env.globals["status_label"] = status_label
+templates.env.globals["job_actions"] = job_actions
 
 
 # ── Job board ──────────────────────────────────────────────────────────
@@ -56,7 +44,10 @@ async def job_board(request: Request, status: str | None = None) -> HTMLResponse
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 async def job_detail(request: Request, job_id: str) -> HTMLResponse:
     """Show a single job with its artifacts and status actions."""
-    job = jobs_service.get_job(job_id)
+    try:
+        job = jobs_service.get_job(job_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Job not found")
     artifacts = jobs_service.list_artifacts(job_id)
     return templates.TemplateResponse(request, "job_detail.html", {
         "job": job,
@@ -102,16 +93,14 @@ async def submit_form(request: Request) -> HTMLResponse:
 @router.post("/submit")
 async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse:  # noqa: ARG001
     """Create a job from URL, trigger the pipeline, redirect to detail page."""
-    # 1. Create job in inbox
+    # 1. Create job (status defaults to "new")
     job = jobs_service.create_job_from_url(url)
     job_id = job["id"]
 
-    # 2. Set status to running
-    jobs_service.set_job_status(job_id, "running")
-
-    # 3. Run pipeline (synchronous for local single user)
+    # 2. Run pipeline (synchronous for local single user)
     #    run_pipeline() handles its own error catching internally and
-    #    updates the status to "generated" or "failed" accordingly.
+    #    updates the status to "reviewing" or "failed" accordingly.
+    #    Pipeline owns the transition — route just creates and delegates.
     try:
         jobs_service.run_pipeline(job_id)
     except Exception:

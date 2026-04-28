@@ -8,7 +8,7 @@
   <div class="job-detail-header">
     <h1>{{ job.title or "Untitled" }}</h1>
     <span class="status-badge status-badge-lg" style="background:{{ status_color(job.status) }}">
-      {{ job.status }}
+      {{ status_label(job.status) }}
     </span>
   </div>
 
@@ -35,43 +35,14 @@
     <dd>{{ job.package_folder or "Not generated" }}</dd>
   </dl>
 
-  <!-- Status actions -->
+  <!-- Status actions — data-driven from canonical state machine -->
   <div class="status-actions">
-    {% if job.status == "generated" %}
+    {% for action in job_actions(job.status) %}
       <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="reviewing">
-        <button class="btn btn-start">Start Review</button>
+        <input type="hidden" name="status" value="{{ action.target }}">
+        <button class="btn {{ action.css_class }}">{{ action.label }}</button>
       </form>
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="applied">
-        <button class="btn btn-apply">Mark Applied</button>
-      </form>
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="skipped">
-        <button class="btn btn-skip">Skip</button>
-      </form>
-    {% elif job.status == "reviewing" %}
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="applied">
-        <button class="btn btn-apply">Mark Applied</button>
-      </form>
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="skipped">
-        <button class="btn btn-skip">Skip</button>
-      </form>
-    {% elif job.status == "inbox" %}
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="skipped">
-        <button class="btn btn-skip">Skip</button>
-      </form>
-    {% elif job.status == "skipped" or job.status == "failed" %}
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="inbox">
-        <button class="btn btn-reopen">Reopen</button>
-      </form>
-    {% elif job.status == "applied" %}
-      <span class="applied-mark">✓ Applied</span>
-    {% endif %}
+    {% endfor %}
   </div>
 </div>
 

@@ -5,12 +5,12 @@ Thin service layer that the UI calls. Isolates UI from raw DB code
 and keeps pipeline logic in one place. All persistence goes through
 get_store() — never raw database access.
 
-Workbench statuses (replacing/extending the old tracker statuses):
-    inbox → running → generated → reviewing → applied
-                                ↘ skipped
-    running → failed
-    failed → inbox (retry)
-    skipped → inbox (reopen)
+Workbench statuses (canonical — see applycling/statuses.py):
+    new -> generating -> reviewing -> reviewed -> applied
+                                         |-> archived
+    generating -> failed
+    failed -> new (retry)
+    archived -> reviewing | new (reopen)
 
 Artifacts are stored in a JSON file per job for SQLite compatibility.
 In Postgres mode the artifacts table is used when available; the JSON
@@ -23,19 +23,13 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from applycling.tracker import TrackerError, get_store, Job
-
-# ── Constants ────────────────────────────────────────────────────────
-
-_WORKBENCH_STATUSES: tuple[str, ...] = (
-    "inbox",
-    "running",
-    "generated",
-    "reviewing",
-    "applied",
-    "skipped",
-    "failed",
+from applycling.statuses import (
+    can_transition,
+    assert_valid_status,
+    DEFAULT_INITIAL_STATUS,
+    TRANSITIONS,
 )
+from applycling.tracker import TrackerError, get_store, Job
 
 _ARTIFACT_KINDS: tuple[str, ...] = (
     "resume_pdf",
@@ -47,19 +41,6 @@ _ARTIFACT_KINDS: tuple[str, ...] = (
     "fit_summary",
     "job_description",
 )
-
-# Simple transition rules — not exhaustive, but guards against nonsense.
-# Empty set means "no further transitions allowed currently."
-_VALID_TRANSITIONS: dict[str, set[str]] = {
-    "inbox":     {"running", "skipped"},
-    "running":   {"generated", "failed"},
-    "generated": {"reviewing", "applied", "skipped"},
-    "reviewing": {"applied", "skipped", "generated"},
-    "applied":   set(),
-    "skipped":   {"inbox"},
-    "failed":    {"inbox", "running"},
-}
-
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -114,7 +95,7 @@ def _record_status_reason(job_id: str, status: str, reason: str) -> None:
 # ── Public API ────────────────────────────────────────────────────────
 
 def create_job_from_url(url: str) -> dict[str, Any]:
-    """Create a new job with status ``inbox`` and ``source_url`` set.
+    """Create a new job with canonical initial status and ``source_url`` set.
 
     Returns the job as a dict (including the store-assigned id).
     """
@@ -125,7 +106,7 @@ def create_job_from_url(url: str) -> dict[str, Any]:
         company="",
         date_added="",
         date_updated="",
-        status="inbox",
+        status=DEFAULT_INITIAL_STATUS,
         source_url=url,
     )
     saved = store.save_job(job)
@@ -147,34 +128,48 @@ def get_job(job_id: str) -> dict[str, Any]:
     return _job_to_dict(store.load_job(job_id))
 
 
+def reopen_job(job_id: str) -> dict[str, Any]:
+    """Reopen a job from *archived*.
+
+    Routes to ``reviewing`` if the job has a ``package_folder`` (generated
+    artifacts exist), otherwise routes to ``new`` (fresh start).
+    """
+    store = get_store()
+    job = store.load_job(job_id)
+    if job.package_folder:
+        return set_job_status(job_id, "reviewing")
+    else:
+        return set_job_status(job_id, "new")
+
+
 def set_job_status(
     job_id: str,
     status: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """Update a job's status with optional transition validation.
+    """Update a job's status with transition validation via canonical state machine.
 
-    Raises ``ValueError`` if *status* is not a recognised workbench status
-    or if the transition is disallowed.
+    Idempotent: setting the same status is a no-op and returns the job unchanged.
+    Raises ``ValueError`` if *status* is not a valid canonical status or if the
+    transition is disallowed.
     """
-    if status not in _WORKBENCH_STATUSES:
-        raise ValueError(
-            f"Invalid status: '{status}'. "
-            f"Must be one of: {_WORKBENCH_STATUSES}"
-        )
+    assert_valid_status(status)
 
     store = get_store()
     job = store.load_job(job_id)
     current = job.status
 
-    # Only enforce transitions when the current status is a workbench status.
-    if current in _VALID_TRANSITIONS:
-        allowed = _VALID_TRANSITIONS[current]
-        if allowed and status not in allowed:
-            raise ValueError(
-                f"Cannot transition from '{current}' to '{status}'. "
-                f"Allowed transitions: {sorted(allowed)}"
-            )
+    # Idempotent: same-status is a no-op.
+    if current == status:
+        return _job_to_dict(job)
+
+    # Validate the transition.
+    if not can_transition(current, status):
+        allowed = TRANSITIONS.get(current, frozenset())
+        raise ValueError(
+            f"Cannot transition from '{current}' to '{status}'. "
+            f"Allowed transitions: {sorted(allowed) if allowed else 'none'}"
+        )
 
     updated = store.update_job(job_id, status=status)
 
@@ -214,9 +209,9 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     """Run the applycling pipeline for a job.
 
     Workflow:
-    1. Set job status to ``running``.
+    1. Set job status to ``generating``.
     2. Delegate to ``applycling.pipeline.run_add_notify()``.
-    3. On success → status ``generated``, record package folder + artifacts.
+    3. On success → status ``reviewing``, record package folder + artifacts.
     4. On failure → status ``failed`` with reason.
 
     Returns the updated job dict (or an error dict on failure).
@@ -238,9 +233,9 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             "job_id": job_id,
         }
 
-    # Set running *before* we start so the UI can see it immediately.
+    # Set generating *before* we start so the UI can see it immediately.
     try:
-        store.update_job(job_id, status="running")
+        store.update_job(job_id, status="generating")
     except TrackerError as e:
         return {"error": str(e), "job_id": job_id}
 
@@ -293,7 +288,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         if pipeline_job is not None:
             # Copy title / company / fit_summary from pipeline job
             updates: dict[str, Any] = {
-                "status": "generated",
+                "status": "reviewing",
                 "package_folder": str(folder),
             }
             if pipeline_job.title:
@@ -305,13 +300,13 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             store.update_job(job_id, **updates)
         else:
             store.update_job(
-                job_id, status="generated", package_folder=str(folder)
+                job_id, status="reviewing", package_folder=str(folder)
             )
     except TrackerError:
         # Best-effort — pipeline succeeded, try simple update
         try:
             store.update_job(
-                job_id, status="generated", package_folder=str(folder)
+                job_id, status="reviewing", package_folder=str(folder)
             )
         except TrackerError:
             pass

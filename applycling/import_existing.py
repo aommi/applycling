@@ -240,7 +240,7 @@ def index_output_dir(output_root: str = "output") -> dict[str, Any]:
                 company=company,
                 date_added="",  # store sets
                 date_updated="",
-                status="generated",
+                status="reviewing",
                 source_url=info["source_url"],
                 package_folder=info["package_folder"],
             )

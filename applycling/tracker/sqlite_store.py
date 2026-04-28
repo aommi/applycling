@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     company TEXT NOT NULL,
     date_added TEXT NOT NULL,
     date_updated TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'tailored',
+    status TEXT NOT NULL DEFAULT 'new',
     source_url TEXT,
     application_url TEXT,
     fit_summary TEXT,

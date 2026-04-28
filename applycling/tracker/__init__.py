@@ -11,13 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Optional
 
-STATUSES: tuple[str, ...] = (
-    "tailored",
-    "applied",
-    "interview",
-    "offer",
-    "rejected",
-)
+from applycling.statuses import STATUS_VALUES as STATUSES, migrate_old_status
 
 # Fields the CLI is allowed to mutate after a job is first saved. The
 # date_updated field is set automatically by the store on every update.
@@ -45,7 +39,7 @@ class Job:
     company: str
     date_added: str
     date_updated: str
-    status: str = "tailored"
+    status: str = "new"
     source_url: Optional[str] = None
     application_url: Optional[str] = None
     fit_summary: Optional[str] = None
@@ -67,13 +61,14 @@ class Job:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Job":
+        status = migrate_old_status(data.get("status") or "new")
         return cls(
             id=data["id"],
             title=data["title"],
             company=data["company"],
             date_added=data["date_added"],
             date_updated=data["date_updated"],
-            status=data.get("status") or "tailored",
+            status=status,
             source_url=data.get("source_url"),
             application_url=data.get("application_url"),
             fit_summary=data.get("fit_summary"),

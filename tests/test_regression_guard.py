@@ -327,7 +327,7 @@ def test_regression_job_json_schema(tmp_path):
     # Verify values match what we passed in
     assert manifest["title"] == "Senior Software Engineer"
     assert manifest["company"] == "ExampleCorp"
-    assert manifest["status"] == "tailored"
+    assert manifest["status"] == "reviewing"
 
     # files inventory
     files = manifest["files"]

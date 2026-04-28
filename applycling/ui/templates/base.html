@@ -16,7 +16,7 @@
     {% for s in statuses() %}
     <li><a href="/?status={{ s }}" class="nav-item{% if current_status == s %} active{% endif %}">
       <span class="status-dot" style="background:{{ status_color(s) }}"></span>
-      {{ s|capitalize }}
+      {{ status_label(s) }}
     </a></li>
     {% endfor %}
   </ul>
