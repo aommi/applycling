@@ -93,22 +93,17 @@ async def submit_form(request: Request) -> HTMLResponse:
 @router.post("/submit")
 async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse:  # noqa: ARG001
     """Create a job from URL, trigger the pipeline, redirect to detail page."""
+    import asyncio
+
     # 1. Create job (status defaults to "new")
     job = jobs_service.create_job_from_url(url)
     job_id = job["id"]
 
-    # 2. Run pipeline (synchronous for local single user)
-    #    run_pipeline() handles its own error catching internally and
-    #    updates the status to "reviewing" or "failed" accordingly.
-    #    Pipeline owns the transition — route just creates and delegates.
+    # 2. Run pipeline in a thread — Playwright uses sync API, conflicts with asyncio
     try:
-        jobs_service.run_pipeline(job_id)
+        await asyncio.to_thread(jobs_service.run_pipeline, job_id)
     except Exception:
-        # Unexpected crash (programming error, not pipeline failure).
-        # run_pipeline already sets failed status for known pipeline errors,
-        # so this only fires for truly unexpected exceptions.
-        jobs_service.set_job_status(job_id, "failed", reason="Unexpected error during pipeline execution")
-
+        jobs_service.set_job_status(job_id, "failed", reason="Unexpected error")
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 

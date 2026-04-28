@@ -243,11 +243,13 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     # Silent notifier (no Telegram / Discord — local workbench only)
     # ------------------------------------------------------------------
     class _NullNotifier:
-        """A notifier that swallows everything."""
+        """A notifier that swallows everything except logs progress to stderr."""
         def notify(self, text: str) -> None:        # noqa: ARG002
-            pass
+            import sys
+            print(f"[pipeline] {text[:120]}", file=sys.stderr, flush=True)
         def send_document(self, path, caption: str = "") -> None:  # noqa: ARG002
-            pass
+            import sys
+            print(f"[pipeline] document: {path}", file=sys.stderr, flush=True)
 
     # ------------------------------------------------------------------
     # Run pipeline (this creates its own job internally — we'll merge)
