@@ -118,10 +118,23 @@ def get_store() -> TrackerStore:
     """Return the configured tracker store.
 
     Resolution order:
-    1. NotionStore if `applycling notion connect` has been run and the local
-       Notion config is present.
-    2. SQLiteStore otherwise (zero-config local default).
+    1. If APPLYCLING_DB_BACKEND=postgres, require DATABASE_URL, return
+       PostgresStore. The Notion probe is skipped.
+    2. If APPLYCLING_DB_BACKEND=sqlite, return SQLiteStore (existing behavior
+       with Notion probe).
+    3. If unset, fall back to legacy resolution (Notion probe → SQLite).
     """
+    import os
+
+    db_backend = os.environ.get("APPLYCLING_DB_BACKEND", "").strip().lower()
+
+    # ── Postgres path (no Notion probe) ────────────────────────────────
+    if db_backend == "postgres":
+        from . import postgres_store
+
+        return postgres_store.PostgresStore()
+
+    # ── SQLite path (Notion probe still runs for backward compat) ──────
     # Lazy imports to avoid pulling in optional deps until they're needed.
     from . import sqlite_store
 

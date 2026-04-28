@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: applycling
+      POSTGRES_PASSWORD: applycling
+      POSTGRES_DB: applycling
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U applycling"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  applycling:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://applycling:applycling@postgres:5432/applycling
+      - APPLYCLING_DB_BACKEND=postgres
+    volumes:
+      - .:/app
+      - ./output:/app/output
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data:
