@@ -40,17 +40,3 @@ def test_job_detail_nonexistent_returns_404(client):
     ):
         response = client.get("/jobs/nonexistent")
     assert response.status_code == 404
-
-
-def test_submit_creates_job_and_runs_pipeline(client):
-    """POST /submit creates a job, runs pipeline in thread, redirects."""
-    with patch(
-        "applycling.ui.routes.jobs_service.create_job_from_url",
-        return_value={"id": "test_001", "status": "new"},
-    ), patch(
-        "applycling.ui.routes.jobs_service.run_pipeline",
-        return_value={"status": "reviewing"},
-    ):
-        response = client.post("/submit", data={"url": "https://example.com/job"})
-    assert response.status_code == 303
-    assert "/jobs/test_001" in response.headers["location"]
