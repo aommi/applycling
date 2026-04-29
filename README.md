@@ -279,7 +279,7 @@ Print a tailored resume in the terminal.
 
 ### `applycling status <job_id>`
 
-Update a job's status: `tailored` / `applied` / `interview` / `offer` / `rejected`.
+Update a job's status. Valid statuses: `new`, `generating`, `reviewing`, `reviewed`, `applied`, `interviewing`, `offered`, `accepted`, `rejected`, `failed`, `archived`. See `applycling/statuses.py` for the canonical state machine.
 
 ### `applycling setup`
 
@@ -478,9 +478,9 @@ applycling ui index-output
 
 Open http://127.0.0.1:8080 in your browser. The workbench shows:
 
-- **Job board** — all jobs grouped by status (inbox, running, generated, reviewing, applied, skipped, failed)
+- **Job board** — all jobs grouped by status, data-driven from the canonical 11-state machine (`new`, `generating`, `reviewing`, `reviewed`, `applied`, `interviewing`, `offered`, `accepted`, `rejected`, `failed`, `archived`)
 - **Job detail** — inspect generated artifacts (resume PDF/MD, cover letter PDF/MD, positioning brief, fit summary)
-- **Status actions** — mark jobs as reviewing, applied, or skipped with one click
+- **Status actions** — one-click status transitions (data-driven from `statuses.py`). Regenerate runs the full pipeline from `new`, `reviewing`, or `failed`.
 - **URL submission** — paste a job URL and trigger the full pipeline from the UI
 - **Index existing** — import previously generated packages from `output/` into the workbench
 
