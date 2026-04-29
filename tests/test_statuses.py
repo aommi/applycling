@@ -47,8 +47,10 @@ class TestInvariants:
         assert gen.actions == ()
 
     def test_all_other_states_have_actions(self):
+        # failed has no actions because its only exit is the Regenerate
+        # command (rendered separately in the template, not a status transition).
         for s in STATES:
-            if s.value != "generating":
+            if s.value not in ("generating", "failed"):
                 assert s.actions, f"{s.value} has no actions"
 
 
