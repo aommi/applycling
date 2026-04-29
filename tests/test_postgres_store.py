@@ -151,19 +151,17 @@ def _needs_postgres():
     from applycling.tracker.postgres_store import PostgresStore
 
     # Ensure a local user exists
-    from applycling.db_seed import seed_local_user, LOCAL_USER_ID
-
-    seed_local_user(database_url)
+    from applycling.db_seed import seed_local_user
 
     # Truncate test data from prior runs so each test starts clean.
-    # TRUNCATE ... CASCADE handles FK dependencies in the right order.
+    # TRUNCATE ... CASCADE handles FK dependencies safely.
     import psycopg
 
     with psycopg.connect(database_url) as conn:
         conn.execute("TRUNCATE TABLE jobs, users RESTART IDENTITY CASCADE")
         conn.commit()
 
-    # Re-seed the local user after truncate (well-known UUID is now gone).
+    # Re-seed the local user after truncate.
     seed_local_user(database_url)
 
     store = PostgresStore(database_url)
