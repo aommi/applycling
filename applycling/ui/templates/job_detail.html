@@ -1,4 +1,9 @@
 {% extends "base.html" %}
+{% block head %}
+  {% if job.status == "generating" %}
+    <meta http-equiv="refresh" content="10">
+  {% endif %}
+{% endblock %}
 {% block content %}
 <div class="page-header">
   <a href="/" class="back-link">← Back to jobs</a>
@@ -49,6 +54,9 @@
       </form>
     {% endif %}
   </div>
+  {% if error %}
+    <div class="error-message">{{ error }}</div>
+  {% endif %}
 </div>
 
 <!-- Artifacts -->
