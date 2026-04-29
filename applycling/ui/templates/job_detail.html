@@ -43,6 +43,11 @@
         <button class="btn {{ action.css_class }}">{{ action.label }}</button>
       </form>
     {% endfor %}
+    {% if job.status in ("new", "reviewing", "failed") %}
+      <form method="post" action="/jobs/{{ job.id }}/regenerate" class="inline-form">
+        <button class="btn btn-start">Regenerate</button>
+      </form>
+    {% endif %}
   </div>
 </div>
 

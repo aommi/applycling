@@ -107,6 +107,19 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
+# ── Regenerate (command, not status transition) ──────────────────────
+
+@router.post("/jobs/{job_id}/regenerate")
+async def regenerate_job(request: Request, job_id: str) -> RedirectResponse:  # noqa: ARG001
+    """Run the pipeline on an existing job."""
+    import asyncio
+    try:
+        await asyncio.to_thread(jobs_service.run_pipeline, job_id)
+    except Exception:
+        jobs_service.set_job_status(job_id, "failed", reason="Unexpected error")
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
 # ── Init ───────────────────────────────────────────────────────────────
 
 def init_app(app):  # type: ignore[no-untyped-def]

@@ -123,10 +123,11 @@ class TestLabelsAndColors:
 # ── Actions ──────────────────────────────────────────────────────────
 
 class TestActions:
-    def test_new_has_regenerate(self):
+    def test_new_has_no_generating_action(self):
+        """generating is a system state — not a user action. Regenerate is a separate endpoint."""
         actions = job_actions("new")
         targets = {a.target for a in actions}
-        assert "generating" in targets, "new missing Regenerate"
+        assert "generating" not in targets, "generating should not be a status action"
 
     def test_offered_has_accept(self):
         actions = job_actions("offered")

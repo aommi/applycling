@@ -17,6 +17,8 @@ from applycling.statuses import STATUS_VALUES as STATUSES, migrate_old_status
 # date_updated field is set automatically by the store on every update.
 ALLOWED_UPDATE_FIELDS: frozenset[str] = frozenset(
     {
+        "title",
+        "company",
         "status",
         "source_url",
         "application_url",

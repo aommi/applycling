@@ -31,12 +31,17 @@
       </td>
       <td class="cell-date">{{ job.date_added[:10] if job.date_added else "—" }}</td>
       <td class="cell-actions">
-        {% for action in job_actions(job.status) %}
-          <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-            <input type="hidden" name="status" value="{{ action.target }}">
-            <button class="btn btn-sm {{ action.css_class }}">{{ action.label }}</button>
-          </form>
-        {% endfor %}
+  {% for action in job_actions(job.status) %}
+    <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+      <input type="hidden" name="status" value="{{ action.target }}">
+      <button class="btn btn-sm {{ action.css_class }}">{{ action.label }}</button>
+    </form>
+  {% endfor %}
+  {% if job.status in ("new", "reviewing", "failed") %}
+    <form method="post" action="/jobs/{{ job.id }}/regenerate" class="inline-form">
+      <button class="btn btn-sm btn-start">Regenerate</button>
+    </form>
+  {% endif %}
       </td>
     </tr>
   {% endfor %}

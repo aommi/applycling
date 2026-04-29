@@ -26,13 +26,11 @@ class Status:
 
 STATES: tuple[Status, ...] = (
     Status("new", "New", "#6b7280", actions=(
-        StatusAction("generating", "Regenerate", "btn-start"),
         StatusAction("archived", "Archive", "btn-skip"),
     )),
     Status("generating", "Generating", "#3b82f6", is_system=True),
     Status("reviewing", "Reviewing", "#f59e0b", actions=(
         StatusAction("reviewed", "Ready to Apply", "btn-apply"),
-        StatusAction("generating", "Regenerate", "btn-start"),
         StatusAction("archived", "Archive", "btn-skip"),
     )),
     Status("reviewed", "Reviewed", "#10b981", actions=(
