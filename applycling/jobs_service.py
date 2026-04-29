@@ -305,7 +305,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             print(f"[pipeline] document: {path}", file=sys.stderr, flush=True)
 
     # ------------------------------------------------------------------
-    # Run pipeline (this creates its own job internally — we'll merge)
+    # Run pipeline (persist_job=False — no duplicate, we own the job)
     # ------------------------------------------------------------------
     try:
         from applycling.pipeline import run_add_notify
@@ -313,6 +313,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         folder: Path = run_add_notify(
             url=url,
             notifier=_NullNotifier(),
+            persist_job=False,
         )
     except Exception as exc:
         reason = str(exc)
@@ -324,47 +325,33 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         return {"error": reason, "job_id": job_id}
 
     # ------------------------------------------------------------------
-    # Merge pipeline-created job data into our workbench job
+    # Update workbench job with pipeline results (no duplicate to merge)
     # ------------------------------------------------------------------
-    # run_add_notify saved a *second* job (status "tailored") with the
-    # real title / company / fit_summary.  Find it and copy the fields
-    # we care about into the original workbench job.
-    try:
-        all_jobs = store.load_jobs()
-        pipeline_job = None
-        for j in all_jobs:
-            if j.id == job_id:
-                continue
-            if j.source_url == url and j.package_folder:
-                # Most-recent match (list is date_added DESC)
-                pipeline_job = j
-                break
-
-        if pipeline_job is not None:
-            # Copy title / company / fit_summary from pipeline job
-            updates: dict[str, Any] = {
-                "status": "reviewing",
-                "package_folder": str(folder),
-            }
-            if pipeline_job.title:
-                updates["title"] = pipeline_job.title
-            if pipeline_job.company:
-                updates["company"] = pipeline_job.company
-            if pipeline_job.fit_summary:
-                updates["fit_summary"] = pipeline_job.fit_summary
-            store.update_job(job_id, **updates)
-        else:
-            store.update_job(
-                job_id, status="reviewing", package_folder=str(folder)
-            )
-    except TrackerError:
-        # Best-effort — pipeline succeeded, try simple update
+    import json
+    job_json_path = folder / "job.json"
+    title = ""
+    company = ""
+    fit_summary = ""
+    if job_json_path.exists():
         try:
-            store.update_job(
-                job_id, status="reviewing", package_folder=str(folder)
-            )
-        except TrackerError:
+            meta = json.loads(job_json_path.read_text(encoding="utf-8"))
+            title = meta.get("title", "").strip()
+            company = meta.get("company", "").strip()
+            fit_summary = meta.get("fit_summary", "").strip()
+        except (json.JSONDecodeError, OSError):
             pass
+
+    updates: dict[str, Any] = {"status": "reviewing", "package_folder": str(folder)}
+    if title:
+        updates["title"] = title
+    if company:
+        updates["company"] = company
+    if fit_summary:
+        updates["fit_summary"] = fit_summary
+    try:
+        store.update_job(job_id, **updates)
+    except TrackerError:
+        pass
 
     # ------------------------------------------------------------------
     # Attach generated artifacts
