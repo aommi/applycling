@@ -1,0 +1,53 @@
+# Production Docker Compose — hosted deploy on Kamatera VPS
+# SEPARATE from docker-compose.yml (which is for local dev only).
+# 
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: applycling
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-applycling}
+      POSTGRES_DB: applycling
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U applycling"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  applycling:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - /opt/applycling/.env
+    volumes:
+      - /opt/applycling/data:/app/data
+      - /opt/applycling/output:/app/output
+    command: ["python", "-m", "applycling.cli", "ui", "serve", "--host", "0.0.0.0", "--port", "8080"]
+    restart: unless-stopped
+    # Port 8080 is internal only — Caddy reverse proxies to it.
+    # Do NOT expose 8080 on the host unless you know what you're doing.
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - applycling
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
