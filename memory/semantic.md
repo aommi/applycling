@@ -3,7 +3,7 @@
 ## Core Systems
 
 - **Skills architecture:** 16 LLM prompts live in `applycling/skills/<name>/SKILL.md` with YAML frontmatter (name, description, inputs, output_file, model_hint, temperature). Loader in `applycling/skills/loader.py` — `load_skill(name).render(**kwargs)` validates inputs, renders via `str.format`.
-- **Pipeline:** `applycling/pipeline.py` — `PipelineContext`, `PipelineStep`, `PipelineRun`. Linear deterministic flow: `role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary`. All callers (CLI, OpenClaw, future web UI) use this library API.
+- **Pipeline:** `applycling/pipeline.py` — `PipelineContext`, `PipelineStep`, `PipelineRun`. Linear deterministic flow: `role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary`. All callers (CLI, local workbench, OpenClaw) use this library API.
 - **Additional capabilities:** `interview_prep` (composes `interview_prep` + `questions` skills) and `follow_up_outreach` (composes follow-up skills) — both shipped and usable today via CLI.
 - **Queue/intake (partial):** `applycling/queue.py` — drives OpenClaw integration; not yet fully wired for multi-source intake.
 - **LLM routing:** `applycling/llm.py` — ollama, anthropic, google, openai providers. API keys in `.env` (gitignored), loaded via `python-dotenv`.
