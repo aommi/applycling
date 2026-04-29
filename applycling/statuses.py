@@ -60,9 +60,7 @@ STATES: tuple[Status, ...] = (
     Status("rejected", "Rejected", "#ef4444", actions=(
         StatusAction("archived", "Archive", "btn-skip"),
     )),
-    Status("failed", "Failed", "#dc2626", actions=(
-        StatusAction("new", "Retry", "btn-start"),
-    )),
+    Status("failed", "Failed", "#dc2626"),
     Status("archived", "Archived", "#374151", actions=(
         StatusAction("reviewing", "Reopen", "btn-reopen"),
     )),
