@@ -2,8 +2,7 @@
 
 **applycling** is CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary.
 
----
-
+<!-- amk:start -->
 ## Memory System
 
 This project uses a file-based memory system to maintain context across sessions.
@@ -48,7 +47,7 @@ If reasoning becomes uncertain or inconsistent with prior context, re-read `memo
 
 ---
 
-## Architecture vision
+## Architecture
 
 Before implementing a feature, read `vision.md`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
 
@@ -64,10 +63,23 @@ These skill files follow the agentskills.io frontmatter standard — Hermes's `/
 - storage.save_config() merges — never call it with only partial keys unless merging is the intent
 - Skill templates use `str.format` — escape braces with `{{` and `}}`
 - Conditional logic stays in Python, not skill templates
-- applycling pipeline API keys live in `.env` at repo root (gitignored). Hermes gateway keys live in `~/.hermes/profiles/applycling/.env`, populated by `scripts/setup_hermes_telegram.sh`. See `.env.example` for which keys power which layer.
-- **Two-layer LLM architecture:** Hermes (DeepSeek) routes Telegram messages; applycling pipeline (Anthropic Claude) generates packages. See `DECISIONS.md` §2026-04-27.
-- **Hermes applycling profile:** Inbound Telegram intake runs through the `applycling-hermes` wrapper for `~/.hermes/profiles/applycling/`. Profile has toolsets locked to `terminal` only. Provision via `scripts/setup_hermes_telegram.sh`.
-- `vision.md` holds vision + assumptions only — on merge, move shipped capabilities to `memory/semantic.md` and remove from the Vision section; update Assumptions if a premise is invalidated
+- applycling pipeline API keys live in .env at repo root (gitignored). Hermes gateway keys live in ~/.hermes/profiles/applycling/.env, provisioned by scripts/setup_hermes_telegram.sh
+- vision.md holds vision + assumptions only — on merge, move shipped capabilities to memory/semantic.md and remove from the Vision section; update Assumptions if a premise is invalidated
+
+---
+
+## Optional: Hermes Memory Mirroring
+
+Hermes has its own `MEMORY.md` / `USER.md` persistence layer. These are complementary,
+not replacements, for this project's `memory/` files. If you want high-signal lessons
+visible inside Hermes's built-in persistence, you can symlink:
+
+```bash
+ln -s memory/semantic.md MEMORY.md
+```
+
+The project's `memory/semantic.md` remains the single source of truth.
+<!-- amk:end -->
 
 ---
 
@@ -84,6 +96,7 @@ The project ships a dedicated Hermes profile for Telegram intake: `~/.hermes/pro
 - **Model:** deepseek-v4-pro (routing only — pipeline uses its own config)
 - **Naming caution:** `hermes profile create applycling` may also create a bare `applycling` wrapper in `~/.local/bin`. Use `applycling-hermes` for Hermes commands and `python3 -m applycling.cli ...` for the project CLI.
 - **Canonical state machine:** `applycling/statuses.py` — 11 states, 25 transitions. Single source of truth for all paths (CLI, UI, Telegram).
+- **Two-layer LLM architecture:** Hermes (DeepSeek) routes Telegram messages; applycling pipeline (Anthropic Claude) generates packages. See `DECISIONS.md` §2026-04-27.
 
 <!-- skills:pm:start -->
 ## PM Skills

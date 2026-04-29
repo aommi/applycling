@@ -1,6 +1,16 @@
 """
 Hermes Agent Adapter — generates AGENTS.md (superset of the Codex adapter)
 
+AGENTS.md structure:
+  [project header — written once on first create, never touched again]
+
+  <!-- amk:start -->
+  [managed memory protocol + architecture ref + conventions + hermes footer]
+  <!-- amk:end -->
+
+  [custom content outside sentinels — Hermes profile details, PM skills,
+   two-layer LLM notes, etc. — is preserved across regenerations]
+
 Hermes (Nous Research) reads AGENTS.md as workspace-level context and supports
 the agentskills.io skill frontmatter standard natively via its /skills browser.
 
@@ -8,23 +18,153 @@ NOTE: Both this adapter and the Codex adapter write AGENTS.md. This version is
 a superset. Codex reads the result fine. If you run both agents, use this adapter
 (or run `generate.py all`, which runs codex then hermes so hermes wins).
 """
+import difflib
 from pathlib import Path
 
 
+SENTINEL_START = "<!-- amk:start -->"
+SENTINEL_END = "<!-- amk:end -->"
+
+
+_MANAGED_TEMPLATE = """\
+## Memory System
+
+This project uses a file-based memory system to maintain context across sessions.
+
+### On Session Start
+
+Read `memory/semantic.md` ONCE to load project context before answering.
+
+### On Every Turn
+
+The preprompt hook handles reading `memory/working.md`.
+
+### Task Files
+
+Only load `/dev/[task]/*` files when actively working on that task.
+
+### MCP Efficiency
+
+Before calling any MCP tool to retrieve information, first check if that information might exist in `memory/semantic.md` or `dev/[task]/context.md` — local files are cheaper than remote MCP queries.
+
+### Keep Context Minimal
+
+Do not speculatively load files "just in case".
+
+### Mid-Session Drift
+
+If reasoning becomes uncertain or inconsistent with prior context, re-read `memory/semantic.md` before continuing.
+
+### Memory Discipline
+
+- `memory/semantic.md` — current build state; propose updates; wait for approval before writing
+- `memory/working.md` — live task state; update freely after each response; no approval needed
+- `DECISIONS.md` — append-only log of architectural decisions; propose entries for approval
+- `{arch_file}` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated; **never put current state here** (that's `semantic.md`), **never put planning details here** (tickets, checklists, phases)
+- `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed
+
+**DECISIONS.md vs. Assumptions distinction:**
+- `DECISIONS.md` = immutable log — "we chose X on date Y because Z" — never edited, only superseded by appending
+- `{arch_file}` Assumptions = live load-bearing premises — mutable; when invalidated, append a supersession to `DECISIONS.md` first, then update the assumption
+
+**On PR merge:** check `{arch_file}` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption.
+
+---
+
+## Architecture
+
+Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
+{skills_note}
+
+---
+
+## Key conventions
+
+{conventions_md}
+
+---
+
+## Optional: Hermes Memory Mirroring
+
+Hermes has its own `MEMORY.md` / `USER.md` persistence layer. These are complementary,
+not replacements, for this project's `memory/` files. If you want high-signal lessons
+visible inside Hermes's built-in persistence, you can symlink:
+
+```bash
+ln -s memory/semantic.md MEMORY.md
+```
+
+The project's `memory/semantic.md` remains the single source of truth.
+"""
+
+
+def _write_managed_section(agents_md_path: Path, header: str, content: str) -> str:
+    """Insert or replace the amk-managed block in AGENTS.md.
+
+    On first create: writes header (outside sentinel) + managed block.
+    On re-run with sentinels present: replaces only the managed block.
+    On file exists but no sentinels: appends the managed block after existing content.
+
+    Returns a human-readable status line.
+    """
+    block = f"{SENTINEL_START}\n{content.rstrip()}\n{SENTINEL_END}\n"
+
+    if not agents_md_path.exists():
+        agents_md_path.write_text(f"{header}\n\n{block}")
+        return "  - AGENTS.md (created)"
+
+    existing = agents_md_path.read_text()
+    start_idx = existing.find(SENTINEL_START)
+    end_idx = existing.find(SENTINEL_END)
+
+    if start_idx == -1 or end_idx == -1 or end_idx < start_idx:
+        # No sentinels — append managed block at end, preserving everything
+        sep = "\n" if existing.endswith("\n") else "\n\n"
+        agents_md_path.write_text(existing + sep + block)
+        return "  - AGENTS.md (amk section appended — existing content preserved)"
+
+    old_block = existing[start_idx : end_idx + len(SENTINEL_END)]
+    new_block = block.rstrip("\n")
+
+    if old_block == new_block:
+        return "  - AGENTS.md (unchanged)"
+
+    # Replace only the managed block; preserve header + custom content
+    updated = (
+        existing[:start_idx]
+        + block
+        + existing[end_idx + len(SENTINEL_END):].lstrip("\n")
+    )
+    agents_md_path.write_text(updated)
+
+    diff_lines = list(
+        difflib.unified_diff(
+            old_block.splitlines(keepends=True),
+            new_block.splitlines(keepends=True),
+            fromfile="AGENTS.md (before)",
+            tofile="AGENTS.md (after)",
+        )
+    )
+    return f"  - AGENTS.md (amk section updated)\n{''.join(diff_lines)}"
+
+
 def generate(project_root: Path, config: dict) -> str:
-    """Generate Hermes Agent configuration."""
+    """Generate Hermes Agent configuration (AGENTS.md with sentinel preservation).
 
-    mk_dir = project_root / ".agent" / "memory-kit"
-    templates = mk_dir / "templates"
-    memory_protocol = (templates / "memory_protocol.md").read_text()
-
+    The managed block (memory protocol + architecture ref + conventions + footer)
+    is wrapped in <!-- amk:start/end --> sentinels. Custom content outside those
+    blocks (Hermes profile details, PM skills, project-specific notes) is preserved
+    across regenerations.
+    """
     project = config["project"]
     skills = config.get("skills", {})
     arch_file = config.get("architecture", {}).get("file", "vision.md")
 
     # Build conventions section
     conventions = config.get("conventions", [])
-    conventions_md = "\n".join(f"- {c}" for c in conventions) if conventions else ""
+    conventions_md = (
+        "\n".join(f"- {c}" for c in conventions) if conventions else ""
+    )
 
     # Hermes-specific skills note
     skills_note = ""
@@ -34,38 +174,24 @@ def generate(project_root: Path, config: dict) -> str:
             " Hermes's `/skills` browser can enumerate them natively.\n"
         )
 
-    hermes_footer = (
-        "---\n\n"
-        "## Optional: Hermes Memory Mirroring\n\n"
-        "Hermes has its own `MEMORY.md` / `USER.md` persistence layer. These are complementary,\n"
-        "not replacements, for this project's `memory/` files. If you want high-signal lessons\n"
-        "visible inside Hermes's built-in persistence, you can symlink:\n\n"
-        "```bash\n"
-        "ln -s memory/semantic.md MEMORY.md\n"
-        "```\n\n"
-        "The project's `memory/semantic.md` remains the single source of truth.\n"
+    managed_content = _MANAGED_TEMPLATE.format(
+        arch_file=arch_file,
+        skills_note=skills_note,
+        conventions_md=conventions_md,
     )
 
-    content = (
+    header = (
         f"# Project Context — {project['name']}\n\n"
-        f"**{project['name']}** is {project['description']}\n\n"
-        f"---\n\n"
-        + memory_protocol.strip()
-        + "\n\n---\n\n"
-        + "## Architecture\n\n"
-        + f"Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).\n"
-        + (skills_note if skills_note else "")
-        + "\n\n---\n\n"
-        + "## Key conventions\n\n"
-        + conventions_md
-        + "\n\n"
-        + hermes_footer
+        f"**{project['name']}** is {project['description']}"
     )
 
-    (project_root / "AGENTS.md").write_text(content)
+    agents_md_status = _write_managed_section(
+        project_root / "AGENTS.md", header, managed_content
+    )
 
     return (
         "Hermes configuration generated:\n"
-        "  - AGENTS.md (superset — also readable by Codex)\n\n"
-        "Note: Hermes reads AGENTS.md natively."
+        f"{agents_md_status}\n\n"
+        "Note: Hermes reads AGENTS.md natively.\n"
+        "  Custom content outside <!-- amk:start/end --> is preserved."
     )
