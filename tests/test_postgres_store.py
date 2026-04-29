@@ -156,17 +156,15 @@ def _needs_postgres():
     seed_local_user(database_url)
 
     # Truncate test data from prior runs so each test starts clean.
+    # TRUNCATE ... CASCADE handles FK dependencies in the right order.
     import psycopg
 
     with psycopg.connect(database_url) as conn:
-        conn.execute(
-            "DELETE FROM jobs WHERE user_id = %s",
-            (str(LOCAL_USER_ID),),
-        )
-        conn.execute(
-            "DELETE FROM users WHERE id != %s",
-            (str(LOCAL_USER_ID),),
-        )
+        conn.execute("TRUNCATE TABLE jobs, users RESTART IDENTITY CASCADE")
+        conn.commit()
+
+    # Re-seed the local user after truncate (well-known UUID is now gone).
+    seed_local_user(database_url)
 
     store = PostgresStore(database_url)
     return database_url, store
