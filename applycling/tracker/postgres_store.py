@@ -13,7 +13,7 @@ from typing import Any
 
 import psycopg
 
-from applycling.db_seed import get_local_user_id
+from applycling.db_seed import get_local_user_id, seed_local_user
 
 from . import ALLOWED_UPDATE_FIELDS, Job, TrackerError, TrackerStore
 
@@ -29,6 +29,8 @@ class PostgresStore(TrackerStore):
             )
         self._user_uuid = get_local_user_id()
         self._user_id = str(self._user_uuid)
+        # Ensure the local default user exists (idempotent — ON CONFLICT DO NOTHING).
+        seed_local_user(self._database_url)
 
     def _conn(self) -> psycopg.Connection:
         return psycopg.connect(self._database_url)

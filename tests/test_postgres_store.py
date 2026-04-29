@@ -236,12 +236,13 @@ def test_update_job_invalid_field():
             company="TestCo",
             date_added="",
             date_updated="",
-            status="inbox",
+            status="new",
         )
     )
 
+    # 'date_added' is not in ALLOWED_UPDATE_FIELDS — must be rejected.
     with pytest.raises(TrackerError, match="Cannot update field"):
-        store.update_job(job.id, title="Hacked Title")
+        store.update_job(job.id, date_added="2025-01-01")
 
 
 def test_save_job_with_preset_id():
