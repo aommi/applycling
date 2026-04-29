@@ -32,8 +32,11 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# target_metadata = None
+# target_metadata = mymodel.Base.metadata
 target_metadata = None
+# NOTE: autogenerate is intentionally disabled — we do not maintain a
+# SQLAlchemy ORM model. Migrations are hand-authored. To enable autogenerate,
+# wire up a declarative Base.metadata and set target_metadata above.
 
 
 def run_migrations_offline() -> None:

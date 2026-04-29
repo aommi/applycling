@@ -37,6 +37,11 @@ class PostgresStore(TrackerStore):
     def _conn(self) -> psycopg.Connection:
         return psycopg.connect(self._database_url, row_factory=psycopg.rows.dict_row)
 
+    _COLUMNS = (
+        "id, title, company, status, source_url, application_url, "
+        "fit_summary, package_folder, created_at, updated_at"
+    )
+
     def _row_to_job(self, row: dict) -> Job:
         """Map a Postgres jobs row to a Job dataclass."""
         created_at = row["created_at"]
@@ -91,6 +96,15 @@ class PostgresStore(TrackerStore):
         # Map legacy statuses (inbox, tailored, etc.) to canonical states.
         status = migrate_old_status(job.status)
 
+        # Validate ID is a UUID (Postgres constraint — SQLite/Notion accept any string).
+        try:
+            job_uuid = uuid.UUID(job.id)
+        except (ValueError, AttributeError) as e:
+            raise TrackerError(
+                f"Postgres backend requires UUID job IDs. "
+                f"Got '{job.id}' — generate a new UUID or leave id empty."
+            ) from e
+
         try:
             with self._conn() as conn:
                 with conn.cursor() as cur:
@@ -107,7 +121,7 @@ class PostgresStore(TrackerStore):
                         )
                         """,
                         (
-                            uuid.UUID(job.id),
+                            job_uuid,
                             self._user_uuid,
                             job.title,
                             job.company,
@@ -125,11 +139,6 @@ class PostgresStore(TrackerStore):
             raise TrackerError(
                 f"Could not save job '{job.id}': {e}"
             ) from e
-
-    _COLUMNS = (
-        "id, title, company, status, source_url, application_url, "
-        "fit_summary, package_folder, created_at, updated_at"
-    )
 
     def load_jobs(self) -> list[Job]:
         with self._conn() as conn:

@@ -99,6 +99,33 @@ def test_notion_does_not_override_explicit_postgres(monkeypatch):
     )
 
 
+def test_save_job_rejects_non_uuid_id(monkeypatch):
+    """Saving with a non-UUID id (e.g. job_001 from SQLite) raises TrackerError."""
+    _clear_env_vars(monkeypatch)
+    monkeypatch.setenv("APPLYCLING_DB_BACKEND", "postgres")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://applycling:***@localhost:5432/applycling",
+    )
+    monkeypatch.setattr(
+        "applycling.tracker.postgres_store.seed_local_user",
+        lambda url=None: uuid.UUID("00000000-0000-0000-0000-000000000001"),
+    )
+    store = get_store()
+    from applycling.tracker import TrackerError
+
+    job = Job(
+        id="job_001",
+        title="Non-UUID",
+        company="TestCo",
+        date_added="",
+        date_updated="",
+        status="new",
+    )
+    with pytest.raises(TrackerError, match="UUID job IDs"):
+        store.save_job(job)
+
+
 def test_postgres_store_init_requires_url():
     """PostgresStore raises if no DATABASE_URL."""
     from applycling.tracker import TrackerError
@@ -251,8 +278,46 @@ def test_update_job_invalid_field():
     )
 
     # 'date_added' is not in ALLOWED_UPDATE_FIELDS — must be rejected.
-    with pytest.raises(TrackerError, match="Cannot update field"):
+    with pytest.raises(TrackerError, match="Cannot update fields"):
         store.update_job(job.id, date_added="2025-01-01")
+
+
+def test_update_job_no_fields():
+    """update_job with no fields returns the job unchanged."""
+    _, store = _needs_postgres()
+
+    job = store.save_job(
+        Job(
+            id="",
+            title="No-op Update",
+            company="NoopCo",
+            date_added="",
+            date_updated="",
+            status="new",
+        )
+    )
+    updated = store.update_job(job.id)
+    assert updated.id == job.id
+    assert updated.title == "No-op Update"
+
+
+def test_save_job_migrates_legacy_status():
+    """Save with legacy status 'inbox' should store as 'new'."""
+    _, store = _needs_postgres()
+
+    job = store.save_job(
+        Job(
+            id="",
+            title="Legacy Status",
+            company="LegacyCo",
+            date_added="",
+            date_updated="",
+            status="inbox",
+        )
+    )
+    assert job.status == "new", f"Legacy status 'inbox' should migrate to 'new', got {job.status!r}"
+    loaded = store.load_job(job.id)
+    assert loaded.status == "new"
 
 
 def test_save_job_with_preset_id():
@@ -273,6 +338,34 @@ def test_save_job_with_preset_id():
 
     loaded = store.load_job(preset_id)
     assert loaded.title == "Preset ID Job"
+
+
+def test_save_job_duplicate_id():
+    """Saving a job with an existing UUID raises TrackerError."""
+    _, store = _needs_postgres()
+    from applycling.tracker import TrackerError
+
+    shared_id = str(uuid.uuid4())
+    job1 = Job(
+        id=shared_id,
+        title="First",
+        company="DupCo",
+        date_added="",
+        date_updated="",
+        status="new",
+    )
+    store.save_job(job1)
+
+    job2 = Job(
+        id=shared_id,
+        title="Second",
+        company="DupCo",
+        date_added="",
+        date_updated="",
+        status="new",
+    )
+    with pytest.raises(TrackerError, match="Could not save"):
+        store.save_job(job2)
 
 
 def test_load_jobs_filters_deleted():

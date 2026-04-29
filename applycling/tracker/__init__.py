@@ -135,6 +135,10 @@ def get_store() -> TrackerStore:
     # Lazy imports to avoid pulling in optional deps until they're needed.
     from . import sqlite_store
 
+    if db_backend == "sqlite":
+        # Explicit sqlite — skip the Notion probe entirely.
+        return sqlite_store.SQLiteStore()
+
     try:
         from . import notion_store
 
