@@ -1,6 +1,6 @@
 # Production Docker Compose — hosted deploy on Kamatera VPS
 # SEPARATE from docker-compose.yml (which is for local dev only).
-# 
+#
 # Usage: docker compose -f docker-compose.prod.yml up -d --build
 
 services:
