@@ -133,7 +133,7 @@ Private user files live in `/opt/applycling/data/` on the host, bind-mounted to
 `/app/data` inside the container. Provision them once via `scp`:
 
 ```bash
-scp data/config.json data/profile.json data/resume.md data/stories.json \
+scp data/config.json data/profile.json data/resume.md data/stories.md \
     user@vps:/opt/applycling/data/
 ```
 
