@@ -313,7 +313,7 @@ def test_load_jobs_scoped_to_user():
         conn.execute(
             """
             INSERT INTO jobs (id, user_id, title, company, status, created_at, updated_at)
-            VALUES (%s, %s, 'Other Job', 'OtherCo', 'inbox', now(), now())
+            VALUES (%s, %s, 'Other Job', 'OtherCo', 'new', now(), now())
             """,
             (other_job_id, other_user_id),
         )

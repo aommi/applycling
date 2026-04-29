@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 import psycopg
+import psycopg.rows
 
 from applycling.db_seed import get_local_user_id, seed_local_user
 
@@ -34,9 +35,9 @@ class PostgresStore(TrackerStore):
         seed_local_user(self._database_url)
 
     def _conn(self) -> psycopg.Connection:
-        return psycopg.connect(self._database_url)
+        return psycopg.connect(self._database_url, row_factory=psycopg.rows.dict_row)
 
-    def _row_to_job(self, row: psycopg.rows.RowProxy) -> Job:
+    def _row_to_job(self, row: dict) -> Job:
         """Map a Postgres jobs row to a Job dataclass."""
         created_at = row["created_at"]
         updated_at = row["updated_at"]
