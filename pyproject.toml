@@ -40,4 +40,5 @@ include = ["applycling*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
