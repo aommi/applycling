@@ -58,7 +58,7 @@ class TestInvariants:
 class TestTransitions:
     def test_26_transitions(self):
         count = sum(len(t) for t in TRANSITIONS.values())
-        assert count == 26
+        assert count == 27
 
     def test_every_transition_target_is_valid(self):
         for from_s, targets in TRANSITIONS.items():
@@ -86,7 +86,7 @@ class TestTransitions:
     def test_cannot_transition_invalid(self):
         assert not can_transition("new", "reviewing")
         assert not can_transition("generating", "applied")
-        assert not can_transition("reviewing", "applied")
+        assert not can_transition("applied", "reviewing")
         assert not can_transition("reviewed", "reviewing")
         assert not can_transition("failed", "reviewing")
         assert not can_transition("accepted", "new")

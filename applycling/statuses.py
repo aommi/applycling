@@ -31,6 +31,7 @@ STATES: tuple[Status, ...] = (
     Status("generating", "Generating", "#3b82f6", is_system=True),
     Status("reviewing", "Reviewing", "#f59e0b", actions=(
         StatusAction("reviewed", "Ready to Apply", "btn-apply"),
+        StatusAction("applied", "Mark Applied", "btn-apply"),
         StatusAction("archived", "Archive", "btn-skip"),
     )),
     Status("reviewed", "Reviewed", "#10b981", actions=(
@@ -76,7 +77,7 @@ DEFAULT_INITIAL_STATUS: str = "new"
 TRANSITIONS: dict[str, frozenset[str]] = {
     "new":          frozenset({"generating", "archived"}),
     "generating":   frozenset({"reviewing", "failed"}),
-    "reviewing":    frozenset({"reviewed", "archived", "generating"}),
+    "reviewing":    frozenset({"reviewed", "archived", "generating", "applied"}),
     "reviewed":     frozenset({"applied", "archived"}),
     "applied":      frozenset({"interviewing", "offered", "accepted", "rejected", "archived"}),
     "interviewing": frozenset({"offered", "accepted", "rejected", "archived"}),
