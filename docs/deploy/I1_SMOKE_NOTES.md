@@ -65,9 +65,10 @@ Run these steps after deploying Phase 1 (local Hermes → hosted applycling).
 
 ### 10. Failure Visibility
 
-- [ ] If a generation fails, the job status shows "failed"
-- [ ] Status reason is visible in the workbench
-- [ ] Hermes/Telegram reports the failure
+- [ ] If a generation fails, the job status shows "failed" in the workbench
+- [ ] Detailed failure reason is available via server logs: `docker compose -f docker-compose.prod.yml logs applycling`
+- [ ] Hermes/Telegram reports the failure to the user
+- [ ] Note: status reasons are NOT rendered in the web UI (future enhancement — stored in DB, visible via direct DB query or logs)
 
 ## Issues Found
 
