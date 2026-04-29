@@ -26,8 +26,6 @@ services:
     volumes:
       - .:/app
       - ./output:/app/output
-    stdin_open: true
-    tty: true
 
 volumes:
   postgres_data:

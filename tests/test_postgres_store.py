@@ -151,9 +151,23 @@ def _needs_postgres():
     from applycling.tracker.postgres_store import PostgresStore
 
     # Ensure a local user exists
-    from applycling.db_seed import seed_local_user
+    from applycling.db_seed import seed_local_user, LOCAL_USER_ID
 
     seed_local_user(database_url)
+
+    # Truncate test data from prior runs so each test starts clean.
+    import psycopg
+
+    with psycopg.connect(database_url) as conn:
+        conn.execute(
+            "DELETE FROM jobs WHERE user_id = %s",
+            (str(LOCAL_USER_ID),),
+        )
+        conn.execute(
+            "DELETE FROM users WHERE id != %s",
+            (str(LOCAL_USER_ID),),
+        )
+
     store = PostgresStore(database_url)
     return database_url, store
 

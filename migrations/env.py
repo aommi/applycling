@@ -17,12 +17,17 @@ if db_url:
     # Normalize: postgresql:// -> postgresql+psycopg:// for SQLAlchemy
     if db_url.startswith("postgresql://"):
         db_url = "postgresql+psycopg" + db_url[len("postgresql"):]
+    elif db_url.startswith("postgres://"):
+        db_url = "postgresql+psycopg" + db_url[len("postgres"):]
     config.set_main_option("sqlalchemy.url", db_url)
 else:
     # Also normalize the URL from alembic.ini
     ini_url = config.get_main_option("sqlalchemy.url")
     if ini_url and ini_url.startswith("postgresql://"):
         ini_url = "postgresql+psycopg" + ini_url[len("postgresql"):]
+        config.set_main_option("sqlalchemy.url", ini_url)
+    elif ini_url and ini_url.startswith("postgres://"):
+        ini_url = "postgresql+psycopg" + ini_url[len("postgres"):]
         config.set_main_option("sqlalchemy.url", ini_url)
 
 # Interpret the config file for Python logging.

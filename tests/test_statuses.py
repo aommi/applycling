@@ -34,6 +34,25 @@ class TestInvariants:
     def test_status_by_value_covers_all(self):
         assert set(STATUS_BY_VALUE.keys()) == set(STATUS_VALUES)
 
+    def test_migration_status_enum_matches_canonical(self):
+        """Guardrail: migration CHECK constraint must match statuses.STATUS_VALUES.
+
+        If you add a status to statuses.py, you MUST also update the migration's
+        STATUS_JOB tuple. This test catches the drift.
+        """
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "migration_check",
+            "migrations/versions/64437a34178f_initial_workflow_schema.py",
+        )
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        assert set(migration.STATUS_JOB) == set(STATUS_VALUES), (
+            "Migration STATUS_JOB has diverged from statuses.STATUS_VALUES. "
+            "Add a paired migration or update the CHECK constraint."
+        )
+
     def test_default_is_new(self):
         assert DEFAULT_INITIAL_STATUS == "new"
 
