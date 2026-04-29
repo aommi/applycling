@@ -331,11 +331,33 @@ class PostgresStore(TrackerStore):
                 (now, now, run_uuid, self._user_uuid),
             )
 
-    def sweep_stale_runs(self) -> int:
-        """Mark all stale 'running' rows as 'failed'.
+    def sweep_all_running(self) -> int:
+        """Unconditionally mark ALL 'running' rows as 'failed'.
 
-        Staleness is determined by ``APPLYCLING_STALE_RUN_TIMEOUT_MINUTES``
-        (default 120).  Returns the number of rows swept.
+        Used at startup for crash recovery — a restart means any in-process
+        background task is dead, so every running row is stale regardless of
+        heartbeat timestamp.  Returns the number of rows swept.
+        """
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = 'failed',
+                    status_reason = 'Crash recovery — process restarted',
+                    finished_at = NOW(),
+                    updated_at = NOW()
+                WHERE user_id = %s AND status = 'running'
+                """,
+                (self._user_uuid,),
+            )
+        return cur.rowcount
+
+    def sweep_stale_runs(self) -> int:
+        """Mark stale 'running' rows as 'failed' based on heartbeat timeout.
+
+        Used by the periodic background sweep.  Only rows whose heartbeat_at
+        is older than APPLYCLING_STALE_RUN_TIMEOUT_MINUTES (default 120) are
+        marked.  Returns the number of rows swept.
         """
         timeout_minutes = int(
             os.environ.get("APPLYCLING_STALE_RUN_TIMEOUT_MINUTES", "120")

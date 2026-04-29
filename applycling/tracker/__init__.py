@@ -210,12 +210,13 @@ def register_startup_sweep(app: Any) -> None:
     @app.on_event("startup")
     async def _startup() -> None:
         # Unconditional startup sweep — crash recovery.
+        # Marks ALL running rows as failed because any background task is dead.
         try:
-            swept = store.sweep_stale_runs()
+            swept = store.sweep_all_running()
             if swept:
                 import sys
                 print(
-                    f"[startup] Swept {swept} stale pipeline run(s).",
+                    f"[startup] Swept {swept} running pipeline run(s) — crash recovery.",
                     file=sys.stderr,
                 )
         except Exception:

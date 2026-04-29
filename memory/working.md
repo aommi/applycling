@@ -2,14 +2,16 @@
 
 ## Current Focus
 
-Reviewed and patched `docs/planning/HOST_DOGFOODING_EXECUTION_PLAN.md` V3.9 against `docs/planning/HOST_DOGFOODING_SPRINT.md`; current plan targets Kamatera VPS + Docker Compose + Caddy.
-
-P2 cleanup committed on main at `bf3b1be`; 187 tests pass. Completed items listed by user: #2 test isolation, #4 env.py URL normalization, #5 migration downgrade CASCADE, #6 docker-compose tty flag removal, #11 status drift guardrail.
+Reviewing host dogfooding PR stack #26-#33 before merge. User wants step-by-step manual testing before each merge point.
 
 ## In Progress
 
-- Host dogfooding execution-plan review patches applied: deploy order now provisions `.env`/data first, waits for real Postgres readiness before migrations, documents root-owned artifacts, clarifies PR3 intake-secret startup validation, marks PR2 restart-sweep verification as post-PR3, makes H2 Hermes command a validation item, and incorporates Opus cleanup on conflict map, helper contract, secret separation/rotation, runbook caveats, and CLI smoke.
-- Clarify P2 scoreboard mismatch: user reported `6/11 done, 5 deferred`, but the listed completed items are 5 and listed deferred items are 6.
+- Preliminary PR review findings:
+  - #26 deploy config likely needs Postgres password wiring fixed: `postgres` service does not read `/opt/applycling/.env`, while docs put `DATABASE_URL` there with `<POSTGRES_PASSWORD>`.
+  - #28/#29 active-run + async race: UI/intake create a job and set `generating` before background `run_pipeline()` gets the atomic run; if `create_run()` loses the race, it returns an error without moving the job out of `generating`.
+  - #28 startup sweep mismatch: comments/docs say startup marks all running rows failed, but implementation calls stale heartbeat sweep only, so a fresh crashed row can block until timeout.
+  - #32 hosted Hermes profile mount is likely wrong: Dockerfile sets only `HOME=/hermes`, so Hermes default profile root is `/hermes/.hermes/profiles`, but compose mounts `/opt/applycling/hermes_profile` to `/hermes/profiles/applycling`.
+  - #33/I1 smoke notes claim failure reason is visible in workbench, but current `job_detail.html` does not render stored status reasons.
 
 ## Blocked
 
@@ -17,6 +19,5 @@ P2 cleanup committed on main at `bf3b1be`; 187 tests pass. Completed items liste
 
 ## Next Steps
 
-- Remaining P2 deferred items listed by user: #1 connection pooling, #3 Dockerfile `|| true`, #7 raw psycopg in test, #8 `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, #9 alembic.ini creds, #10 `_COLUMNS` exclusions.
-- MCP server — fully scoped plan at `docs/planning/MCP_SERVER_PLAN.md`
-- Context-based resolvers (variant skills) — next vision capability
+- Send review summary with merge/test recommendation.
+- If user approves, post GitHub review comments or patch follow-up PRs.

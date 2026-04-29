@@ -306,6 +306,14 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     if _is_postgres():
         run_id = store.create_run(job_id, "running")
         if run_id is None:
+            # Guard blocked — clear the generating status the UI may have
+            # already set (routes.py pre-sets "generating" before dispatch).
+            # Swallow the error if the job was still "new" — that transition
+            # is invalid and there's nothing to clean up.
+            try:
+                store.update_job(job_id, status="failed")
+            except TrackerError:
+                pass
             return {
                 "error": "Another generation is already running. "
                          "Please wait for it to complete before starting a new one.",
