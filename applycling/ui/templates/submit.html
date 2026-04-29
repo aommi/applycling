@@ -7,6 +7,9 @@
 
 <div class="submit-form">
   <h2>Submit a Job URL</h2>
+  {% if error %}
+    <div class="error-message">{{ error }}</div>
+  {% endif %}
   <form method="post" action="/submit">
     <input type="url" name="url" placeholder="https://example.com/jobs/..." required 
            style="width: 100%; padding: 0.75rem; font-size: 1rem;">
