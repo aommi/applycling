@@ -84,6 +84,15 @@ _INFER_KIND: dict[str, str] = {
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+class _NullNotifier:
+    """A notifier that swallows everything except logs progress to stderr."""
+    def notify(self, text: str) -> None:        # noqa: ARG002
+        import sys
+        print(f"[pipeline] {text[:120]}", file=sys.stderr, flush=True)
+    def send_document(self, path, caption: str = "") -> None:  # noqa: ARG002
+        import sys
+        print(f"[pipeline] document: {path}", file=sys.stderr, flush=True)
+
 def _job_to_dict(job: Job) -> dict[str, Any]:
     return job.to_dict()
 
@@ -323,18 +332,6 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         return {"error": str(e), "job_id": job_id}
 
     # ------------------------------------------------------------------
-    # Silent notifier (no Telegram / Discord — local workbench only)
-    # ------------------------------------------------------------------
-    class _NullNotifier:
-        """A notifier that swallows everything except logs progress to stderr."""
-        def notify(self, text: str) -> None:        # noqa: ARG002
-            import sys
-            print(f"[pipeline] {text[:120]}", file=sys.stderr, flush=True)
-        def send_document(self, path, caption: str = "") -> None:  # noqa: ARG002
-            import sys
-            print(f"[pipeline] document: {path}", file=sys.stderr, flush=True)
-
-    # ------------------------------------------------------------------
     # Run pipeline (persist_job=False — no duplicate, we own the job)
     # ------------------------------------------------------------------
     try:
@@ -358,7 +355,6 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     # ------------------------------------------------------------------
     # Update workbench job with pipeline results (no duplicate to merge)
     # ------------------------------------------------------------------
-    import json
     job_json_path = folder / "job.json"
     title = ""
     company = ""

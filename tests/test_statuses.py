@@ -47,19 +47,18 @@ class TestInvariants:
         assert gen.actions == ()
 
     def test_all_other_states_have_actions(self):
-        # failed has no actions because its only exit is the Regenerate
-        # command (rendered separately in the template, not a status transition).
+        # generating has no actions because it's system-managed.
         for s in STATES:
-            if s.value not in ("generating", "failed"):
+            if s.value not in ("generating",):
                 assert s.actions, f"{s.value} has no actions"
 
 
 # ── Transitions ─────────────────────────────────────────────────────
 
 class TestTransitions:
-    def test_25_transitions(self):
+    def test_26_transitions(self):
         count = sum(len(t) for t in TRANSITIONS.values())
-        assert count == 25
+        assert count == 26
 
     def test_every_transition_target_is_valid(self):
         for from_s, targets in TRANSITIONS.items():
@@ -100,6 +99,10 @@ class TestTransitions:
 
     def test_archived_to_new_allowed(self):
         assert "new" in TRANSITIONS["archived"]
+
+    def test_failed_to_archived_allowed(self):
+        assert "archived" in TRANSITIONS["failed"]
+        assert can_transition("failed", "archived")
 
 
 # ── Labels and colors ────────────────────────────────────────────────
