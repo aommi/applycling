@@ -484,6 +484,32 @@ Open http://127.0.0.1:8080 in your browser. The workbench shows:
 - **URL submission** — paste a job URL and trigger the full pipeline from the UI
 - **Index existing** — import previously generated packages from `output/` into the workbench
 
+### Postgres Backend (optional)
+
+SQLite is the default zero-config backend. Postgres is available as an opt-in alternative:
+
+```bash
+# 1. Install with Postgres support
+pip install ".[postgres]"
+
+# 2. Start Postgres via Docker
+docker compose up -d postgres
+
+# 3. Run migrations
+alembic upgrade head
+
+# 4. Seed the local user
+DATABASE_URL=postgresql://applycling:applycling@localhost:5432/applycling \
+  python -m applycling.db_seed
+
+# 5. Use Postgres
+APPLYCLING_DB_BACKEND=postgres \
+  DATABASE_URL=postgresql://applycling:applycling@localhost:5432/applycling \
+  applycling ui serve
+```
+
+To switch back to SQLite: unset `APPLYCLING_DB_BACKEND` or set it to `sqlite`.
+
 ### Known limitations
 
 - Local only (binds to 127.0.0.1) — no network exposure
