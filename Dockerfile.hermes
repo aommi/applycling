@@ -1,0 +1,23 @@
+# Hermes container for hosted Telegram intake.
+#
+# Builds from the same Python base as the main applycling image,
+# installs Hermes Agent, and mounts the applycling profile.
+#
+# See docs/deploy/HOSTED_HERMES.md for setup instructions.
+
+FROM python:3.12-slim
+
+WORKDIR /hermes
+
+# Install Hermes Agent
+RUN pip install hermes-agent
+
+# Create profile directory
+RUN mkdir -p /hermes/profiles/applycling
+
+# Hermes stores data under ~/.hermes
+ENV HOME=/hermes
+
+# Startup: start the Hermes gateway with the applycling profile.
+# The profile path is bind-mounted from the host.
+CMD ["hermes", "gateway", "start", "--profile", "applycling"]
