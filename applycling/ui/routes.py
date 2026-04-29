@@ -230,6 +230,55 @@ async def healthz() -> JSONResponse:
         )
 
 
+# ── Hermes intake endpoint ─────────────────────────────────────────────
+
+import hmac
+import os
+
+from fastapi import Body
+
+_INTAKE_SECRET = os.environ.get("APPLYCLING_INTAKE_SECRET", "")
+
+
+@router.post("/api/intake")
+async def intake(request: Request, body: dict = Body(...)) -> dict[str, Any]:
+    """Protected endpoint for Hermes to submit job URLs to hosted applycling.
+
+    Requires ``X-Intake-Secret`` header matching ``APPLYCLING_INTAKE_SECRET``.
+    Protected by auth middleware exemption in ``ui/__init__.py``.
+
+    Request body: ``{"job_url": "https://..."}``
+    Response (success): ``{"job_id": "...", "status": "generating"}``
+    Response (conflict): ``{"error": "Another generation is already running"}`` → 409
+    """
+    # Validate intake secret — constant-time comparison.
+    provided_secret = request.headers.get("X-Intake-Secret", "")
+    if not _INTAKE_SECRET or not hmac.compare_digest(
+        provided_secret, _INTAKE_SECRET
+    ):
+        raise HTTPException(status_code=401, detail="Invalid intake secret")
+
+    url = body.get("job_url", "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing job_url")
+
+    # Sync pre-check BEFORE creating any job — no dead "new" jobs.
+    if check_active_run():
+        return JSONResponse(
+            {"error": "Another generation is already running. "
+                       "Please wait for it to complete."},
+            status_code=409,
+        )
+
+    # Create job, set generating, schedule pipeline.
+    job = jobs_service.create_job_from_url(url)
+    job_id = job["id"]
+    jobs_service.set_job_status(job_id, "generating")
+    schedule_pipeline_run(job_id)
+
+    return {"job_id": job_id, "status": "generating"}
+
+
 # ── Init ───────────────────────────────────────────────────────────────
 
 def init_app(app):  # type: ignore[no-untyped-def]
