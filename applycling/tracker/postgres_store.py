@@ -95,6 +95,7 @@ class PostgresStore(TrackerStore):
 
         # Map legacy statuses (inbox, tailored, etc.) to canonical states.
         status = migrate_old_status(job.status)
+        job.status = status
 
         # Validate ID is a UUID (Postgres constraint — SQLite/Notion accept any string).
         try:
