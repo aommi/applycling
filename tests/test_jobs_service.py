@@ -223,6 +223,97 @@ def test_artifacts_persist_across_reads(inbox_job, isolated_store, tmp_path):
         assert arts[0]["kind"] == "fit_summary"
 
 
+# ── Test: artifact kind vocabulary consistency ─────────────────────────
+
+def test_all_inferred_kinds_in_artifact_kinds():
+    """Every kind produced by _INFER_KIND must be in _ARTIFACT_KINDS.
+
+    If this fails, a scan-fallback will return kinds that attach_artifact
+    (and the UI) will reject.
+    """
+    for filename, kind in jobs_service._INFER_KIND.items():
+        assert kind in jobs_service._ARTIFACT_KINDS, (
+            f"_INFER_KIND maps '{filename}' → '{kind}', "
+            f"but '{kind}' is not in _ARTIFACT_KINDS"
+        )
+
+
+def test_all_artifact_files_kinds_in_artifact_kinds():
+    """Every kind in _ARTIFACT_FILES must be in _ARTIFACT_KINDS."""
+    for kind in jobs_service._ARTIFACT_FILES:
+        assert kind in jobs_service._ARTIFACT_KINDS, (
+            f"_ARTIFACT_FILES key '{kind}' is not in _ARTIFACT_KINDS"
+        )
+
+
+def test_all_artifact_kinds_have_file_mapping():
+    """Every kind in _ARTIFACT_KINDS must have an entry in _ARTIFACT_FILES."""
+    for kind in jobs_service._ARTIFACT_KINDS:
+        assert kind in jobs_service._ARTIFACT_FILES, (
+            f"_ARTIFACT_KINDS contains '{kind}' but _ARTIFACT_FILES has no mapping"
+        )
+
+
+def test_attach_artifact_accepts_all_inferred_kinds(inbox_job, isolated_store, tmp_path):
+    """attach_artifact() must accept every kind that _INFER_KIND can produce."""
+    def _fake_path(job_id: str) -> Path:
+        p = tmp_path / "artifacts" / f"{job_id}_artifacts.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    with patch.object(jobs_service, "_artifacts_path_for_job", side_effect=_fake_path):
+        for kind in set(jobs_service._INFER_KIND.values()):
+            art = jobs_service.attach_artifact(
+                inbox_job["id"], kind=kind, path=f"/fake/{kind}"
+            )
+            assert art["kind"] == kind
+
+        # All should be recorded
+        arts = jobs_service.list_artifacts(inbox_job["id"])
+        expected = set(jobs_service._INFER_KIND.values())
+        actual = {a["kind"] for a in arts}
+        assert actual == expected
+
+
+def test_scan_fallback_produces_valid_kinds(inbox_job, isolated_store, tmp_path):
+    """Scan-fallback should only produce kinds that are in _ARTIFACT_KINDS."""
+    import json
+
+    store = isolated_store
+    job_id = inbox_job["id"]
+
+    # Simulate a package folder with all known artifact files
+    pkg = tmp_path / "packages" / "scan-test"
+    pkg.mkdir(parents=True)
+
+    # Write placeholder files for every filename in _INFER_KIND
+    for filename in jobs_service._INFER_KIND:
+        (pkg / filename).write_text("placeholder", encoding="utf-8")
+
+    # Also write job.json (manifest)
+    (pkg / "job.json").write_text(json.dumps({"id": job_id}), encoding="utf-8")
+
+    # Point the job's package_folder at our temp dir
+    store.update_job(job_id, package_folder=str(pkg))
+
+    # list_artifacts should fallback to scan
+    arts = jobs_service.list_artifacts(job_id)
+
+    # Every returned kind must be valid
+    for art in arts:
+        kind = art["kind"]
+        assert kind in jobs_service._ARTIFACT_KINDS, (
+            f"Scan-fallback returned kind '{kind}' which is not in _ARTIFACT_KINDS"
+        )
+
+    # All expected kinds should be present (minus any that didn't match the suffix filter)
+    returned_kinds = {a["kind"] for a in arts}
+    for kind in set(jobs_service._INFER_KIND.values()):
+        assert kind in returned_kinds, (
+            f"Scan-fallback did not return expected kind '{kind}'"
+        )
+
+
 # ── Test: run_pipeline with persist_job=False ──────────────────────────
 
 def test_run_pipeline_no_duplicate_job(isolated_store, tmp_path):

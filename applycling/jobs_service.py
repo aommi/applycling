@@ -33,24 +33,40 @@ from applycling.tracker import TrackerError, get_store, Job
 
 _ARTIFACT_KINDS: tuple[str, ...] = (
     "resume_pdf",
+    "resume_html",
+    "resume_docx",
     "cover_letter_pdf",
+    "cover_letter_html",
+    "cover_letter_docx",
     "resume_md",
     "cover_letter_md",
     "positioning_brief",
     "email_inmail",
     "fit_summary",
     "job_description",
+    "strategy",
+    "company_context",
+    "run_log",
+    "manifest",
 )
 
 _ARTIFACT_FILES: dict[str, str] = {
     "resume_pdf":          "resume.pdf",
+    "resume_html":         "resume.html",
+    "resume_docx":         "resume.docx",
     "cover_letter_pdf":    "cover_letter.pdf",
+    "cover_letter_html":   "cover_letter.html",
+    "cover_letter_docx":   "cover_letter.docx",
     "resume_md":           "resume.md",
     "cover_letter_md":     "cover_letter.md",
     "positioning_brief":   "positioning_brief.md",
     "email_inmail":        "email_inmail.md",
     "fit_summary":         "fit_summary.md",
     "job_description":     "job_description.md",
+    "strategy":            "strategy.md",
+    "company_context":     "company_context.md",
+    "run_log":             "run_log.json",
+    "manifest":            "job.json",
 }
 
 _INFER_KIND: dict[str, str] = {
@@ -63,6 +79,7 @@ _INFER_KIND: dict[str, str] = {
     "strategy.md": "strategy",
     "company_context.md": "company_context",
     "run_log.json": "run_log",
+    "job.json": "manifest",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -288,11 +305,13 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
 
     # Guard: only allow pipeline from safe starting statuses.
     # (Matches template button gating — see job_detail.html line 46.)
-    if job.status not in ("new", "reviewing", "failed"):
+    # "generating" is allowed because the UI pre-sets it before
+    # firing the background thread (non-blocking submit).
+    if job.status not in ("new", "reviewing", "failed", "generating"):
         return {
             "error": (
                 f"Job is '{job.status}' — pipeline can only run from "
-                f"'new', 'reviewing', or 'failed'."
+                f"'new', 'reviewing', 'failed', or 'generating'."
             ),
             "job_id": job_id,
         }
