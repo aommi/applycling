@@ -64,7 +64,10 @@ async def update_job_status(
     status: str = Form(...),
 ) -> RedirectResponse:
     """Update a job's workbench status."""
-    jobs_service.set_job_status(job_id, status)
+    try:
+        jobs_service.set_job_status(job_id, status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
@@ -76,8 +79,9 @@ async def serve_artifact(job_id: str, filename: str) -> FileResponse:
     job = jobs_service.get_job(job_id)
     package_folder = job.get("package_folder", "")
     if package_folder:
-        filepath = Path(package_folder) / filename
-        if filepath.exists():
+        pkg = Path(package_folder).resolve()
+        filepath = (pkg / filename).resolve()
+        if filepath.is_relative_to(pkg) and filepath.exists():
             return FileResponse(str(filepath))
     raise HTTPException(status_code=404, detail="Artifact not found")
 

@@ -286,6 +286,17 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             "job_id": job_id,
         }
 
+    # Guard: only allow pipeline from safe starting statuses.
+    # (Matches template button gating — see job_detail.html line 46.)
+    if job.status not in ("new", "reviewing", "failed"):
+        return {
+            "error": (
+                f"Job is '{job.status}' — pipeline can only run from "
+                f"'new', 'reviewing', or 'failed'."
+            ),
+            "job_id": job_id,
+        }
+
     # Set generating *before* we start so the UI can see it immediately.
     try:
         store.update_job(job_id, status="generating")
