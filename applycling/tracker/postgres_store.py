@@ -16,6 +16,7 @@ import psycopg
 from applycling.db_seed import get_local_user_id, seed_local_user
 
 from . import ALLOWED_UPDATE_FIELDS, Job, TrackerError, TrackerStore
+from applycling.statuses import migrate_old_status
 
 
 class PostgresStore(TrackerStore):
@@ -74,6 +75,9 @@ class PostgresStore(TrackerStore):
         if not job.date_updated:
             job.date_updated = now.isoformat(timespec="seconds")
 
+        # Map legacy statuses (inbox, tailored, etc.) to canonical states.
+        status = migrate_old_status(job.status)
+
         try:
             with self._conn() as conn:
                 with conn.cursor() as cur:
@@ -94,7 +98,7 @@ class PostgresStore(TrackerStore):
                             self._user_uuid,
                             job.title,
                             job.company,
-                            job.status,
+                            status,
                             job.source_url,
                             job.application_url,
                             job.fit_summary,
@@ -167,6 +171,8 @@ class PostgresStore(TrackerStore):
         set_parts = []
         params: list[Any] = []
         for k, v in fields.items():
+            if k == "status":
+                v = migrate_old_status(v)
             set_parts.append(f"{k} = %s")
             params.append(v)
         set_parts.append("updated_at = %s")

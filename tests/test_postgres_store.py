@@ -131,7 +131,7 @@ def test_save_and_load_job():
         company="TestCorp",
         date_added="",
         date_updated="",
-        status="inbox",
+        status="new",
         source_url="https://example.com/jobs/123",
     )
     saved = store.save_job(job)
@@ -149,7 +149,7 @@ def test_save_and_load_job():
     assert loaded.id == saved.id
     assert loaded.title == "Software Engineer"
     assert loaded.company == "TestCorp"
-    assert loaded.status == "inbox"
+    assert loaded.status == "new"
     assert loaded.source_url == "https://example.com/jobs/123"
 
 
@@ -164,7 +164,7 @@ def test_load_jobs_returns_list_ordered():
             company="A Corp",
             date_added="",
             date_updated="",
-            status="inbox",
+            status="new",
         )
     )
     job2 = store.save_job(
@@ -174,7 +174,7 @@ def test_load_jobs_returns_list_ordered():
             company="B Corp",
             date_added="",
             date_updated="",
-            status="inbox",
+            status="new",
         )
     )
 
@@ -206,7 +206,7 @@ def test_update_job_status():
             company="UpdateCo",
             date_added="",
             date_updated="",
-            status="inbox",
+            status="new",
         )
     )
     original_updated = job.date_updated
@@ -256,7 +256,7 @@ def test_save_job_with_preset_id():
         company="PresetCo",
         date_added="",
         date_updated="",
-        status="inbox",
+        status="new",
     )
     saved = store.save_job(job)
     assert saved.id == preset_id
@@ -276,7 +276,7 @@ def test_load_jobs_filters_deleted():
             company="DelCo",
             date_added="",
             date_updated="",
-            status="inbox",
+            status="new",
         )
     )
 
