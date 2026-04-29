@@ -267,3 +267,5 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 - Connection pool in this PR (unnecessary for single-user local tool; tracked for follow-up).
 
 **Affects:** `applycling/tracker/`, `applycling/db_seed.py`, `migrations/`, `Dockerfile`, `docker-compose.yml`, `alembic.ini`, `pyproject.toml`, `tests/test_postgres_store.py`
+
+**Cross-backend migration convention:** When a schema change ships (add/alter/drop column), the PR must update both the Alembic migration (Postgres) and `applycling/tracker/sqlite_store.py` table creation SQL (SQLite auto-creates schema on first use). NotionStore is document-based and has no schema concern. A schema change is not done until all active backends are updated.
