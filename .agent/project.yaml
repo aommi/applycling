@@ -87,7 +87,7 @@ agents:
     enabled: true
     hooks: null
   openclaw:
-    enabled: true
+    enabled: false
     hooks: null
   cursor:
     enabled: false
@@ -96,10 +96,10 @@ agents:
     enabled: false
     hooks: null
   gemini_cli:
-    enabled: true
+    enabled: false
     hooks: null
   antigravity:
-    enabled: true
+    enabled: false
     hooks: null
 memory:
   semantic_max_lines: 500
