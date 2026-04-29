@@ -305,7 +305,7 @@ nothing blocks it.
 | Observability | `run_log.json` is already structured. Ship it to a log sink on SaaS. |
 | Cost controls | Token counts are already tracked per step. Enforce tenant budgets in the pipeline wrapper. |
 | Skill sharing / marketplace | Skills are self-contained `SKILL.md` files. A marketplace is a registry + download into the user's skill dir. |
-| Hosted persistence | Phased: local SQLite/Notion (current) → Docker + local Postgres + initial schema (next) → hosted Postgres with tenant isolation, `user_contexts`, rate limits, `ArtifactStore` (later). Full design in `docs/planning/DB_TECH_DESIGN.md` (local-only). |
+| Hosted persistence | Phased: local SQLite/Notion (current) → Docker + local Postgres + initial schema (shipped #22) → hosted Postgres with tenant isolation, `user_contexts`, rate limits, `ArtifactStore` (later). Full design in `docs/planning/DB_TECH_DESIGN.md` (local-only). |
 | Notion as enhancement layer | Local mode only. In hosted mode Notion is deferred until after public beta, then planned as one-way Postgres → Notion sync. |
 
 **The three things SaaS would require that don't exist yet:**

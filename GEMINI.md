@@ -62,5 +62,5 @@ Before implementing a feature, read `vision.md`. It is the canonical record of a
 - storage.save_config() merges — never call it with only partial keys unless merging is the intent
 - Skill templates use `str.format` — escape braces with `{{` and `}}`
 - Conditional logic stays in Python, not skill templates
-- All API keys live in .env at repo root (gitignored)
+- applycling pipeline API keys live in .env at repo root (gitignored). Hermes gateway keys live in ~/.hermes/profiles/applycling/.env, provisioned by scripts/setup_hermes_telegram.sh
 - vision.md holds vision + assumptions only — on merge, move shipped capabilities to memory/semantic.md and remove from the Vision section; update Assumptions if a premise is invalidated

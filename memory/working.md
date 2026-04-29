@@ -2,25 +2,18 @@
 
 ## Current Focus
 
-PR #20 (local web workbench + canonical state machine) merged into main. Workbench running at http://127.0.0.1:8080 with FastAPI + Jinja2. Postgres PR #21 pending merge.
+Postgres PR #22 merged into main. 190 tests pass, 11 Postgres CRUD tests skip without DATABASE_URL. Local workbench running at http://127.0.0.1:8080 (SQLite default, Postgres opt-in).
 
 ## In Progress
 
-- Memory system updates post-merge: semantic.md, DECISIONS.md, vision.md, project.yaml, sprint doc. Regenerating agent files after.
-- Postgres branch (`feat/postgres-support`) has same code — merge when ready.
+- Memory system updates post-merge: semantic.md, DECISIONS.md, vision.md, working.md. Regenerating agent files after.
 
 ## Blocked
 
 (none)
 
-## Post-Merge Follow-ups (from Opus review, deferred)
-
-- #5: Long pipeline blocks HTTP request — no progress/cancel, browser timeout possible. Fix: fire-and-forget + status polling.
-- #6: `_INFER_KIND` references kinds not in `_ARTIFACT_KINDS` — widen or trim.
-- #7: `failed → archived` transition missing — no clean exit for permanently broken jobs.
-- Minor: duplicate `import json` in jobs_service.py, `reviewing → applied` skip, `_NullNotifier` to module scope, `archived → new` reachability comment.
-
 ## Next Steps
 
-- Decide whether to merge Postgres PR #21 now or later.
-- Address deferred follow-ups (tracked in docs/planning/LOCAL_WORKBENCH_SPRINT.md).
+- 11 P2 deferred items tracked in `docs/planning/LOCAL_WORKBENCH_SPRINT.md` (connection pooling, test isolation, Docker Playwright, etc.)
+- MCP server — fully scoped plan at `docs/planning/MCP_SERVER_PLAN.md`
+- Context-based resolvers (variant skills) — next vision capability

@@ -1,19 +1,12 @@
-# OpenClaw system prompt — applycling
+# Windsurf rules — applycling memory system
 
-<!--
-  Install options:
-    A) system_prompt_file: .openclaw-system.md  (in OpenClaw config)
-    B) Paste this file's content into OpenClaw's system prompt settings
--->
+This project uses a file-based memory system to maintain context across sessions.
+No hook support — memory loading is instruction-driven.
 
-You are an agent working in the **applycling** project — CLI tool that turns a job URL into a complete application package: tailored resume, cover letter, positioning brief, email/InMail, and fit summary.
+## Session Startup
 
-This project uses a file-based memory system. Treat it as authoritative.
-
-## Startup (read in order)
-
-1. `memory/semantic.md` — distilled project knowledge (≤500 lines); read ONCE per session
-2. `memory/working.md` — live task state; read before every response
+1. Read `memory/semantic.md` ONCE to load project context
+2. Read `memory/working.md` to understand current task state
 
 ## On Every Turn
 
@@ -50,12 +43,3 @@ Before implementing a feature, read `vision.md`. It is the canonical record of a
 - Conditional logic stays in Python, not skill templates
 - applycling pipeline API keys live in .env at repo root (gitignored). Hermes gateway keys live in ~/.hermes/profiles/applycling/.env, provisioned by scripts/setup_hermes_telegram.sh
 - vision.md holds vision + assumptions only — on merge, move shipped capabilities to memory/semantic.md and remove from the Vision section; update Assumptions if a premise is invalidated
-
----
-
-## Memory Discipline
-
-- `memory/semantic.md` — propose updates; wait for approval before writing
-- `memory/working.md` — update freely after each response; no approval needed
-- `DECISIONS.md` — append-only; propose entries for approval
-- `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed

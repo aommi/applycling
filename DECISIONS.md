@@ -230,3 +230,40 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 - `run_add()` returns metadata without persisting at all (would require splitting `AddResult` — harder to roll back).
 
 **Affects:** `applycling/pipeline.py`, `applycling/jobs_service.py`, `applycling/package.py`
+
+---
+
+## 2026-04-29 — Postgres Tracker Backend (opt-in, local dev only)
+
+**Decision:** Add Postgres as an opt-in tracker backend via `APPLYCLING_DB_BACKEND=postgres` env var. SQLite remains the default. Defer connection pooling, multi-tenancy, and hosted Postgres to later phases.
+
+**Reasoning:**
+- **Backend selection:** `get_store()` checks `APPLYCLING_DB_BACKEND` before the Notion probe. Explicit `sqlite` skips Notion entirely. Unset falls back to legacy Notion→SQLite resolution.
+- **Schema:** Alembic with hand-authored raw-SQL migrations (`op.create_table()`). No ORM (`target_metadata = None` intentional). Tables: `users`, `jobs`, `pipeline_runs`, `artifacts` with CHECK constraints and partial indexes on `deleted_at IS NULL`.
+- **PostgresStore:** psycopg v3 with `dict_row` factory. UUID primary keys. `migrate_old_status()` on all writes. Non-UUID IDs raise `TrackerError` with a clear message. Timestamps owned by Python (DB defaults are safety-net only). `_COLUMNS` constant for explicit column lists.
+- **Packaging:** `psycopg[binary]` in `[project.optional-dependencies] postgres` extra. SQLite-only users do not pull the ~10MB wheel. `pip install .[postgres]` for full Postgres support.
+- **Docker:** `docker-compose.yml` with Postgres 16 + healthcheck. `Dockerfile` copies `pyproject.toml` + `README.md` + `applycling/` before `pip install .[postgres]` for layer caching.
+- **Seed:** `applycling/db_seed.py` with well-known UUID `00000000-...-000001`. `ON CONFLICT DO NOTHING` — idempotent.
+- **Status migration:** Frozen copy of `statuses.STATUS_VALUES` in migration CHECK constraint. Adding a status requires a paired migration (tracked as P2 drift risk).
+
+**P2 deferred items (11 items, tracked in `docs/planning/LOCAL_WORKBENCH_SPRINT.md`):**
+- Connection pooling (`psycopg_pool.ConnectionPool`)
+- Test isolation (per-test cleanup fixture)
+- Dockerfile `|| true` on Playwright install
+- `env.py` URL normalization brittleness
+- Migration downgrade missing `CASCADE`
+- `docker-compose.yml` tty flags on `--help` container
+- Raw `psycopg` INSERT in `test_load_jobs_scoped_to_user`
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE` unused
+- Shallow `sqlalchemy.url` in `alembic.ini`
+- `_COLUMNS` excludes `status_reason`/`notion_page_id`
+- Status enum drift between migration and `statuses.py`
+
+**Impact:** Tracker abstraction now spans three backends. Postgres path is local single-user only — no auth, no multi-tenancy, no connection pool. Ready for local development use.
+
+**Rejected alternatives:**
+- ORM with SQLAlchemy models (adds dependency, project does not use ORM elsewhere).
+- `sqlalchemy.url` left empty in `alembic.ini` (inconvenient for local dev; DATABASE_URL override in `env.py` covers security).
+- Connection pool in this PR (unnecessary for single-user local tool; tracked for follow-up).
+
+**Affects:** `applycling/tracker/`, `applycling/db_seed.py`, `migrations/`, `Dockerfile`, `docker-compose.yml`, `alembic.ini`, `pyproject.toml`, `tests/test_postgres_store.py`
