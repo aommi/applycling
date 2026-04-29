@@ -344,6 +344,25 @@ def test_run_pipeline_package_folder_on_job_id(isolated_store, tmp_path):
     assert result["title"] == "Tester"
 
 
+def test_run_pipeline_guards_starting_status(isolated_store):
+    """run_pipeline rejects jobs not in new/reviewing/failed."""
+    store = isolated_store
+    job = jobs_service.create_job_from_url("https://example.com/jobs/guard-test")
+    job_id = job["id"]
+
+    # Move job to applied (not allowed for regenerate)
+    store.update_job(job_id, status="applied")
+
+    result = jobs_service.run_pipeline(job_id)
+    assert "error" in result
+    assert "applied" in result["error"]
+    assert "pipeline can only run" in result["error"]
+
+    # Status should NOT have changed to generating
+    tracker_job = store.load_job(job_id)
+    assert tracker_job.status == "applied"
+
+
 # ── Test: service works with SQLite default ───────────────────────────
 
 def test_service_functions_chain_with_sqlite(isolated_store, tmp_path):
