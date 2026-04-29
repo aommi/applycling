@@ -223,6 +223,127 @@ def test_artifacts_persist_across_reads(inbox_job, isolated_store, tmp_path):
         assert arts[0]["kind"] == "fit_summary"
 
 
+# ── Test: run_pipeline with persist_job=False ──────────────────────────
+
+def test_run_pipeline_no_duplicate_job(isolated_store, tmp_path):
+    """run_pipeline with persist_job=False leaves exactly one tracker job
+    and copies title/company/fit_summary from the package folder."""
+    import json
+
+    # Create a job first
+    job = jobs_service.create_job_from_url("https://example.com/jobs/test-pipeline")
+    job_id = job["id"]
+
+    # Build a fake package folder with job.json containing metadata
+    pkg = tmp_path / "packages" / "Acme Corp - Software Engineer"
+    pkg.mkdir(parents=True)
+    job_json = {
+        "id": job_id,
+        "title": "Software Engineer",
+        "company": "Acme Corp",
+        "status": "reviewing",
+        "source_url": "https://example.com/jobs/test-pipeline",
+        "fit_summary": "Strong match — 8/10",
+        "files": {},
+    }
+    (pkg / "job.json").write_text(json.dumps(job_json), encoding="utf-8")
+
+    # Mock run_add_notify to return our fake package folder
+    with patch("applycling.pipeline.run_add_notify", return_value=pkg):
+        # Mock _artifacts_path_for_job to keep artifacts in tmp_path
+        def _fake_artifacts_path(jid: str) -> Path:
+            p = tmp_path / "artifacts" / f"{jid}_artifacts.json"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            return p
+
+        with patch.object(
+            jobs_service, "_artifacts_path_for_job", side_effect=_fake_artifacts_path
+        ):
+            result = jobs_service.run_pipeline(job_id)
+
+    # No error
+    assert "error" not in result, f"Unexpected error: {result.get('error')}"
+
+    # Status is reviewing
+    assert result["status"] == "reviewing"
+
+    # Metadata copied from job.json
+    assert result["title"] == "Software Engineer"
+    assert result["company"] == "Acme Corp"
+    assert result["fit_summary"] == "Strong match — 8/10"
+
+    # Package folder recorded
+    assert result["package_folder"] == str(pkg)
+
+    # Exactly one job in the tracker (no duplicate)
+    all_jobs = jobs_service.list_jobs()
+    assert len(all_jobs) == 1
+    assert all_jobs[0]["id"] == job_id
+
+    # The tracker row has the updated data
+    tracker_job = isolated_store.load_job(job_id)
+    assert tracker_job.status == "reviewing"
+    assert tracker_job.title == "Software Engineer"
+    assert tracker_job.company == "Acme Corp"
+    assert tracker_job.fit_summary == "Strong match — 8/10"
+    assert tracker_job.package_folder == str(pkg)
+
+
+def test_run_pipeline_no_source_url(isolated_store):
+    """run_pipeline on a job without source_url returns an error."""
+    store = isolated_store
+    # Create a job and wipe its source_url
+    job = jobs_service.create_job_from_url("https://example.com/jobs/temp")
+    store.update_job(job["id"], source_url=None)
+
+    result = jobs_service.run_pipeline(job["id"])
+    assert "error" in result
+    assert "source_url" in result["error"].lower()
+
+
+def test_run_pipeline_package_folder_on_job_id(isolated_store, tmp_path):
+    """When persist_job=False with job_id, the package folder name
+    incorporates the real job id (not empty string)."""
+    import json
+
+    job = jobs_service.create_job_from_url("https://example.com/jobs/test-id")
+    job_id = job["id"]
+
+    # Mock run_add_notify — the real one would pass job_id through to
+    # PipelineContext, which run_add uses for the Job(id=...). We verify
+    # our mock was called with the right job_id.
+    def _fake_run_add_notify(url, notifier, *, persist_job=False, job_id="", **kw):
+        # Verify job_id was passed through
+        assert job_id == job["id"], (
+            f"Expected job_id={job['id']}, got job_id={job_id}"
+        )
+        pkg = tmp_path / "packages" / "TestCo - Tester"
+        pkg.mkdir(parents=True)
+        job_json = {
+            "id": job_id,
+            "title": "Tester",
+            "company": "TestCo",
+            "fit_summary": "OK",
+            "files": {},
+        }
+        (pkg / "job.json").write_text(json.dumps(job_json), encoding="utf-8")
+        return pkg
+
+    with patch("applycling.pipeline.run_add_notify", side_effect=_fake_run_add_notify):
+        def _fake_artifacts_path(jid: str) -> Path:
+            p = tmp_path / "artifacts" / f"{jid}_artifacts.json"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            return p
+
+        with patch.object(
+            jobs_service, "_artifacts_path_for_job", side_effect=_fake_artifacts_path
+        ):
+            result = jobs_service.run_pipeline(job_id)
+
+    assert "error" not in result
+    assert result["title"] == "Tester"
+
+
 # ── Test: service works with SQLite default ───────────────────────────
 
 def test_service_functions_chain_with_sqlite(isolated_store, tmp_path):
