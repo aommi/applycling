@@ -130,11 +130,12 @@ def _write_managed_section(agents_md_path: Path, header: str, content: str) -> s
         return "  - AGENTS.md (unchanged)"
 
     # Replace only the managed block; preserve header + custom content
-    updated = (
-        existing[:start_idx]
-        + block
-        + existing[end_idx + len(SENTINEL_END):].lstrip("\n")
-    )
+    after = existing[end_idx + len(SENTINEL_END):]
+    # block already ends with \n — strip at most one leading newline from
+    # after to avoid double-blank-line; preserve user's blank-line separator
+    if after.startswith("\n"):
+        after = after[1:]
+    updated = existing[:start_idx] + block + after
     agents_md_path.write_text(updated)
 
     diff_lines = list(

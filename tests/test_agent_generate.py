@@ -255,6 +255,169 @@ def test_hermes_is_superset_of_codex(tmp_project):
     assert "memory/semantic.md" in hermes_content
 
 
+# ── Sentinel-block preservation tests ──────────────────────────────────
+
+CUSTOM_CONTENT = """\
+
+## Hermes Profile (Telegram Gateway)
+
+The project ships a dedicated Hermes profile for Telegram intake.
+- **Model:** deepseek-v4-pro
+"""
+
+
+def test_codex_sentinel_first_create(tmp_project):
+    """First run: creates AGENTS.md with header + sentinel-wrapped managed block."""
+    gen_codex(tmp_project)
+    content = (tmp_project / "AGENTS.md").read_text()
+
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+    assert "memory/semantic.md" in content
+    assert "Key conventions" in content
+    # No hermes-specific content in codex
+    assert "agentskills.io" not in content
+    assert "Hermes Memory Mirroring" not in content
+
+
+def test_hermes_sentinel_first_create(tmp_project):
+    """First run: hermes superset includes skills note + memory mirroring."""
+    gen_hermes(tmp_project)
+    content = (tmp_project / "AGENTS.md").read_text()
+
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+    assert "agentskills.io" in content
+    assert "Hermes Memory Mirroring" in content
+
+
+def test_codex_no_sentinel_append(tmp_project):
+    """Existing AGENTS.md without sentinels: appends managed block, preserves original."""
+    agents_md = tmp_project / "AGENTS.md"
+    agents_md.write_text("# Project Context — test\n\nOld manual content.\n")
+
+    gen_codex(tmp_project)
+    content = agents_md.read_text()
+
+    assert "Old manual content." in content
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+    # Original content appears before managed block
+    assert content.index("Old manual content.") < content.index("<!-- amk:start -->")
+
+
+def test_codex_sentinel_preserves_custom(tmp_project):
+    """Custom content outside sentinels survives regeneration."""
+    agents_md = tmp_project / "AGENTS.md"
+
+    # First create
+    gen_codex(tmp_project)
+
+    # Add custom content after the sentinel block
+    content = agents_md.read_text()
+    end_marker = "<!-- amk:end -->"
+    idx = content.index(end_marker) + len(end_marker)
+    new_content = content[:idx] + CUSTOM_CONTENT
+    agents_md.write_text(new_content)
+
+    # Regenerate — custom content must survive
+    gen_codex(tmp_project)
+    content = agents_md.read_text()
+
+    assert "Hermes Profile (Telegram Gateway)" in content
+    assert "deepseek-v4-pro" in content
+    assert "<!-- amk:start -->" in content
+    assert "<!-- amk:end -->" in content
+
+
+def test_hermes_sentinel_preserves_custom(tmp_project):
+    """Hermes adapter also preserves custom content outside sentinels."""
+    agents_md = tmp_project / "AGENTS.md"
+
+    gen_hermes(tmp_project)
+    content = agents_md.read_text()
+    end_marker = "<!-- amk:end -->"
+    idx = content.index(end_marker) + len(end_marker)
+    new_content = content[:idx] + CUSTOM_CONTENT
+    agents_md.write_text(new_content)
+
+    gen_hermes(tmp_project)
+    content = agents_md.read_text()
+
+    assert "Hermes Profile (Telegram Gateway)" in content
+    assert "deepseek-v4-pro" in content
+    assert "agentskills.io" in content  # hermes superset still present
+
+
+def test_codex_idempotent(tmp_project):
+    """Second generation with no changes reports unchanged."""
+    gen_codex(tmp_project)
+    # Second run should be no-op
+    result = gen_codex(tmp_project)
+    assert "unchanged" in result.lower() or "AGENTS.md (unchanged)" in result
+
+
+def test_hermes_idempotent(tmp_project):
+    """Hermes adapter is also idempotent."""
+    gen_hermes(tmp_project)
+    result = gen_hermes(tmp_project)
+    assert "unchanged" in result.lower() or "AGENTS.md (unchanged)" in result
+
+
+def test_codex_to_hermes_round_trip(tmp_project):
+    """Codex first (strips hermes superset), hermes restores it.
+    Custom content outside sentinels survives the round-trip."""
+    agents_md = tmp_project / "AGENTS.md"
+
+    # Start with hermes (full superset)
+    gen_hermes(tmp_project)
+    content = agents_md.read_text()
+    end_marker = "<!-- amk:end -->"
+    idx = content.index(end_marker) + len(end_marker)
+    new_content = content[:idx] + CUSTOM_CONTENT
+    agents_md.write_text(new_content)
+
+    # Run codex — superset parts replaced, custom content survives
+    gen_codex(tmp_project)
+    content = agents_md.read_text()
+    assert "Hermes Profile (Telegram Gateway)" in content  # custom survives
+    assert "agentskills.io" not in content  # hermes-only managed text stripped
+    assert "Hermes Memory Mirroring" not in content
+
+    # Run hermes again — superset restored, custom still survives
+    gen_hermes(tmp_project)
+    content = agents_md.read_text()
+    assert "Hermes Profile (Telegram Gateway)" in content  # custom survives
+    assert "agentskills.io" in content  # hermes managed text restored
+    assert "Hermes Memory Mirroring" in content
+
+
+def test_codex_sentinel_no_whitespace_drift(tmp_project):
+    """Repeated regeneration must not cause whitespace-only diffs."""
+    agents_md = tmp_project / "AGENTS.md"
+
+    gen_codex(tmp_project)
+    content = agents_md.read_text()
+    end_marker = "<!-- amk:end -->"
+    idx = content.index(end_marker) + len(end_marker)
+    new_content = content[:idx] + "\n\n## Custom Section\n\nSome content.\n"
+    agents_md.write_text(new_content)
+
+    # Regenerate — check blank line separator is preserved
+    gen_codex(tmp_project)
+    content = agents_md.read_text()
+
+    # There should be exactly one blank line between sentinel end and custom section
+    end_idx = content.index(end_marker) + len(end_marker)
+    after = content[end_idx:]
+    # Custom section should appear with its blank-line separator
+    assert "\n\n## Custom Section" in after or after.startswith("\n## Custom Section")
+
+    # Second regeneration should be idempotent (no whitespace drift)
+    result = gen_codex(tmp_project)
+    assert "unchanged" in result.lower() or "AGENTS.md (unchanged)" in result
+
+
 def test_all_agents_generate_cleanly(tmp_project):
     """generate.py all must complete without errors for every agent."""
     import importlib.util

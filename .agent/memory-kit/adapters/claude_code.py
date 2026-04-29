@@ -74,7 +74,7 @@ def _write_managed_section(claude_md_path: Path, header: str, content: str) -> s
     if old_block == new_block:
         return "  - CLAUDE.md (unchanged)"
 
-    updated = existing[:start_idx] + block + existing[end_idx + len(SENTINEL_END) :].lstrip("\n")
+    updated = existing[:start_idx] + block + existing[end_idx + len(SENTINEL_END) :]
     claude_md_path.write_text(updated)
 
     diff_lines = list(
