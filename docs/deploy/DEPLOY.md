@@ -94,6 +94,7 @@ never commit them.
 ```bash
 # ── Database ───────────────────────────────────────────
 APPLYCLING_DB_BACKEND=postgres
+POSTGRES_PASSWORD=<generated-password>
 DATABASE_URL=postgresql://applycling:<POSTGRES_PASSWORD>@postgres:5432/applycling
 
 # ── Pipeline provider keys ─────────────────────────────
