@@ -53,7 +53,12 @@ def test_get_store_postgres_with_url(monkeypatch):
     monkeypatch.setenv("APPLYCLING_DB_BACKEND", "postgres")
     monkeypatch.setenv(
         "DATABASE_URL",
-        "postgresql://applycling:pass@localhost:5432/applycling",
+        "postgresql://applycling:***@localhost:5432/applycling",
+    )
+    # PostgresStore.__init__ calls seed_local_user() which connects to the DB.
+    # These routing tests only verify backend selection — mock out the DB call.
+    monkeypatch.setattr(
+        "applycling.db_seed.seed_local_user", lambda url=None: uuid.UUID("00000000-0000-0000-0000-000000000001")
     )
     store = get_store()
     assert type(store).__name__ == "PostgresStore"
@@ -72,6 +77,11 @@ def test_notion_does_not_override_explicit_postgres(monkeypatch):
     monkeypatch.setenv(
         "DATABASE_URL",
         "postgresql://applycling:pass@localhost:5432/applycling",
+    )
+
+    # PostgresStore.__init__ calls seed_local_user() — mock the DB call.
+    monkeypatch.setattr(
+        "applycling.db_seed.seed_local_user", lambda url=None: uuid.UUID("00000000-0000-0000-0000-000000000001")
     )
 
     # import notion_store so we can mock it — but get_store() won't use it

@@ -43,12 +43,12 @@ class PostgresStore(TrackerStore):
         updated_at = row["updated_at"]
 
         if isinstance(created_at, dt.datetime):
-            date_added = created_at.isoformat(timespec="seconds")
+            date_added = created_at.isoformat(timespec="microseconds")
         else:
             date_added = str(created_at) if created_at else ""
 
         if isinstance(updated_at, dt.datetime):
-            date_updated = updated_at.isoformat(timespec="seconds")
+            date_updated = updated_at.isoformat(timespec="microseconds")
         else:
             date_updated = str(updated_at) if updated_at else ""
 
@@ -72,9 +72,9 @@ class PostgresStore(TrackerStore):
             job.id = str(uuid.uuid4())
 
         if not job.date_added:
-            job.date_added = now.isoformat(timespec="seconds")
+            job.date_added = now.isoformat(timespec="microseconds")
         if not job.date_updated:
-            job.date_updated = now.isoformat(timespec="seconds")
+            job.date_updated = now.isoformat(timespec="microseconds")
 
         # Map legacy statuses (inbox, tailored, etc.) to canonical states.
         status = migrate_old_status(job.status)
