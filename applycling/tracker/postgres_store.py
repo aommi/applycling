@@ -221,3 +221,142 @@ class PostgresStore(TrackerStore):
                 raise TrackerError(f"No job found with id '{job_id}'.")
 
         return self.load_job(job_id)
+
+    # ── pipeline_runs (active-run guard) ───────────────────────────────
+
+    def create_run(self, job_id: str, status: str = "running") -> str | None:
+        """Atomically create a pipeline run row.
+
+        Uses INSERT … ON CONFLICT with the partial unique index on
+        ``(user_id) WHERE status = 'running'``.  If an active run already
+        exists the INSERT returns zero rows and we return ``None``.
+        Returns the new run UUID on success.
+        """
+        now = dt.datetime.now(dt.timezone.utc)
+        run_id = uuid.uuid4()
+        try:
+            job_uuid = uuid.UUID(job_id) if job_id else None
+        except ValueError:
+            job_uuid = None
+
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pipeline_runs
+                        (id, user_id, job_id, status, started_at, heartbeat_at,
+                         created_at, updated_at)
+                    VALUES
+                        (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) WHERE status = 'running'
+                    DO NOTHING
+                    RETURNING id
+                    """,
+                    (run_id, self._user_uuid, job_uuid, status,
+                     now, now, now, now),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                return str(row["id"])
+
+    def update_run(
+        self,
+        run_id: str,
+        status: str,
+        *,
+        status_reason: str | None = None,
+    ) -> None:
+        """Update a pipeline run's status and finished_at timestamp."""
+        now = dt.datetime.now(dt.timezone.utc)
+        try:
+            run_uuid = uuid.UUID(run_id)
+        except ValueError:
+            return
+
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = %s,
+                    status_reason = %s,
+                    finished_at = %s,
+                    updated_at = %s
+                WHERE id = %s AND user_id = %s
+                """,
+                (status, status_reason, now, now, run_uuid, self._user_uuid),
+            )
+
+    def get_active_run(self) -> dict[str, Any] | None:
+        """Return the currently active ('running') pipeline run for this user.
+
+        This is a simple SELECT — it CAN race.  Use ``create_run()`` for the
+        authoritative guard; this method is for UX pre-checks only.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT id, job_id, status, started_at, heartbeat_at
+                FROM pipeline_runs
+                WHERE user_id = %s AND status = 'running'
+                LIMIT 1
+                """,
+                (self._user_uuid,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": str(row["id"]),
+            "job_id": str(row["job_id"]) if row["job_id"] else None,
+            "status": row["status"],
+            "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+            "heartbeat_at": row["heartbeat_at"].isoformat() if row["heartbeat_at"] else None,
+        }
+
+    def heartbeat_run(self, run_id: str) -> None:
+        """Update heartbeat_at on the active run row."""
+        now = dt.datetime.now(dt.timezone.utc)
+        try:
+            run_uuid = uuid.UUID(run_id)
+        except ValueError:
+            return
+
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET heartbeat_at = %s, updated_at = %s
+                WHERE id = %s AND user_id = %s AND status = 'running'
+                """,
+                (now, now, run_uuid, self._user_uuid),
+            )
+
+    def sweep_stale_runs(self) -> int:
+        """Mark all stale 'running' rows as 'failed'.
+
+        Staleness is determined by ``APPLYCLING_STALE_RUN_TIMEOUT_MINUTES``
+        (default 120).  Returns the number of rows swept.
+        """
+        timeout_minutes = int(
+            os.environ.get("APPLYCLING_STALE_RUN_TIMEOUT_MINUTES", "120")
+        )
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+            minutes=timeout_minutes
+        )
+
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = 'failed',
+                    status_reason = 'Stale run — no heartbeat within timeout',
+                    finished_at = NOW(),
+                    updated_at = NOW()
+                WHERE user_id = %s
+                  AND status = 'running'
+                  AND heartbeat_at IS NOT NULL
+                  AND heartbeat_at < %s
+                """,
+                (self._user_uuid, cutoff),
+            )
+        return cur.rowcount

@@ -162,3 +162,85 @@ def get_store() -> TrackerStore:
         )
 
     return sqlite_store.SQLiteStore()
+
+
+def _is_postgres() -> bool:
+    """Return True if the configured backend is Postgres."""
+    import os
+
+    return os.environ.get("APPLYCLING_DB_BACKEND", "").strip().lower() == "postgres"
+
+
+def check_active_run() -> bool:
+    """UX pre-check: return True if a pipeline run is currently active.
+
+    This is a simple SELECT — it CAN race with another request that starts
+    a run between the check and the subsequent ``create_run()`` call.  The
+    atomic ``create_run()`` INSERT is the authoritative guard.  This function
+    only exists to give the UI a fast pre-check before creating a job or
+    changing status, so 99 % of double-clicks get a friendly message rather
+    than a database-level conflict.
+
+    Always returns ``False`` when the backend is not Postgres.
+    """
+    if not _is_postgres():
+        return False
+    store = get_store()
+    return store.get_active_run() is not None
+
+
+def register_startup_sweep(app: Any) -> None:
+    """Register startup and periodic stale-run sweep handlers on *app*.
+
+    Attaches:
+    - A one-time startup event that marks ALL ``running`` rows as ``failed``
+      (unconditional — crash recovery).
+    - A periodic background task (every 5 minutes) that sweeps rows whose
+      ``heartbeat_at`` is older than ``APPLYCLING_STALE_RUN_TIMEOUT_MINUTES``.
+
+    Does nothing when the backend is not Postgres.
+    """
+    if not _is_postgres():
+        return
+
+    import asyncio
+
+    store = get_store()
+
+    @app.on_event("startup")
+    async def _startup() -> None:
+        # Unconditional startup sweep — crash recovery.
+        try:
+            swept = store.sweep_stale_runs()
+            if swept:
+                import sys
+                print(
+                    f"[startup] Swept {swept} stale pipeline run(s).",
+                    file=sys.stderr,
+                )
+        except Exception:
+            pass
+
+        # Periodic heartbeat-based stale-run sweep (every 5 minutes).
+        async def _periodic_sweep() -> None:
+            while True:
+                try:
+                    await asyncio.sleep(300)
+                    store.sweep_stale_runs()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
+
+        task = asyncio.create_task(_periodic_sweep())
+        app.state._periodic_sweep_task = task
+
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:
+        task = getattr(app.state, "_periodic_sweep_task", None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
