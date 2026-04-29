@@ -77,9 +77,9 @@ The pipeline is initiated by many sources today and in the near future:
 
 ```
 ┌─────────────┐   ┌─────────────┐   ┌──────────────┐   ┌─────────────┐
-│     CLI     │   │ Hermes /    │   │  Web UI /    │   │  Computer   │
-│ applycling  │   │ OpenClaw    │   │  MCP tool    │   │  use agent  │
-│    add      │   │ (Telegram)  │   │   (future)   │   │  (future)   │
+│     CLI     │   │ Hermes /    │   │  Local Web   │   │  Computer   │
+│ applycling  │   │ OpenClaw    │   │  Workbench   │   │  use agent  │
+│    add      │   │ (Telegram)  │   │  (:8080)     │   │  (future)   │
 └──────┬──────┘   └──────┬──────┘   └──────┬───────┘   └──────┬──────┘
        │                 │                 │                   │
        └─────────────────┴──────┬──────────┴───────────────────┘
@@ -106,6 +106,10 @@ The interface layer is intentionally thin. The local CLI, Telegram/Discord/Whats
 Slack (via Hermes/OpenClaw-style messaging gateways), MCP tools, and future Web UI
 are all entry points that call the same `applycling.pipeline` library. Switching to
 a new interface requires only a small adapter — no pipeline changes.
+
+The local web workbench (`applycling/ui/` at `http://127.0.0.1:8080`) validates the
+UI path for the same library API. Production web UI and MCP server are separate
+planned capabilities (§5).
 
 **Key invariants:**
 

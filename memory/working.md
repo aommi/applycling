@@ -2,20 +2,25 @@
 
 ## Current Focus
 
-Product direction discussion: next step after local Telegram validation. User confirmed Telegram loop works, but lack of visual job/apply status makes the tool feel like a one-off prompt rather than a default job-search workflow. User is weighing SQLite vs Postgres and wants to use limited discounted agent time on parallel/token-heavy work.
+PR #20 (local web workbench + canonical state machine) merged into main. Workbench running at http://127.0.0.1:8080 with FastAPI + Jinja2. Postgres PR #21 pending merge.
 
 ## In Progress
 
-- Created `docs/planning/LOCAL_WORKBENCH_SPRINT.md` with local single-user workbench tickets and agent handoff prompts.
-- User archived `docs/planning/SPRINT_1_LOCAL_TELEGRAM_VALIDATION.md` because the Telegram validation sprint is complete; rely on memory/semantic.md for retained Telegram context.
-- Reviewed `docs/planning/STATUS_STATE_MACHINE_MANIFEST.md` and appended a Codex review. Main feedback: centralize UI action metadata in `applycling/statuses.py`, resolve the `new -> archived`/transition-count inconsistency, preserve `status_reason`, and handle the submit/run pipeline double-transition path.
-- Re-reviewed the updated status manifest and appended "Codex Review — 2026-04-28" under `## Reviews`. Findings: transition-count inconsistency around `applied -> accepted`, missing migration for active workbench statuses, `archived` outcome collapse, missing `waiting -> offered`, DB CHECK means not truly one-file, and missing test/package scope.
-- User reported Hermes revised final manifest to 11 states/23 transitions. Incremental review found remaining risks: `new` lacks a `generating` action despite retry flow depending on it, unconditional `archived -> reviewing` mishandles jobs archived from `new` or post-apply stages, and `status_reason=None` requires tracker/schema support not currently in plan.
+- Memory system updates post-merge: semantic.md, DECISIONS.md, vision.md, project.yaml, sprint doc. Regenerating agent files after.
+- Postgres branch (`feat/postgres-support`) has same code — merge when ready.
 
 ## Blocked
 
 (none)
 
+## Post-Merge Follow-ups (from Opus review, deferred)
+
+- #5: Long pipeline blocks HTTP request — no progress/cancel, browser timeout possible. Fix: fire-and-forget + status polling.
+- #6: `_INFER_KIND` references kinds not in `_ARTIFACT_KINDS` — widen or trim.
+- #7: `failed → archived` transition missing — no clean exit for permanently broken jobs.
+- Minor: duplicate `import json` in jobs_service.py, `reviewing → applied` skip, `_NullNotifier` to module scope, `archived → new` reachability comment.
+
 ## Next Steps
 
-- Revised recommendation: prioritize a minimal local UI/workbench for job pipeline visibility. Either SQLite-first through TrackerStore or local Postgres without auth can work; avoid hosted/SaaS scope until the UI proves the workflow.
+- Decide whether to merge Postgres PR #21 now or later.
+- Address deferred follow-ups (tracked in docs/planning/LOCAL_WORKBENCH_SPRINT.md).

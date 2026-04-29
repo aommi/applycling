@@ -39,6 +39,20 @@ architecture:
       - Notion (data/notion.json)
       - SQLite fallback
       rule: Never call stores directly from cli.py
+      note: Canonical states in applycling/statuses.py — all paths use same 11-state machine
+    statuses:
+      file: applycling/statuses.py
+      components:
+      - STATES (11 canonical states)
+      - TRANSITIONS (25 allowed edges)
+      - Status dataclass + StatusAction
+      - OLD_TO_NEW legacy migration
+      note: Single source of truth for all paths (CLI, UI, Telegram, API, MCP)
+    ui:
+      file: applycling/ui/routes.py
+      stack: FastAPI + Jinja2
+      url: http://127.0.0.1:8080
+      note: Local workbench — not a production web UI. Regenerate is a dedicated endpoint, not a status transition.
     renderer:
       file: applycling/render.py
       stack: markdown → HTML → PDF via Playwright/Chromium

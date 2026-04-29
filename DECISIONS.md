@@ -162,3 +162,71 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 - Custom template syntax (unnecessary when `str.format` exists)
 
 **Affects:** `applycling/skills/`, `memory/semantic.md`, `ARCHITECTURE_VISION.md`
+
+---
+
+## 2026-04-28 — Canonical State Machine
+
+**Decision:** Replace dual-vocabulary status chaos (old CLI: `tailored`, `interview`, `offer`; old workbench: `inbox`, `running`, `generated`, `skipped`) with a single canonical 11-state machine in `applycling/statuses.py`.
+
+**Reasoning:**
+- Multiple intake paths (CLI, UI, Telegram, API, MCP) were using different status vocabularies for the same lifecycle stages. Pipeline wrote `"tailored"`, UI read `"reviewing"`, Telegram showed intermediate states — no single view of job progress.
+- A frozen-dataclass design (`Status`, `StatusAction`) with `frozenset` transitions makes the machine data-driven: templates, routes, and CLI all read from one source.
+- `OLD_TO_NEW` migration handles legacy statuses at load time — no data migration required.
+
+**Impact:**
+- `applycling/statuses.py` — 11 states, 25 transitions, `STATUS_VALUES`, `STATUS_BY_VALUE`, `DEFAULT_INITIAL_STATUS`, `can_transition()`, `assert_valid_status()`.
+- `StatusAction` dataclass — `target`, `label`, `css_class` — used by templates to render buttons data-driven instead of hardcoded.
+- UI actions (`job_actions(status)`) and template globals (`status_color`, `status_label`) all derive from the same frozen data.
+- `generating` is a system-only state (no user actions). `failed` has no status-transition actions — Regenerate is the only exit, handled as a separate command endpoint.
+
+**Rejected alternatives:**
+- Per-path state vocabularies (CLI uses X, UI uses Y) — causes data inconsistency, breaks cross-path visibility.
+- SQL CHECK constraints for state validation — faster but duplicates the truth; Python validation keeps migration DB-independent.
+
+**Affects:** `applycling/statuses.py`, `applycling/ui/routes.py`, `applycling/ui/templates/`, `applycling/tracker/__init__.py`
+
+---
+
+## 2026-04-28 — Regenerate As Command, Not Status Transition
+
+**Decision:** Regenerate is a dedicated endpoint (`POST /jobs/{job_id}/regenerate`), not an action on any status. The UI renders a separate Regenerate button for `new`, `reviewing`, and `failed`.
+
+**Reasoning:**
+- Putting Regenerate in the status-action system as a `generating` transition was misleading — `generating` is a system-only intermediate state, not a user destination. The action set should represent user decisions about the job's lifecycle, not technical re-runs.
+- Regenerate has different semantics from status transitions: it triggers a long-running pipeline, requires `asyncio.to_thread()`, and has its own guard logic (only allowed from `new`/`reviewing`/`failed`).
+
+**Impact:**
+- `POST /jobs/{job_id}/regenerate` in `routes.py` — calls `run_pipeline()` via `asyncio.to_thread()`.
+- Template renders Regenerate button separately from status-action buttons.
+- `run_pipeline()` guards starting status — rejects jobs in `applied`, `accepted`, `rejected`, etc.
+- `new → generating` transition kept in `TRANSITIONS` for programmatic use but has no UI action — pipeline sets it internally.
+
+**Rejected alternatives:**
+- `generating` as a `StatusAction` on `new` and `reviewing` — creates a two-click flow (`new → generating → reviewing`) that confuses user intent.
+
+**Affects:** `applycling/ui/routes.py`, `applycling/jobs_service.py`, `applycling/statuses.py`
+
+---
+
+## 2026-04-28 — `persist_job=False` for Duplicate Prevention
+
+**Decision:** When the caller already owns the job row (workbench `run_pipeline`), pass `persist_job=False` through `PipelineContext` so `run_add()` creates a transient `Job` with the caller's id but skips `save_job()`. Metadata (title, company, fit_summary) is read from `job.json` in the assembled package folder.
+
+**Reasoning:**
+- The old approach — pipeline creates a second tracker row, caller finds it, copies fields, deletes it — was fragile, DB-dependent, and broke when the "find" heuristic failed.
+- `persist_job=False` is a flag, not a side-effect. The pipeline creates the same `Job` object either way; the flag just gates `save_job()`. Adding `job_id` to `PipelineContext` lets the transient job carry the real workbench identity through package assembly (folder name, manifest `id`).
+- Metadata consolidation via `job.json` manifest — `package.assemble()` now writes `fit_summary` into the manifest alongside `title`/`company`. The caller reads one file instead of parsing individual artifacts.
+
+**Impact:**
+- `PipelineContext` gains `persist_job: bool = True` and `job_id: str = ""`.
+- `run_add()` uses `context.job_id` for the transient `Job`, skips `save_job()` when `persist_job=False`.
+- `run_add_notify()` passes both params through.
+- `jobs_service.run_pipeline()` calls `run_add_notify(persist_job=False, job_id=job_id)`, then reads metadata from `folder/job.json`.
+
+**Rejected alternatives:**
+- Find-and-delete duplicate (fragile heuristic, DB-dependent, breaks when tracker rows shift).
+- Pipeline caller supplies metadata callback (adds coupling; manifest is self-contained).
+- `run_add()` returns metadata without persisting at all (would require splitting `AddResult` — harder to roll back).
+
+**Affects:** `applycling/pipeline.py`, `applycling/jobs_service.py`, `applycling/package.py`

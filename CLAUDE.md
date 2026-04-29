@@ -17,7 +17,7 @@
 
 **Mid-session drift:** If reasoning becomes uncertain or inconsistent with prior context, re-read `memory/semantic.md` before continuing.
 
-**When a PR merges:** In addition to `semantic.md` and `DECISIONS.md`, check `vision.md` — move any shipped capabilities from the Vision section to `memory/semantic.md` and remove them from `vision.md`; update or remove Assumptions if the merge invalidates one (append a supersession to `DECISIONS.md` first). Planning details (tickets, checklists, phases) stay in `docs/planning/`, never in `vision.md`.
+**When a PR merges:** In addition to `semantic.md` and `DECISIONS.md`, check `vision.md` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption. Planning details (tickets, checklists, phases) stay in planning docs, never in `vision.md`.
 
 ---
 

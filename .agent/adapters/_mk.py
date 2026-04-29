@@ -13,9 +13,15 @@ def load_adapter(name: str):
     """Load a memory-kit adapter by module name and return its generate function."""
     path = _MK_DIR / "adapters" / f"{name}.py"
     unique_name = f"mk_adapters_{name}"
+
+    # Ensure the memory-kit parent dir is on sys.path so the adapter's
+    # own imports (e.g. 'from adapters.utils import ...') resolve.
+    mk_parent = str(_MK_DIR)
+    if mk_parent not in sys.path:
+        sys.path.insert(0, mk_parent)
+
     spec = importlib.util.spec_from_file_location(unique_name, path)
     mod = importlib.util.module_from_spec(spec)
-    # Register in sys.modules so sibling imports work if the adapter needs them
     sys.modules[unique_name] = mod
     spec.loader.exec_module(mod)
     return mod.generate
@@ -25,7 +31,8 @@ def make_wrapper(name: str):
     """Return a generate(project_root, config=None) function backed by the named memory-kit adapter."""
     _generate = None
 
-    def generate(project_root: Path, config: dict | None = None):
+    def generate(project_root: Path, config = None):
+        # config: dict | None — using Optional to avoid 3.9 union syntax error
         nonlocal _generate
         if _generate is None:
             _generate = load_adapter(name)
