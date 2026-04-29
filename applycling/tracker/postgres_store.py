@@ -71,10 +71,22 @@ class PostgresStore(TrackerStore):
         if not job.id:
             job.id = str(uuid.uuid4())
 
-        if not job.date_added:
-            job.date_added = now.isoformat(timespec="microseconds")
-        if not job.date_updated:
-            job.date_updated = now.isoformat(timespec="microseconds")
+        # Persist caller-supplied timestamps when provided, falling back to now.
+        # This matches the SQLite/Notion contract: if the caller sets dates,
+        # they are honoured; otherwise they are assigned at save time.
+        def _parse_iso_or_now(iso_str: str, fallback: dt.datetime) -> dt.datetime:
+            if iso_str:
+                try:
+                    return dt.datetime.fromisoformat(iso_str)
+                except (ValueError, TypeError):
+                    pass
+            return fallback
+
+        created_dt = _parse_iso_or_now(job.date_added, now)
+        updated_dt = _parse_iso_or_now(job.date_updated, now)
+
+        job.date_added = created_dt.isoformat(timespec="microseconds")
+        job.date_updated = updated_dt.isoformat(timespec="microseconds")
 
         # Map legacy statuses (inbox, tailored, etc.) to canonical states.
         status = migrate_old_status(job.status)
@@ -104,8 +116,8 @@ class PostgresStore(TrackerStore):
                             job.application_url,
                             job.fit_summary,
                             job.package_folder,
-                            now,
-                            now,
+                            created_dt,
+                            updated_dt,
                         ),
                     )
             return job
@@ -114,11 +126,16 @@ class PostgresStore(TrackerStore):
                 f"Could not save job '{job.id}': {e}"
             ) from e
 
+    _COLUMNS = (
+        "id, title, company, status, source_url, application_url, "
+        "fit_summary, package_folder, created_at, updated_at"
+    )
+
     def load_jobs(self) -> list[Job]:
         with self._conn() as conn:
             with conn.execute(
-                """
-                SELECT *
+                f"""
+                SELECT {self._COLUMNS}
                 FROM jobs
                 WHERE user_id = %s AND deleted_at IS NULL
                 ORDER BY created_at DESC
@@ -138,8 +155,8 @@ class PostgresStore(TrackerStore):
 
         with self._conn() as conn:
             row = conn.execute(
-                """
-                SELECT *
+                f"""
+                SELECT {self._COLUMNS}
                 FROM jobs
                 WHERE id = %s AND user_id = %s AND deleted_at IS NULL
                 """,

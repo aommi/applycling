@@ -27,8 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium
 
 # Install Python dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
+COPY pyproject.toml README.md ./
+COPY applycling/ applycling/
+RUN pip install --no-cache-dir .[postgres]
 
 # Copy application code
 COPY . .
