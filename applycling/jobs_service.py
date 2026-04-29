@@ -314,6 +314,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             url=url,
             notifier=_NullNotifier(),
             persist_job=False,
+            job_id=job_id,
         )
     except Exception as exc:
         reason = str(exc)

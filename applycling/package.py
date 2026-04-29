@@ -138,6 +138,7 @@ def assemble(
         "application_url": job.application_url,
         "date_added": job.date_added,
         "date_updated": job.date_updated,
+        "fit_summary": fit_summary,
         "files": {
             "resume_md": "resume.md",
             "resume_html": "resume.html",

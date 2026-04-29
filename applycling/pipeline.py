@@ -74,6 +74,9 @@ class PipelineContext:
     # Whether to persist a tracker job (False when caller owns the job, e.g. workbench)
     persist_job: bool = True
 
+    # Optional pre-existing job id (used when persist_job=False)
+    job_id: str = ""
+
     # Optional applicant profile (from data/applicant_profile.json)
     applicant_profile: dict[str, Any] = field(default_factory=dict)
 
@@ -805,7 +808,7 @@ def run_add(
 
     # Persist job to tracker (skip if caller owns the job)
     job = tracker.Job(
-        id="",
+        id=context.job_id or "",
         title=job_title,
         company=job_company,
         date_added="",
@@ -1033,6 +1036,7 @@ def run_add_notify(
     provider: Optional[str] = None,
     output_root: Optional[Path] = None,
     persist_job: bool = True,
+    job_id: str = "",
 ) -> Path:
     """Run the full add pipeline and deliver results via any Notifier.
 
@@ -1047,6 +1051,8 @@ def run_add_notify(
         model: Override LLM model from config.
         provider: Override LLM provider from config.
         output_root: Override output directory.
+        persist_job: Whether to create a tracker job row (False when caller owns the job).
+        job_id: Pre-existing job id (used when persist_job=False).
 
     Returns:
         Path to the assembled package folder.
@@ -1103,6 +1109,7 @@ def run_add_notify(
         provider=final_provider,
         tracker_store=tracker.get_store(),
         persist_job=persist_job,
+        job_id=job_id,
     )
 
     _STATUS_MAP = {
