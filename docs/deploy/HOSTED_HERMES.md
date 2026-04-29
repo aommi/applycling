@@ -41,7 +41,7 @@ RUN pip install hermes-agent
 CMD ["hermes", "gateway", "start", "--profile", "applycling"]
 ```
 
-### Hermes Profile (`/opt/applycling/hermes_profile/.hermes/profiles/applycling/SOUL.md`)
+### Hermes Profile (`/opt/applycling/hermes_profile/SOUL.md`)
 
 The SOUL.md from Phase 1 (`docs/deploy/hermes_forwarding_template.md`) works
 for hosted Hermes too — just update `INTAKE_URL` to use the internal Docker
@@ -69,11 +69,11 @@ DEEPSEEK_API_KEY=<deepseek-api-key>
 
 ```bash
 # 1. Create Hermes profile on host
-mkdir -p /opt/applycling/hermes_profile/.hermes/profiles/applycling
+mkdir -p /opt/applycling/hermes_profile
 
 # 2. Copy SOUL.md template
 cp docs/deploy/hermes_forwarding_template.md \
-   /opt/applycling/hermes_profile/.hermes/profiles/applycling/SOUL.md
+   /opt/applycling/hermes_profile/SOUL.md
 
 # 3. Edit SOUL.md — replace INTAKE_URL with http://applycling:8080/api/intake
 #    and INTAKE_SECRET with the value from /opt/applycling/.env
