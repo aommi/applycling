@@ -164,6 +164,10 @@ mkdir -p /opt/applycling/{data,output}
 
 # 3. Create .env file (see Environment Variables section above)
 #    Edit /opt/applycling/.env with all required secrets
+#
+#    Docker Compose automatically reads a .env file in the project directory
+#    for variable substitution (${POSTGRES_PASSWORD}, etc.). Symlink it:
+ln -s /opt/applycling/.env /opt/applycling/app/.env
 
 # 4. Provision private data files (see Data Provisioning section above)
 #    scp data/* to /opt/applycling/data/
