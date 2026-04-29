@@ -60,7 +60,9 @@ STATES: tuple[Status, ...] = (
     Status("rejected", "Rejected", "#ef4444", actions=(
         StatusAction("archived", "Archive", "btn-skip"),
     )),
-    Status("failed", "Failed", "#dc2626"),
+    Status("failed", "Failed", "#dc2626", actions=(
+        StatusAction("archived", "Archive", "btn-skip"),
+    )),
     Status("archived", "Archived", "#374151", actions=(
         StatusAction("reviewing", "Reopen", "btn-reopen"),
     )),
@@ -81,8 +83,8 @@ TRANSITIONS: dict[str, frozenset[str]] = {
     "offered":      frozenset({"accepted", "archived"}),
     "accepted":     frozenset({"archived"}),
     "rejected":     frozenset({"archived"}),
-    "failed":       frozenset({"new"}),
-    "archived":     frozenset({"reviewing", "new"}),
+    "failed":       frozenset({"new", "archived"}),
+    "archived":     frozenset({"reviewing", "new"}),  # archived→new is reached via reopen_job(), not UI actions
 }
 
 # pipeline_runs keeps independent vocabulary (run audit ≠ job lifecycle).
