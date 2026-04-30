@@ -50,3 +50,11 @@
 - **Context-based resolvers (next):** Variant skills via `trigger`, `when`, `variant_of` frontmatter fields. First variant: `positioning_brief_ai.md` for AI/ML roles.
 - **Learning loops (after):** `LEARNED.md` per skill, injected as `{learned_patterns}`.
 - **User-override skills (later):** `~/.applycling/skills/` override built-ins.
+
+## Hermes Profile
+
+- **Profile:** `applycling` at `~/.hermes/profiles/applycling/`
+- **Gateway plist:** `~/Library/LaunchAgents/ai.hermes.gateway-applycling.plist` (launchd-managed, KeepAlive)
+- **Env vars:** `APPLYCLING_INTAKE_URL` and `APPLYCLING_INTAKE_SECRET` in profile's `.env` (NOT global)
+- **SOUL.md:** Forwarding-mode agent that POSTs job URLs to intake endpoint
+- **Alias:** `applycling-hermes` = `hermes -p applycling`
