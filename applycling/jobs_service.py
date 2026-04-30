@@ -30,6 +30,7 @@ from applycling.statuses import (
     TRANSITIONS,
 )
 from applycling.tracker import TrackerError, get_store, Job
+from applycling.tracker import _is_postgres
 
 _ARTIFACT_KINDS: tuple[str, ...] = (
     "resume_pdf",
@@ -288,14 +289,49 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     """Run the applycling pipeline for a job.
 
     Workflow:
-    1. Set job status to ``generating``.
-    2. Delegate to ``applycling.pipeline.run_add_notify()``.
-    3. On success → status ``reviewing``, record package folder + artifacts.
-    4. On failure → status ``failed`` with reason.
+    1. Reserve an active run via atomic INSERT (Postgres only).
+    2. Set job status to ``generating``.
+    3. Delegate to ``applycling.pipeline.run_add_notify()``.
+    4. On success → status ``reviewing``, record package folder + artifacts.
+    5. On failure → status ``failed`` with reason.
 
     Returns the updated job dict (or an error dict on failure).
     """
     store = get_store()
+    run_id: str | None = None
+
+    # ── Active-run guard (Postgres only) ────────────────────────────────
+    # Atomic INSERT on pipeline_runs prevents overlapping generations.
+    # This is a database-level lock — NOT a check-then-create pattern.
+    if _is_postgres():
+        run_id = store.create_run(job_id, "running")
+        if run_id is None:
+            # Guard blocked — clear the generating status the UI may have
+            # already set (routes.py pre-sets "generating" before dispatch).
+            # Swallow any TrackerError: the row may not exist, the transition
+            # may be invalid (e.g. job was still "new"), or the store may be
+            # unreachable.  The guard rejection is the load-bearing signal.
+            try:
+                store.update_job(job_id, status="failed")
+            except TrackerError:
+                pass
+            _record_status_reason(
+                job_id, "failed",
+                "Another generation is already running.",
+            )
+            return {
+                "error": "Another generation is already running. "
+                         "Please wait for it to complete before starting a new one.",
+                "job_id": job_id,
+            }
+        try:
+            store.heartbeat_run(run_id)
+        except Exception as e:
+            import sys
+            print(
+                f"[pipeline] pre-run heartbeat failed: {e}",
+                file=sys.stderr, flush=True,
+            )
 
     # ------------------------------------------------------------------
     # Pre-flight
@@ -303,33 +339,34 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     try:
         job = store.load_job(job_id)
     except TrackerError as e:
-        return {"error": str(e), "job_id": job_id}
+        return _finish_run(store, run_id, {"error": str(e), "job_id": job_id})
 
     url = job.source_url
     if not url:
-        return {
-            "error": f"Job {job_id} has no source_url — cannot run pipeline.",
-            "job_id": job_id,
-        }
+        return _finish_run(
+            store, run_id,
+            {"error": f"Job {job_id} has no source_url — cannot run pipeline.",
+             "job_id": job_id},
+        )
 
     # Guard: only allow pipeline from safe starting statuses.
     # (Matches template button gating — see job_detail.html line 46.)
     # "generating" is allowed because the UI pre-sets it before
     # firing the background thread (non-blocking submit).
     if job.status not in ("new", "reviewing", "failed", "generating"):
-        return {
-            "error": (
+        return _finish_run(
+            store, run_id,
+            {"error": (
                 f"Job is '{job.status}' — pipeline can only run from "
                 f"'new', 'reviewing', 'failed', or 'generating'."
-            ),
-            "job_id": job_id,
-        }
+            ), "job_id": job_id},
+        )
 
     # Set generating *before* we start so the UI can see it immediately.
     try:
         store.update_job(job_id, status="generating")
     except TrackerError as e:
-        return {"error": str(e), "job_id": job_id}
+        return _finish_run(store, run_id, {"error": str(e), "job_id": job_id})
 
     # ------------------------------------------------------------------
     # Run pipeline (persist_job=False — no duplicate, we own the job)
@@ -350,7 +387,19 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         except TrackerError:
             pass
         _record_status_reason(job_id, "failed", reason)
-        return {"error": reason, "job_id": job_id}
+        return _finish_run(store, run_id, {"error": reason, "job_id": job_id},
+                           status="failed", reason=reason)
+
+    # Heartbeat after successful pipeline.
+    if run_id:
+        try:
+            store.heartbeat_run(run_id)
+        except Exception as e:
+            import sys
+            print(
+                f"[pipeline] post-run heartbeat failed: {e}",
+                file=sys.stderr, flush=True,
+            )
 
     # ------------------------------------------------------------------
     # Update workbench job with pipeline results (no duplicate to merge)
@@ -390,8 +439,32 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             except Exception:
                 pass  # Non-critical — pipeline already succeeded
 
+    # Mark run as generated.
+    if run_id and _is_postgres():
+        try:
+            store.update_run(run_id, "generated")
+        except Exception:
+            pass
+
     # Return the final state
     try:
         return _job_to_dict(store.load_job(job_id))
     except TrackerError:
         return {"error": "Pipeline succeeded but could not reload job.", "job_id": job_id}
+
+
+def _finish_run(
+    store: Any,
+    run_id: str | None,
+    result: dict[str, Any],
+    *,
+    status: str = "failed",
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Update the pipeline run to a terminal state and return *result*."""
+    if run_id and _is_postgres():
+        try:
+            store.update_run(run_id, status, status_reason=reason)
+        except Exception:
+            pass
+    return result
