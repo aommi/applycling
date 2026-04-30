@@ -104,7 +104,8 @@ For 10 beta users: $6/mo (shared VPS). For 50-100 users: consider upgrading to
 
 ## Decision Log
 
-No decisions deferred. All dogfood-scope decisions are documented in the sprint
-plan and execution plan. Future decisions (auth provider, object storage
-provider, CI/CD tool) are noted as "Not started" above and will be scoped in
-future sprint plans.
+No decisions blocking dogfood are deferred. The following decisions are
+intentionally deferred to closed-beta scoping and are not needed for the
+current sprint: auth provider selection, object storage provider, CI/CD tool
+choice, Hermes liveness probe shape. These are noted as "Not started" in the
+categories above and will be scoped in future sprint plans.
