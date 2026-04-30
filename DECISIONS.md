@@ -269,3 +269,24 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 **Affects:** `applycling/tracker/`, `applycling/db_seed.py`, `migrations/`, `Dockerfile`, `docker-compose.yml`, `alembic.ini`, `pyproject.toml`, `tests/test_postgres_store.py`
 
 **Cross-backend migration convention:** When a schema change ships (add/alter/drop column), the PR must update both the Alembic migration (Postgres) and `applycling/tracker/sqlite_store.py` table creation SQL (SQLite auto-creates schema on first use). NotionStore is document-based and has no schema concern. A schema change is not done until all active backends are updated.
+
+---
+
+## 2026-04-29 — Host Dogfooding Sprint Architecture
+
+**Decision:** Ship private hosted dogfooding on a Kamatera VPS using Docker Compose, Caddy TLS, Postgres, app-level Basic Auth, active-run rejection, async in-process generation, durable bind-mounted artifacts, and Hermes-to-workbench intake via `/api/intake`.
+
+**Reasoning:**
+- Kamatera gives predictable $6/mo cost; Railway's resource billing was less predictable for dogfooding.
+- Docker Compose + Caddy keeps the deployment portable without introducing platform-specific infrastructure.
+- One active run per user is sufficient for private dogfood and prevents duplicate token-burning generations.
+- Async in-process background tasks are acceptable for this stage because startup sweep marks orphaned runs failed after restart.
+- Intake secret is separate from UI credentials because Hermes forwarding is machine-to-machine, not browser auth.
+
+**Rejected alternatives:**
+- Railway for first hosted dogfood deployment.
+- Queue/worker pool before private dogfood validation.
+- Custom Telegram polling inside applycling.
+- Shared UI credentials for Hermes intake.
+
+**Affects:** `docker-compose.prod.yml`, `Caddyfile`, `Dockerfile.hermes`, `applycling/ui/__init__.py`, `applycling/ui/routes.py`, `applycling/jobs_service.py`, `applycling/tracker/postgres_store.py`, `applycling/tracker/__init__.py`, `migrations/`, `docs/deploy/`
