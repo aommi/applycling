@@ -33,7 +33,7 @@ Each job gets its own folder with `resume.pdf`, `cover_letter.pdf`, `job.json`, 
 | Container restart (`docker compose restart applycling`) | Yes — bind mount preserves files on host |
 | Container rebuild (`docker compose up -d --build`) | Yes — same reason |
 | System reboot | Yes — host filesystem persists |
-| Docker volume prune | **No** — `docker system prune --volumes` would delete named volumes (pgdata) but NOT bind mounts |
+| Docker volume prune | **No** — `docker system prune --volumes` would delete named volumes (pgdata) but NOT bind mounts. See also `docs/deploy/DEPLOY.md` § Operational Notes. |
 | Host disk failure | **No** — single disk, no replication |
 
 ## Limitations
@@ -59,7 +59,8 @@ ls -la /opt/applycling/output/
 docker compose -f docker-compose.prod.yml restart applycling
 
 # 3. Confirm artifacts are still visible through the workbench UI
-curl -u user:pass https://your-domain.com/job/<id>
+# Replace credentials with your APPLYCLING_UI_AUTH_USER:PASSWORD values.
+curl -u user:pass https://your-domain.com/jobs/<id>
 ```
 
 ## Future (Closed Beta / SaaS)
