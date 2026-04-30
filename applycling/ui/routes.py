@@ -6,11 +6,14 @@ All routes call applycling.jobs_service functions — never raw DB.
 from __future__ import annotations
 
 import asyncio
+import hmac
+import os
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
@@ -228,6 +231,62 @@ async def healthz() -> JSONResponse:
             {"status": "unhealthy", "db": "unreachable"},
             status_code=503,
         )
+
+
+# ── Hermes intake endpoint ─────────────────────────────────────────────
+
+class IntakeBody(BaseModel):
+    """Request body for the Hermes intake endpoint."""
+
+    job_url: HttpUrl
+
+
+@router.post("/api/intake")
+async def intake(
+    request: Request, body: IntakeBody
+) -> dict[str, Any]:
+    """Protected endpoint for Hermes to submit job URLs to hosted applycling.
+
+    Requires ``X-Intake-Secret`` header matching ``APPLYCLING_INTAKE_SECRET``.
+    Protected by auth middleware exemption in ``ui/__init__.py``.
+
+    Request body: ``{"job_url": "https://..."}``
+    Response (success): ``{"job_id": "...", "status": "generating"}``
+    Response (conflict): ``{"error": "Another generation is already running"}`` → 409
+    """
+    # Validate intake secret — constant-time, read per-request (not module-level).
+    expected_secret = os.environ.get("APPLYCLING_INTAKE_SECRET", "")
+    provided_secret = request.headers.get("X-Intake-Secret", "")
+    if not expected_secret or not hmac.compare_digest(
+        provided_secret, expected_secret
+    ):
+        if not expected_secret:
+            import sys
+
+            print(
+                "[intake] WARNING: APPLYCLING_INTAKE_SECRET not configured — "
+                "endpoint will reject all requests.",
+                file=sys.stderr, flush=True,
+            )
+        raise HTTPException(status_code=401, detail="Invalid intake secret")
+
+    url = str(body.job_url)
+
+    # Sync pre-check BEFORE creating any job — no dead "new" jobs.
+    if check_active_run():
+        return JSONResponse(
+            {"error": "Another generation is already running. "
+                       "Please wait for it to complete."},
+            status_code=409,
+        )
+
+    # Create job, set generating, schedule pipeline.
+    job = jobs_service.create_job_from_url(url)
+    job_id = job["id"]
+    jobs_service.set_job_status(job_id, "generating")
+    schedule_pipeline_run(job_id)
+
+    return {"job_id": job_id, "status": "generating"}
 
 
 # ── Init ───────────────────────────────────────────────────────────────
