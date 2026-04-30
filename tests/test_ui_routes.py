@@ -214,3 +214,116 @@ def test_no_auth_env_bypasses_auth(monkeypatch):
     response = tc.get("/")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+# ── Intake endpoint ─────────────────────────────────────────────────────
+
+_VALID_INTAKE_BODY = {"job_url": "https://example.com/jobs/software-engineer"}
+_INTAKE_SECRET = "test-secret-123"
+
+
+def test_intake_401_without_secret_header(client, monkeypatch):
+    """POST /api/intake returns 401 when X-Intake-Secret header is missing."""
+    monkeypatch.setenv("APPLYCLING_INTAKE_SECRET", _INTAKE_SECRET)
+    response = client.post("/api/intake", json=_VALID_INTAKE_BODY)
+    assert response.status_code == 401
+
+
+def test_intake_401_with_wrong_secret(client, monkeypatch):
+    """POST /api/intake returns 401 when X-Intake-Secret is wrong."""
+    monkeypatch.setenv("APPLYCLING_INTAKE_SECRET", _INTAKE_SECRET)
+    response = client.post(
+        "/api/intake",
+        json=_VALID_INTAKE_BODY,
+        headers={"X-Intake-Secret": "wrong-secret"},
+    )
+    assert response.status_code == 401
+
+
+def test_intake_401_when_env_secret_empty(client, monkeypatch):
+    """POST /api/intake returns 401 when APPLYCLING_INTAKE_SECRET is unset.
+
+    Even an empty X-Intake-Secret header against an empty env var should fail —
+    the guard catches both empty-server-secret and wrong-secret.
+    """
+    monkeypatch.delenv("APPLYCLING_INTAKE_SECRET", raising=False)
+    response = client.post(
+        "/api/intake",
+        json=_VALID_INTAKE_BODY,
+        headers={"X-Intake-Secret": _INTAKE_SECRET},
+    )
+    assert response.status_code == 401
+
+
+def test_intake_422_on_invalid_url(client, monkeypatch):
+    """POST /api/intake returns 422 when job_url is not a valid URL."""
+    monkeypatch.setenv("APPLYCLING_INTAKE_SECRET", _INTAKE_SECRET)
+    response = client.post(
+        "/api/intake",
+        json={"job_url": "not-a-url"},
+        headers={"X-Intake-Secret": _INTAKE_SECRET},
+    )
+    assert response.status_code == 422
+
+
+def test_intake_409_when_active_run_exists(client, monkeypatch):
+    """POST /api/intake returns 409 when check_active_run() is True."""
+    monkeypatch.setenv("APPLYCLING_INTAKE_SECRET", _INTAKE_SECRET)
+    with patch(
+        "applycling.ui.routes.check_active_run", return_value=True
+    ):
+        response = client.post(
+            "/api/intake",
+            json=_VALID_INTAKE_BODY,
+            headers={"X-Intake-Secret": _INTAKE_SECRET},
+        )
+    assert response.status_code == 409
+    assert "already running" in response.json()["error"].lower()
+
+
+def test_intake_200_happy_path(client, monkeypatch):
+    """POST /api/intake returns 200 and schedules pipeline on success."""
+    monkeypatch.setenv("APPLYCLING_INTAKE_SECRET", _INTAKE_SECRET)
+    with (
+        patch("applycling.ui.routes.check_active_run", return_value=False),
+        patch(
+            "applycling.ui.routes.jobs_service.create_job_from_url",
+            return_value={"id": "job-1"},
+        ),
+        patch("applycling.ui.routes.jobs_service.set_job_status"),
+        patch("applycling.ui.routes.schedule_pipeline_run"),
+    ):
+        response = client.post(
+            "/api/intake",
+            json=_VALID_INTAKE_BODY,
+            headers={"X-Intake-Secret": _INTAKE_SECRET},
+        )
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-1"
+    assert response.json()["status"] == "generating"
+
+
+def test_intake_exempted_from_basic_auth(client, monkeypatch):
+    """POST /api/intake with valid intake secret succeeds without Basic Auth.
+
+    Proves the auth middleware exemption is correctly wired — Hermes sends
+    only the X-Intake-Secret header, not Basic Auth credentials.
+    """
+    monkeypatch.setenv("APPLYCLING_INTAKE_SECRET", _INTAKE_SECRET)
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+
+    with (
+        patch("applycling.ui.routes.check_active_run", return_value=False),
+        patch(
+            "applycling.ui.routes.jobs_service.create_job_from_url",
+            return_value={"id": "job-1"},
+        ),
+        patch("applycling.ui.routes.jobs_service.set_job_status"),
+        patch("applycling.ui.routes.schedule_pipeline_run"),
+    ):
+        response = client.post(
+            "/api/intake",
+            json=_VALID_INTAKE_BODY,
+            headers={"X-Intake-Secret": _INTAKE_SECRET},
+            # No Authorization header — proves auth middleware exemption.
+        )
+    assert response.status_code == 200
