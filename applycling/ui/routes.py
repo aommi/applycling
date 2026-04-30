@@ -6,11 +6,14 @@ All routes call applycling.jobs_service functions — never raw DB.
 from __future__ import annotations
 
 import asyncio
+import hmac
+import os
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
@@ -232,16 +235,16 @@ async def healthz() -> JSONResponse:
 
 # ── Hermes intake endpoint ─────────────────────────────────────────────
 
-import hmac
-import os
+class IntakeBody(BaseModel):
+    """Request body for the Hermes intake endpoint."""
 
-from fastapi import Body
-
-_INTAKE_SECRET = os.environ.get("APPLYCLING_INTAKE_SECRET", "")
+    job_url: HttpUrl
 
 
 @router.post("/api/intake")
-async def intake(request: Request, body: dict = Body(...)) -> dict[str, Any]:
+async def intake(
+    request: Request, body: IntakeBody
+) -> dict[str, Any]:
     """Protected endpoint for Hermes to submit job URLs to hosted applycling.
 
     Requires ``X-Intake-Secret`` header matching ``APPLYCLING_INTAKE_SECRET``.
@@ -251,16 +254,23 @@ async def intake(request: Request, body: dict = Body(...)) -> dict[str, Any]:
     Response (success): ``{"job_id": "...", "status": "generating"}``
     Response (conflict): ``{"error": "Another generation is already running"}`` → 409
     """
-    # Validate intake secret — constant-time comparison.
+    # Validate intake secret — constant-time, read per-request (not module-level).
+    expected_secret = os.environ.get("APPLYCLING_INTAKE_SECRET", "")
     provided_secret = request.headers.get("X-Intake-Secret", "")
-    if not _INTAKE_SECRET or not hmac.compare_digest(
-        provided_secret, _INTAKE_SECRET
+    if not expected_secret or not hmac.compare_digest(
+        provided_secret, expected_secret
     ):
+        if not expected_secret:
+            import sys
+
+            print(
+                "[intake] WARNING: APPLYCLING_INTAKE_SECRET not configured — "
+                "endpoint will reject all requests.",
+                file=sys.stderr, flush=True,
+            )
         raise HTTPException(status_code=401, detail="Invalid intake secret")
 
-    url = body.get("job_url", "").strip()
-    if not url:
-        raise HTTPException(status_code=400, detail="Missing job_url")
+    url = str(body.job_url)
 
     # Sync pre-check BEFORE creating any job — no dead "new" jobs.
     if check_active_run():
