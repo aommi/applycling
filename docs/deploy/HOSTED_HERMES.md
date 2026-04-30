@@ -43,15 +43,16 @@ CMD ["hermes", "gateway", "start", "--profile", "applycling"]
 
 ### Hermes Profile (`/opt/applycling/hermes_profile/SOUL.md`)
 
-The SOUL.md from Phase 1 (`docs/deploy/hermes_forwarding_template.md`) works
-for hosted Hermes too — just update `INTAKE_URL` to use the internal Docker
-network address:
+The SOUL.md template reads ``$APPLYCLING_INTAKE_URL`` and
+``$APPLYCLING_INTAKE_SECRET`` from environment variables — no manual
+editing needed. Copy it directly from the repo:
 
-```
-INTAKE_URL → http://applycling:8080/api/intake
+```bash
+cp docs/deploy/hermes_forwarding_template.md \
+   /opt/applycling/hermes_profile/SOUL.md
 ```
 
-The intake secret and API keys come from the shared `/opt/applycling/.env`.
+Set the env vars in `/opt/applycling/.env` — see below.
 
 ### Env Vars (in `/opt/applycling/.env`)
 
@@ -75,12 +76,9 @@ mkdir -p /opt/applycling/hermes_profile
 cp docs/deploy/hermes_forwarding_template.md \
    /opt/applycling/hermes_profile/SOUL.md
 
-# 3. Edit SOUL.md — replace INTAKE_URL with http://applycling:8080/api/intake
-#    and INTAKE_SECRET with the value from /opt/applycling/.env
+# 3. Set env vars in /opt/applycling/.env (see Env Vars section above)
 
-# 4. Add Hermes env vars to /opt/applycling/.env (see above)
-
-# 5. Build and start Hermes container
+# 4. Build and start Hermes container
 docker compose -f docker-compose.prod.yml up -d --build hermes
 ```
 

@@ -37,9 +37,19 @@ Hermes profile:
 cp docs/deploy/hermes_forwarding_template.md ~/.hermes/profiles/applycling/SOUL.md
 ```
 
-Edit the file to set:
-- `INTAKE_URL` — your hosted workbench URL (e.g., `https://applycling.yourdomain.com/api/intake`)
-- `INTAKE_SECRET` — the value from `/opt/applycling/.env`
+Set the required environment variables in `~/.hermes/.env` (local Hermes) or
+`/opt/applycling/.env` (hosted Hermes container):
+
+```bash
+APPLYCLING_INTAKE_URL=https://applycling.yourdomain.com/api/intake
+APPLYCLING_INTAKE_SECRET=<value from VPS /opt/applycling/.env>
+```
+
+Verify the env vars are set before restarting:
+
+```bash
+grep -E 'APPLYCLING_(INTAKE_URL|INTAKE_SECRET)' ~/.hermes/.env
+```
 
 ### 3. Restart Hermes
 
