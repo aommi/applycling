@@ -186,6 +186,16 @@ docker compose -f docker-compose.prod.yml run --rm applycling alembic upgrade he
 
 # 8. Start all services
 docker compose -f docker-compose.prod.yml up -d --build
+
+# 9. Verify config output_dir (only /app/output or ./output — reject host paths)
+docker compose -f docker-compose.prod.yml exec applycling python3 -c '
+import json
+cfg = json.load(open("/app/data/config.json"))
+od = cfg.get("output_dir", "./output")
+if od not in ("", "./output", "/app/output"):
+    raise SystemExit(f"BAD output_dir={od} — must be /app/output or ./output")
+print("OK")
+'
 ```
 
 ### Redeploy (update code)
