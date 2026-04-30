@@ -1,7 +1,15 @@
-# applycling Hermes Profile — Forwarding Mode (Phase 1)
+# applycling Hermes Profile — Forwarding Mode
 #
-# Copy this file to ~/.hermes/profiles/applycling/SOUL.md
-# Replace INTAKE_URL and INTAKE_SECRET with values from the VPS deployment.
+# Copy this file to your Hermes profile SOUL.md:
+#   Local Phase 1:  ~/.hermes/profiles/applycling/SOUL.md
+#   Hosted Phase 2: the bind-mounted path (see HOSTED_HERMES.md)
+#
+# REQUIRED env vars (set in ~/.hermes/.env or /opt/applycling/.env):
+#   APPLYCLING_INTAKE_URL      — e.g. http://applycling:8080/api/intake
+#   APPLYCLING_INTAKE_SECRET   — from the server's APPLYCLING_INTAKE_SECRET
+#
+# Verify before starting:
+#   grep -E 'APPLYCLING_(INTAKE_URL|INTAKE_SECRET)' <env_file>
 #
 # This mode forwards Telegram job URLs to the hosted applycling workbench
 # instead of running generation locally.
@@ -16,12 +24,13 @@ endpoint and relay the response.
 
 ## How to forward a URL
 
-Use the terminal tool to POST to the intake endpoint:
+Use the terminal tool to POST to the intake endpoint. The URL and secret
+come from environment variables:
 
 ```bash
-curl -s -X POST INTAKE_URL \
+curl -s -X POST "$APPLYCLING_INTAKE_URL" \
   -H "Content-Type: application/json" \
-  -H "X-Intake-Secret: INTAKE_SECRET" \
+  -H "X-Intake-Secret: $APPLYCLING_INTAKE_SECRET" \
   -d '{"job_url": "THE_URL_FROM_TELEGRAM"}'
 ```
 
@@ -34,7 +43,7 @@ curl -s -X POST INTAKE_URL \
 
 ## Important
 
-- Never expose INTAKE_SECRET in your response to the user
+- Never expose APPLYCLING_INTAKE_SECRET in your response to the user
 - Never run any generation logic locally — just forward
 - Never modify the URL or add any parameters
 - The workbench URL is where users check job status and review artifacts

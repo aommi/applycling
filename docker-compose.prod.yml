@@ -47,6 +47,22 @@ services:
       - applycling
     restart: unless-stopped
 
+  # Phase 2: Hosted Hermes Telegram gateway.
+  # See docs/deploy/HOSTED_HERMES.md for setup instructions.
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile.hermes
+    env_file:
+      - /opt/applycling/.env
+    volumes:
+      - /opt/applycling/hermes_profile:/hermes/.hermes/profiles/applycling
+    depends_on:
+      - applycling
+    restart: unless-stopped
+    # Hermes liveness is NOT covered by /healthz (workbench only).
+    # Monitor with: docker compose -f docker-compose.prod.yml logs hermes
+
 volumes:
   pgdata:
   caddy_data:
