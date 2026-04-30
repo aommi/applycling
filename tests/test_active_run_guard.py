@@ -203,7 +203,7 @@ def test_concurrent_inserts_only_one_succeeds():
     import concurrent.futures
     from applycling.tracker import get_store
 
-    new_job_id = str(uuid.uuid4())
+    new_job_id = None  # FK allows NULL — no need to create a real job
 
     def _try_create_run(worker_id: int) -> str | None:
         store = get_store()
