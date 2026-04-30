@@ -16,46 +16,58 @@ Phase 2 moves Hermes itself to the hosted environment (see `HOSTED_HERMES.md`).
 ## Prerequisites
 
 1. Hosted applycling is deployed and reachable (see `docs/deploy/DEPLOY.md`)
-2. `APPLYCLING_INTAKE_SECRET` is set on the server in `/opt/applycling/.env`
+2. `APPLYCLING_INTAKE_SECRET` and `APPLYCLING_INTAKE_URL` are set on the VPS
 3. Local Hermes Telegram profile is set up (see `scripts/setup_hermes_telegram.sh`)
 
 ## Setup
 
-### 1. Get the intake secret
+### 1. Set environment variables
+
+Add the intake URL and secret to the applycling profile's `.env`:
 
 ```bash
-# From the VPS
-cat /opt/applycling/.env | grep APPLYCLING_INTAKE_SECRET
+echo "APPLYCLING_INTAKE_URL=https://app.applycling.com/api/intake" >> ~/.hermes/profiles/applycling/.env
+echo "APPLYCLING_INTAKE_SECRET=<secret from /opt/applycling/.env>" >> ~/.hermes/profiles/applycling/.env
 ```
 
-### 2. Update local Hermes SOUL.md
+Important: the applycling profile has its own `.env` at
+`~/.hermes/profiles/applycling/.env`. Do NOT use the global `~/.hermes/.env` —
+the profile gateway only reads from the profile directory.
 
-Copy the template from `docs/deploy/hermes_forwarding_template.md` to your local
-Hermes profile:
+### 2. Install the forwarding SOUL.md
+
+Copy the template to the profile directory:
 
 ```bash
 cp docs/deploy/hermes_forwarding_template.md ~/.hermes/profiles/applycling/SOUL.md
 ```
 
-Edit the file to set:
-- `INTAKE_URL` — your hosted workbench URL (e.g., `https://applycling.yourdomain.com/api/intake`)
-- `INTAKE_SECRET` — the value from `/opt/applycling/.env`
+The template references `$APPLYCLING_INTAKE_URL` and `$APPLYCLING_INTAKE_SECRET`
+as environment variables — no manual editing needed. Set the values in step 1.
 
 ### 3. Restart Hermes
 
-```bash
-# Stop any running Hermes gateway
-pkill -f "hermes gateway"
+If the applycling Hermes gateway is already running, restart it to pick up the
+new SOUL.md and env vars:
 
-# Restart
-applycling-hermes gateway install
+```bash
+# If using launchd
+launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling
+sleep 1
+launchctl bootstrap gui/$(id -u)/ai.hermes.gateway-applycling
+```
+
+Or reinstall from scratch:
+
+```bash
+applycling-hermes gateway install --force
 ```
 
 ## Verification
 
 1. Send a job URL to your Telegram bot
 2. Local Hermes should forward it to the hosted intake endpoint
-3. The job should appear in the hosted workbench UI at `https://applycling.yourdomain.com`
+3. The job should appear in the hosted workbench UI
 4. Package generation runs on the VPS, not locally
 
 ## Rollback to Local Generation
@@ -77,7 +89,8 @@ scripts/setup_hermes_telegram.sh
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| "Invalid intake secret" (401) | SOUL.md has wrong secret | Check `INTAKE_SECRET` in SOUL.md matches `/opt/applycling/.env` |
+| "Invalid intake secret" (401) | Wrong secret in profile .env | Check `APPLYCLING_INTAKE_SECRET` in `~/.hermes/profiles/applycling/.env` |
 | "Another generation is already running" (409) | Active run in progress | Wait for current run to complete, then retry |
 | Connection refused | applycling not running on VPS | `docker compose -f docker-compose.prod.yml ps` |
-| Hermes can't reach VPS | DNS or firewall | Verify `curl https://applycling.yourdomain.com/healthz` works from local machine |
+| Hermes can't reach VPS | DNS or firewall | Verify `curl https://app.applycling.com/healthz` works from local machine |
+| Gateway not receiving messages | Another gateway owns the bot token | Check for competing processes: `pgrep -fl openclaw` |

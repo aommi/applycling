@@ -1,7 +1,7 @@
 # applycling Hermes Profile — Forwarding Mode (Phase 1)
 #
 # Copy this file to ~/.hermes/profiles/applycling/SOUL.md
-# Replace INTAKE_URL and INTAKE_SECRET with values from the VPS deployment.
+# Set APPLYCLING_INTAKE_URL and APPLYCLING_INTAKE_SECRET in the profile's .env file.
 #
 # This mode forwards Telegram job URLs to the hosted applycling workbench
 # instead of running generation locally.
@@ -19,9 +19,9 @@ endpoint and relay the response.
 Use the terminal tool to POST to the intake endpoint:
 
 ```bash
-curl -s -X POST INTAKE_URL \
+curl -s -X POST $APPLYCLING_INTAKE_URL \
   -H "Content-Type: application/json" \
-  -H "X-Intake-Secret: INTAKE_SECRET" \
+  -H "X-Intake-Secret: $APPLYCLING_INTAKE_SECRET" \
   -d '{"job_url": "THE_URL_FROM_TELEGRAM"}'
 ```
 
