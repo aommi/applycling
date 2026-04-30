@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from applycling import jobs_service
@@ -175,7 +174,7 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
     job = jobs_service.create_job_from_url(url)
     job_id = job["id"]
 
-    # Set generating synchronously — elimates redirect race.
+    # Set generating synchronously — eliminates redirect race.
     jobs_service.set_job_status(job_id, "generating")
 
     # Fire and forget.
@@ -208,7 +207,7 @@ async def regenerate_job(request: Request, job_id: str) -> RedirectResponse:  # 
 # ── Health check ───────────────────────────────────────────────────────
 
 @router.get("/healthz")
-async def healthz() -> dict[str, str]:
+async def healthz() -> JSONResponse:
     """Liveness check — returns 200 when app is alive and DB is reachable.
 
     Uses a simple ``list_jobs()`` call to exercise the store connection.
@@ -217,9 +216,18 @@ async def healthz() -> dict[str, str]:
     """
     try:
         jobs_service.list_jobs()
-        return {"status": "ok", "db": "reachable"}
-    except Exception:
-        return {"status": "unhealthy", "db": "unreachable"}
+        return JSONResponse({"status": "ok", "db": "reachable"}, status_code=200)
+    except Exception as e:
+        import sys
+
+        print(
+            f"[healthz] DB unreachable: {e}",
+            file=sys.stderr, flush=True,
+        )
+        return JSONResponse(
+            {"status": "unhealthy", "db": "unreachable"},
+            status_code=503,
+        )
 
 
 # ── Init ───────────────────────────────────────────────────────────────
