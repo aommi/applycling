@@ -199,6 +199,11 @@ def register_startup_sweep(app: Any) -> None:
       ``heartbeat_at`` is older than ``APPLYCLING_STALE_RUN_TIMEOUT_MINUTES``.
 
     Does nothing when the backend is not Postgres.
+
+    .. warning::
+       Single-instance assumption — ``sweep_all_running()`` marks EVERY
+       running row as failed on startup.  Do not run multiple replicas of
+       the applycling workbench against the same Postgres database.
     """
     if not _is_postgres():
         return
@@ -219,8 +224,12 @@ def register_startup_sweep(app: Any) -> None:
                     f"[startup] Swept {swept} running pipeline run(s) — crash recovery.",
                     file=sys.stderr,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            import sys
+            print(
+                f"[startup] Sweep failed: {e}",
+                file=sys.stderr, flush=True,
+            )
 
         # Periodic heartbeat-based stale-run sweep (every 5 minutes).
         async def _periodic_sweep() -> None:
@@ -230,8 +239,12 @@ def register_startup_sweep(app: Any) -> None:
                     store.sweep_stale_runs()
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    pass
+                except Exception as e:
+                    import sys
+                    print(
+                        f"[sweep] Periodic stale-run sweep failed: {e}",
+                        file=sys.stderr, flush=True,
+                    )
 
         task = asyncio.create_task(_periodic_sweep())
         app.state._periodic_sweep_task = task

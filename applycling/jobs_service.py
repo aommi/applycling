@@ -30,7 +30,7 @@ from applycling.statuses import (
     TRANSITIONS,
 )
 from applycling.tracker import TrackerError, get_store, Job
-from applycling.tracker import _is_postgres, check_active_run as _check_active_run
+from applycling.tracker import _is_postgres
 
 _ARTIFACT_KINDS: tuple[str, ...] = (
     "resume_pdf",
@@ -308,12 +308,17 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         if run_id is None:
             # Guard blocked — clear the generating status the UI may have
             # already set (routes.py pre-sets "generating" before dispatch).
-            # Swallow the error if the job was still "new" — that transition
-            # is invalid and there's nothing to clean up.
+            # Swallow any TrackerError: the row may not exist, the transition
+            # may be invalid (e.g. job was still "new"), or the store may be
+            # unreachable.  The guard rejection is the load-bearing signal.
             try:
                 store.update_job(job_id, status="failed")
             except TrackerError:
                 pass
+            _record_status_reason(
+                job_id, "failed",
+                "Another generation is already running.",
+            )
             return {
                 "error": "Another generation is already running. "
                          "Please wait for it to complete before starting a new one.",
@@ -321,8 +326,12 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             }
         try:
             store.heartbeat_run(run_id)
-        except Exception:
-            pass
+        except Exception as e:
+            import sys
+            print(
+                f"[pipeline] pre-run heartbeat failed: {e}",
+                file=sys.stderr, flush=True,
+            )
 
     # ------------------------------------------------------------------
     # Pre-flight
@@ -385,8 +394,12 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
     if run_id:
         try:
             store.heartbeat_run(run_id)
-        except Exception:
-            pass
+        except Exception as e:
+            import sys
+            print(
+                f"[pipeline] post-run heartbeat failed: {e}",
+                file=sys.stderr, flush=True,
+            )
 
     # ------------------------------------------------------------------
     # Update workbench job with pipeline results (no duplicate to merge)
@@ -427,7 +440,11 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
                 pass  # Non-critical — pipeline already succeeded
 
     # Mark run as generated.
-    _finish_run(store, run_id, {"status": "generated"}, status="generated")
+    if run_id and _is_postgres():
+        try:
+            store.update_run(run_id, "generated")
+        except Exception:
+            pass
 
     # Return the final state
     try:
