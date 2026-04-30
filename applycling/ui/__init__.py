@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import secrets
 
@@ -34,13 +35,17 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
-        self._is_auth_disabled = bool(os.environ.get("APPLYCLING_NO_AUTH", "").strip())
+        self._is_auth_disabled = bool(
+            os.environ.get("APPLYCLING_NO_AUTH", "").strip()
+        )
         self._expected_user = os.environ.get("APPLYCLING_UI_AUTH_USER", "")
-        self._expected_password = os.environ.get("APPLYCLING_UI_AUTH_PASSWORD", "")
+        self._expected_password = os.environ.get(
+            "APPLYCLING_UI_AUTH_PASSWORD", ""
+        )
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Static files and templates don't go through the middleware.
-        if request.url.path.startswith("/static"):
+        if request.url.path.startswith("/static/"):
             return await call_next(request)
 
         # Auth disabled for local dev.
@@ -62,8 +67,6 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             return self._auth_required_response()
 
         try:
-            import base64
-
             decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
             user, _, password = decoded.partition(":")
         except Exception:
@@ -91,32 +94,64 @@ app.add_middleware(BasicAuthMiddleware)
 # ── Startup validation ──────────────────────────────────────────────────
 
 def _validate_hosted_secrets() -> None:
-    """Fail fast if hosted Postgres mode is active and required secrets are missing.
+    """Fail fast if hosted Postgres mode is active and required secrets are
+    missing or misconfigured.
 
-    PR 1 forward-declares APPLYCLING_INTAKE_SECRET as a required hosted env var,
-    so this check does not block workbench deployment before PR 6 lands.
+    Checks:
+    - Both UI auth credentials must be set (not just one).
+    - APPLYCLING_NO_AUTH must not be set in Postgres mode (prod bypass).
+    - APPLYCLING_INTAKE_SECRET must be set.
+
+    Raises RuntimeError with a list of all missing vars at once.
     """
+    import sys
+
     db_backend = os.environ.get("APPLYCLING_DB_BACKEND", "").strip().lower()
     if db_backend != "postgres":
         return
 
     missing: list[str] = []
-    if not os.environ.get("APPLYCLING_UI_AUTH_USER"):
+
+    user = os.environ.get("APPLYCLING_UI_AUTH_USER", "").strip()
+    password = os.environ.get("APPLYCLING_UI_AUTH_PASSWORD", "").strip()
+
+    # Both must be set — partial config is a misconfiguration.
+    if not user and not password:
         missing.append("APPLYCLING_UI_AUTH_USER")
-    if not os.environ.get("APPLYCLING_UI_AUTH_PASSWORD"):
         missing.append("APPLYCLING_UI_AUTH_PASSWORD")
+    elif not user:
+        missing.append("APPLYCLING_UI_AUTH_USER")
+    elif not password:
+        missing.append("APPLYCLING_UI_AUTH_PASSWORD")
+
+    # NO_AUTH is a dev convenience — refuse it in production.
+    no_auth = os.environ.get("APPLYCLING_NO_AUTH", "").strip()
+    if no_auth:
+        missing.append(
+            "APPLYCLING_NO_AUTH (must NOT be set in hosted Postgres mode)"
+        )
+
     if not os.environ.get("APPLYCLING_INTAKE_SECRET"):
         missing.append("APPLYCLING_INTAKE_SECRET")
 
     if missing:
-        raise RuntimeError(
+        msg = (
             f"Hosted Postgres mode requires the following env vars: "
             f"{', '.join(missing)}. "
             f"See docs/deploy/DEPLOY.md § Environment Variables."
         )
+        print(f"[startup] ERROR: {msg}", file=sys.stderr, flush=True)
+        raise RuntimeError(msg)
 
 
-_validate_hosted_secrets()
+@app.on_event("startup")
+async def _startup_validate() -> None:
+    """Validate hosted secrets at startup, not at module import time.
+
+    Running at startup avoids breaking tests and CLI commands that import
+    ``applycling.ui`` without a full hosted env configured.
+    """
+    _validate_hosted_secrets()
 
 # ── Startup sweep ───────────────────────────────────────────────────────
 

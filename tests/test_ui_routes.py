@@ -117,3 +117,100 @@ def test_regenerate_does_not_change_status_when_guard_blocks(client):
             "/jobs/some-id/regenerate", follow_redirects=False
         )
     mock_set.assert_not_called()
+# ── Auth middleware ─────────────────────────────────────────────────────
+
+
+def test_auth_401_without_credentials(monkeypatch, client):
+    """Workbench returns 401 when auth is configured and no credentials sent."""
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+    # Force middleware re-init by creating a fresh app.
+    from applycling.ui import BasicAuthMiddleware
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    # Build a test app with auth enabled.
+    test_app = FastAPI()
+    test_app.add_middleware(
+        BasicAuthMiddleware,
+    )
+
+    @test_app.get("/")
+    def _root() -> dict:
+        return {"ok": True}
+
+    tc = TestClient(test_app)
+    response = tc.get("/")
+    assert response.status_code == 401
+    assert "WWW-Authenticate" in response.headers
+
+
+def test_auth_200_with_valid_credentials(monkeypatch):
+    """Workbench returns 200 when valid Basic Auth credentials are sent."""
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+
+    from applycling.ui import BasicAuthMiddleware
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    test_app = FastAPI()
+    test_app.add_middleware(BasicAuthMiddleware)
+
+    @test_app.get("/")
+    def _root() -> dict:
+        return {"ok": True}
+
+    tc = TestClient(test_app)
+    import base64
+
+    creds = base64.b64encode(b"admin:secret").decode()
+    response = tc.get("/", headers={"Authorization": f"Basic {creds}"})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_healthz_exempted_from_auth(monkeypatch):
+    """GET /healthz returns 200 without auth even when credentials are set."""
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+
+    from applycling.ui import BasicAuthMiddleware
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    test_app = FastAPI()
+    test_app.add_middleware(BasicAuthMiddleware)
+
+    @test_app.get("/healthz")
+    def _healthz() -> dict:
+        return {"status": "ok"}
+
+    tc = TestClient(test_app)
+    response = tc.get("/healthz")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_no_auth_env_bypasses_auth(monkeypatch):
+    """APPLYCLING_NO_AUTH=1 disables auth even when credentials are configured."""
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
+    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+    monkeypatch.setenv("APPLYCLING_NO_AUTH", "1")
+
+    from applycling.ui import BasicAuthMiddleware
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    test_app = FastAPI()
+    test_app.add_middleware(BasicAuthMiddleware)
+
+    @test_app.get("/")
+    def _root() -> dict:
+        return {"ok": True}
+
+    tc = TestClient(test_app)
+    # No auth header — should pass because NO_AUTH is set.
+    response = tc.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
