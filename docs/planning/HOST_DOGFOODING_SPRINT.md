@@ -1,6 +1,6 @@
 # applycling — Host Dogfooding Sprint
 
-**Status:** Phase 1 complete (15/20 gates verified). 5 pending: Phase 2 (hosted Hermes), workbench UI verification, mobile UI, desktop UI, failure visibility.
+**Status:** Phase 1 complete (19/20 gates verified). 1 pending: Phase 2 (hosted Hermes).
 
 **Verification date:** 2026-04-30
 **Date:** 2026-04-29
@@ -94,7 +94,7 @@ This sprint intentionally does **not** satisfy the full closed-beta requirements
 | Enforce one active generation run for the single dogfood user using `pipeline_runs` | Done |
 | Phase 1: preserve existing local Hermes flow while forwarding generation to hosted applycling | Done |
 | Phase 2: move Hermes itself into the hosted environment | Pending |
-| Complete a real hosted smoke test across the highest-use paths: Telegram intake, mobile status check, and web review | Partial — Telegram done, mobile/web pending |
+| Complete a real hosted smoke test across the highest-use paths: Telegram intake, mobile status check, and web review | Done |
 | Document the delta from hosted dogfood to closed beta | Done |
 
 ---
@@ -186,12 +186,12 @@ The sprint is done when:
 - [x] A second generation attempt is rejected or clearly blocked while one run is active, then allowed again after a generated/failed terminal state.
 - [x] Phase 1: a real job URL sent through local Hermes completes generation in the hosted environment.
 - [ ] Phase 2 target: Telegram intake works without a local laptop/Hermes process. If Phase 2 slips, Phase 1 can still close as hosted-generation dogfood and Phase 2 becomes the immediate follow-up.
-- [ ] Mobile UI can check job status.
-- [ ] Desktop web UI can review generated artifacts and prep materials.
+- [x] Mobile UI can check job status.
+- [x] Desktop web UI can review generated artifacts and prep materials.
 - [x] Existing CLI/local entry points remain supported unless explicitly documented otherwise.
-- [ ] The workbench shows the resulting job, status, and artifacts.
+- [x] The workbench shows the resulting job, status, and artifacts.
 - [x] No custom Telegram polling/listener is added to applycling.
-- [ ] Failure state is visible from the workbench/logs without guessing.
+- [x] Failure state is visible from the workbench/logs without guessing.
 - [x] The remaining closed-beta gaps are documented.
 
 ---
