@@ -3,9 +3,9 @@
 ## Current State — Host Dogfooding Sprint
 
 **Sprint:** Host Dogfooding (docs/planning/HOST_DOGFOODING_SPRINT.md)
-**Date:** 2026-04-30
+**Date:** 2026-05-01
 **Test suite:** 227 passed, 12 skipped
-**Gates:** 19/20 verified — only Phase 2 (hosted Hermes) remains
+**Gates:** 20/20 — SPRINT COMPLETE
 
 ### All Gates Merged
 
@@ -16,38 +16,32 @@
 | 3 | #27, #29 | Artifact docs, healthz, async submit |
 | 4 | #30 | Basic Auth, fail-fast validators |
 | 5 | #31 | /api/intake, Pydantic HttpUrl |
-| 6 (smoke) | - | Telegram → intake → generation, bind mount, 409 guard |
-| 7 (docs) | #35, #37 | Hermes forwarding profile, sprint gate checklist |
-| 8 (docs) | #36 | Deploy checklist fix (output_dir), smoke results |
+| 6 (I1 smoke) | - | Full smoke: Telegram → intake → generation → artifacts → UI |
+| 7 (H1 docs) | #35 | Hermes forwarding template (env vars), SOUL.md |
+| 7 (gate checklist) | #37, #38 | Sprint acceptance gate tracking (19/20 → 20/20) |
+| 8 (docs fixes) | #36 | Deploy checklist fix (output_dir allowlist) |
+| Phase 2 | #39, #40, #41 | Hosted Hermes: compose, docs, setup script |
 
-### Gate 6 Smoke Results
+### Phase 2 — Hosted Hermes (Deployed)
 
-- Telegram → local Hermes → intake → generation: 200 OK (job 3fc23920)
-- Active-run guard: 409 on concurrent submit
-- Bind mount survival: verified with TEST_SURVIVAL.txt
-- Workbench UI: job board, status, artifacts — all verified
-- Mobile UI: usable
-- 19/20 acceptance gates checked off
+- Hermes installed on VPS via official install script (not Docker)
+- Profile at `~/.hermes/profiles/applycling/` on VPS
+- Reaches applycling at `http://127.0.0.1:8080/api/intake` (localhost port mapping)
+- `scripts/setup_hosted_hermes.sh`: one-command setup after one-time env vars
+- Setup reads shared secrets from `/opt/applycling/.env` (single source of truth)
+- Model: `deepseek-chat` (DeepSeek) — routing only, ~$0.25/mo
 
-### Phase 2 Prep (Ready for Deploy)
+### Full Path (Verified)
 
-- `docker-compose.prod.yml`: hermes service added
-- `docs/deploy/HOSTED_HERMES.md`: full setup guide
-- Profile structure: `/opt/hermes-profile/profiles/applycling/`
-- Intake URL: `http://applycling:8080/api/intake` (internal Docker network)
-- Image: `hermes-agent:latest` (built from repo on VPS)
-
-### Phase 2 Deploy Steps (to do on VPS)
-
-1. Clone hermes-agent: `git clone https://github.com/nous/hermes-agent.git /opt/hermes-agent`
-2. Build image: `cd /opt/hermes-agent && docker build -t hermes-agent:latest .`
-3. Create profile: `mkdir -p /opt/hermes-profile/profiles/applycling/sessions`
-4. Provision config.yaml, .env, SOUL.md from laptop
-5. Start: `docker compose -f docker-compose.prod.yml up -d hermes`
-6. Stop local: `launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling`
+```
+Telegram → hosted Hermes (VPS) → POST 127.0.0.1:8080/api/intake
+  → applycling (Docker) → pipeline → Postgres + /opt/applycling/output/
+```
 
 ### Open Issues
 
 - `test_concurrent_inserts_only_one_succeeds` FK fix committed to main (973fd99)
 - Server startup in Postgres mode requires all auth/secrets vars or fails fast
-- Config output_dir bug: VPS config.json had laptop path — fixed, deploy checklist added (#36)
+- Config output_dir bug: fixed + deploy checklist added (#36)
+- hermes-agent has no public Docker image — future: containerize when available
+- One-time setup pain: TELEGRAM_BOT_TOKEN + DEEPSEEK_API_KEY must be in /opt/applycling/.env
