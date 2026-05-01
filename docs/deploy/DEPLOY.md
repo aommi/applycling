@@ -111,6 +111,11 @@ APPLYCLING_INTAKE_SECRET=<generated-secret>
 
 # ── Active-run guard ───────────────────────────────────
 APPLYCLING_STALE_RUN_TIMEOUT_MINUTES=120
+
+# ── Hermes Telegram gateway ────────────────────────────
+TELEGRAM_BOT_TOKEN=<from BotFather>
+TELEGRAM_ALLOWED_USERS=26605267
+DEEPSEEK_API_KEY=<deepseek api key for routing LLM>
 ```
 
 ### Secret Independence
