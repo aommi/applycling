@@ -279,11 +279,12 @@ def _clear_superseded_state(agent: str, state: dict) -> None:
             del state["agents"][other_agent]
 
 
-def _parse_args() -> tuple[str, Path, bool]:
+def _parse_args() -> tuple[str, Path, bool, bool]:
     """Parse command-line arguments.
 
-    Returns (agent_name, project_root, force_all).
+    Returns (agent_name, project_root, force_all, check_mode).
     Rejects unknown flags for single-agent mode.
+    --check and --force are mutually exclusive.
     """
     if len(sys.argv) < 2:
         print(__doc__)
@@ -295,6 +296,7 @@ def _parse_args() -> tuple[str, Path, bool]:
     agent_name = sys.argv[1].lower()
     project_root = Path(__file__).parent.parent
     force_all = False
+    check_mode = False
 
     # Optional positional project_root override (memory-kit style)
     arg_idx = 2
@@ -302,26 +304,32 @@ def _parse_args() -> tuple[str, Path, bool]:
         project_root = Path(sys.argv[arg_idx]).resolve()
         arg_idx += 1
 
-    # Only 'all' accepts --force
+    # Only 'all' accepts --force and --check
     remaining = [a for a in sys.argv[arg_idx:] if a.startswith("-")]
     if remaining:
         if agent_name == "all":
             if "--force" in remaining:
                 force_all = True
                 remaining.remove("--force")
+            if "--check" in remaining:
+                check_mode = True
+                remaining.remove("--check")
             if remaining:
                 print(f"Unknown flag(s): {', '.join(remaining)}")
                 sys.exit(1)
+            if force_all and check_mode:
+                print("Error: --force and --check are mutually exclusive.")
+                sys.exit(1)
         else:
             print(f"Unknown flag(s): {', '.join(remaining)}")
-            print("Note: --force is only valid with 'all'. Single-agent runs always regenerate.")
+            print("Note: --force and --check are only valid with 'all'.")
             sys.exit(1)
 
-    return agent_name, project_root, force_all
+    return agent_name, project_root, force_all, check_mode
 
 
 def main():
-    agent_name, project_root, force_all = _parse_args()
+    agent_name, project_root, force_all, check_mode = _parse_args()
 
     if agent_name == "init":
         cmd_init(project_root)
@@ -337,6 +345,16 @@ def main():
                 "Enable some agents or run with --force to generate all."
             )
             sys.exit(0)
+
+        if check_mode:
+            # Delegate check to memory-kit's generate.py (avoids sys.path conflicts)
+            import subprocess
+            mk_gen = str(project_root / ".agent" / "memory-kit" / "generate.py")
+            result = subprocess.run(
+                [sys.executable, mk_gen, "all", "--check", project_root],
+                capture_output=False,
+            )
+            sys.exit(result.returncode)
 
         state = load_state(project_root)
         mode = "ALL agents (--force)" if force_all else "enabled agents only"

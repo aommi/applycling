@@ -44,8 +44,7 @@ Short version:
 
 ## Switching agents
 
-The memory files (`memory/semantic.md`, `memory/working.md`, `DECISIONS.md`, `dev/`) are
-portable. Only the entry-point file and hook config differ per agent. To switch:
+The canonical memory files (`memory/semantic.md`, `memory/working.example.md`, `DECISIONS.md`) are tracked and portable across agents. `memory/working.md` is local session state (gitignored), bootstrapped from the `working.example.md` template. Only the entry-point file and hook config differ per agent. To switch:
 
 ```bash
 python .agent/generate.py <agent>

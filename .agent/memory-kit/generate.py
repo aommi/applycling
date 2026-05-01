@@ -23,6 +23,8 @@ Where <agent> is one of:
 FLAGS (valid only with 'all'):
     --force        When used with 'all', generate ALL agents regardless of config
                    or previous generation state.
+    --check        Compare generated files against expected output. Exit non-zero
+                   on drift. Mutually exclusive with --force.
 
 NOTE: codex and hermes both write AGENTS.md. The hermes version is a superset
 (adds agentskills.io note). If you use both agents, run `hermes` or `all`.
@@ -99,6 +101,25 @@ AGENT_OUTPUTS = {
         ".agents/workflows/task-switch.md",
     ],
 }
+
+
+def _bootstrap_working_md(project_root: Path) -> None:
+    """Create memory/working.md from memory/working.example.md if it exists.
+
+    Never overwrites an existing working.md. If the example file is missing
+    (e.g. a pre-existing project that hasn't adopted the template yet), falls
+    back to a minimal skeleton.
+    """
+    working_path = project_root / "memory" / "working.md"
+    if working_path.exists():
+        return  # never overwrite
+
+    example_path = project_root / "memory" / "working.example.md"
+    if example_path.exists():
+        working_path.write_text(example_path.read_text())
+    else:
+        working_path.parent.mkdir(parents=True, exist_ok=True)
+        working_path.write_text("# Working Memory\n\n")
 
 
 def cmd_init(project_root: Path) -> None:
@@ -191,14 +212,39 @@ def cmd_init(project_root: Path) -> None:
     memory_dir = project_root / "memory"
     memory_dir.mkdir(exist_ok=True)
     created = []
-    for fname, heading in (("semantic.md", "Semantic Memory"), ("working.md", "Working Memory")):
-        fpath = memory_dir / fname
-        if not fpath.exists():
-            fpath.write_text(f"# {heading}\n\n")
-            created.append(f"memory/{fname}")
+
+    # semantic.md — canonical project memory (tracked)
+    semantic_path = memory_dir / "semantic.md"
+    if not semantic_path.exists():
+        semantic_path.write_text("# Semantic Memory\n\n")
+        created.append("memory/semantic.md")
+
+    # working.example.md — tracked template for local working memory
+    example_path = memory_dir / "working.example.md"
+    if not example_path.exists():
+        example_path.write_text(
+            "# Working Memory\n\n"
+            "## Current Focus\n\n"
+            "(none)\n\n"
+            "## In Progress\n\n"
+            "(none)\n\n"
+            "## Blocked\n\n"
+            "(none)\n\n"
+            "## Next Steps\n\n"
+            "(none)\n"
+        )
+        created.append("memory/working.example.md")
+
+    # working.md — local session state (gitignored), bootstrapped from example
+    working_path = memory_dir / "working.md"
+    if not working_path.exists():
+        _bootstrap_working_md(project_root)
+        created.append("memory/working.md")
+
     if created:
         print("Created: " + ", ".join(created))
 
+    ensure_gitignored(project_root, "memory/working.md")
     ensure_gitignored(project_root, ".agent/.last_checked_commit")
 
     print("\nNext steps:")
@@ -306,11 +352,12 @@ def _clear_superseded_state(agent: str, state: dict) -> None:
             del state["agents"][other_agent]
 
 
-def _parse_args() -> tuple[str, Path, bool]:
+def _parse_args() -> tuple[str, Path, bool, bool]:
     """Parse command-line arguments.
 
-    Returns (agent_name, project_root, force_all).
+    Returns (agent_name, project_root, force_all, check_mode).
     Rejects unknown flags for single-agent mode.
+    --check and --force are mutually exclusive.
     """
     if len(sys.argv) < 2:
         print(__doc__)
@@ -322,6 +369,7 @@ def _parse_args() -> tuple[str, Path, bool]:
     agent_name = sys.argv[1].lower()
     project_root = DEFAULT_PROJECT_ROOT
     force_all = False
+    check_mode = False
 
     # Allow overriding project root via second arg
     arg_idx = 2
@@ -329,26 +377,75 @@ def _parse_args() -> tuple[str, Path, bool]:
         project_root = Path(sys.argv[arg_idx]).resolve()
         arg_idx += 1
 
-    # Only 'all' accepts --force
+    # Only 'all' accepts --force and --check
     remaining = [a for a in sys.argv[arg_idx:] if a.startswith("-")]
     if remaining:
         if agent_name == "all":
             if "--force" in remaining:
                 force_all = True
                 remaining.remove("--force")
+            if "--check" in remaining:
+                check_mode = True
+                remaining.remove("--check")
             if remaining:
                 print(f"Unknown flag(s): {', '.join(remaining)}")
                 sys.exit(1)
+            if force_all and check_mode:
+                print("Error: --force and --check are mutually exclusive.")
+                sys.exit(1)
         else:
             print(f"Unknown flag(s): {', '.join(remaining)}")
-            print("Note: --force is only valid with 'all'. Single-agent runs always regenerate.")
+            print("Note: --force and --check are only valid with 'all'.")
             sys.exit(1)
 
-    return agent_name, project_root, force_all
+    return agent_name, project_root, force_all, check_mode
+
+
+def _run_check(project_root: Path, config: dict, enabled_agents: list[str]) -> int:
+    """Run check mode across enabled agents. Returns exit code (0 = clean)."""
+    import importlib
+
+    drift_count = 0
+    print(f"Checking for drift: {', '.join(enabled_agents)}\n")
+
+    # When both codex and hermes are enabled, hermes supersedes codex
+    # (both write AGENTS.md). Skip codex's check to avoid false drift.
+    if "codex" in enabled_agents and "hermes" in enabled_agents:
+        enabled_agents = [a for a in enabled_agents if a != "codex"]
+
+    for name in enabled_agents:
+        # Load the adapter module and call its check() function
+        adapter_name = name.replace("-", "_")
+        try:
+            mod = importlib.import_module(f"adapters.{adapter_name}")
+        except ImportError:
+            print(f"  WARN  {name:<13} — adapter not found, skipping check")
+            continue
+
+        if not hasattr(mod, "check"):
+            print(f"  WARN  {name:<13} — no check function, skipping")
+            continue
+
+        diffs = mod.check(project_root, config)
+        if not diffs:
+            print(f"  OK    {name:<13} — no drift")
+        else:
+            for diff in diffs:
+                drift_count += 1
+                print(f"  DRIFT {name:<13}")
+                print(diff)
+                print()
+
+    if drift_count:
+        print(f"\n{drift_count} file(s) have drifted. Run `generate.py all` to regenerate.")
+    else:
+        print("\nAll generated files match expected output.")
+
+    return 1 if drift_count else 0
 
 
 def main():
-    agent_name, project_root, force_all = _parse_args()
+    agent_name, project_root, force_all, check_mode = _parse_args()
 
     if agent_name == "init":
         cmd_init(project_root)
@@ -364,6 +461,12 @@ def main():
                 "Enable some agents or run with --force to generate all."
             )
             sys.exit(0)
+
+        if check_mode:
+            sys.exit(_run_check(project_root, config, enabled_agents))
+
+        # Bootstrap working memory from template if missing (e.g. fresh clone)
+        _bootstrap_working_md(project_root)
 
         state = load_state(project_root)
         mode = "ALL agents (--force)" if force_all else "enabled agents only"
