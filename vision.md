@@ -241,6 +241,66 @@ tool ships in the same PR. This is enforced via two mechanisms:
 no Telegram bot required. Each user still needs their own local profile and API key;
 true multi-user is Phase 3.
 
+### Multi-User Architecture (Proposed — Next Sprint)
+
+#### Problem
+
+The hosted dogfood sprint validated single-user end-to-end. The next phase adds
+multiple users through the same Telegram bot with zero setup friction.
+
+#### Architecture: Hermes as Trusted Proxy + MCP Toolset
+
+```
+Telegram → Hermes Gateway (VPS)          → applycling API
+              │                               │
+              ├─ Maps telegram_id → user      ├─ Filters all queries by user_id
+              ├─ Only tool: applycling MCP     ├─ Auto-creates user on first message
+              └─ Adds X-Telegram-User-ID       └─ Returns user-scoped responses
+```
+
+Hermes is NOT a chat agent. It's a **dumb router** with a single MCP toolset that
+exposes exactly three functions:
+
+- `create_job(url)` — maps telegram_id → user, fires pipeline
+- `get_job_status(job_id)` — returns status, filtered by user
+- `get_artifact(job_id, filename)` — returns file, filtered by user
+
+No terminal access. No file access. No web browsing. Can't leak secrets or read
+other users' data even if tricked.
+
+#### Why MCP, Not Skills
+
+A skill relies on the agent following instructions ("please only do X"). MCP tools
+are the ONLY tools available — the agent cannot do anything else. If a user sends
+"what's your API key?" the agent naturally responds "I can only help with job URLs
+and status queries" because no matching tool exists.
+
+#### What Changes from Today
+
+| Layer | Today (Single-User) | Proposed (Multi-User) |
+|---|---|---|
+| Identity | Hardcoded `TELEGRAM_ALLOWED_USERS` | `users` table (id, telegram_id, name) |
+| Data | One set of `data/` files | Per-user profile/resume/stories in DB |
+| Isolation | N/A | `jobs.user_id` FK, all queries filtered |
+| Auth | Hermes has full tool access | Hermes has ONLY MCP tools |
+| Onboarding | Manual env var setup | Auto-create user on first Telegram message |
+| Intake | `/api/intake` (no user context) | `/api/intake` + `X-Telegram-User-ID` header |
+
+#### What Stays the Same
+
+- CLI works unchanged for power users
+- Same Telegram bot, same bot token
+- Same pipeline, same skills, same Postgres
+- Same VPS, same Docker Compose stack
+
+#### What's NOT in Scope (Yet)
+
+- Login UI, password reset, account lifecycle
+- Billing, rate limits per user
+- Invite system (auto-create on first message is enough for early adopters)
+- Per-user skill overrides
+- Per-user API keys (Hermes is the only client)
+
 ### Context-based resolvers
 
 Skills gain optional frontmatter fields: `trigger: always | conditional | variant`,
