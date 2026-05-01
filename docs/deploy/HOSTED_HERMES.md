@@ -5,47 +5,41 @@
 Phase 2 moves the Hermes Telegram gateway from the local machine into the hosted
 environment. After this, Telegram intake works without the local laptop running.
 
+Hermes runs directly on the VPS host (not in Docker) via the official install
+script. It reaches applycling at `http://127.0.0.1:8080` through a localhost-only
+port mapping in docker-compose.prod.yml.
+
 ```
-Telegram → hosted Hermes → POST http://applycling:8080/api/intake → pipeline → Postgres + artifacts
+Telegram → hosted Hermes → POST http://127.0.0.1:8080/api/intake → pipeline → Postgres + artifacts
 ```
 
 ## Prerequisites
 
 - Phase 1 (local Hermes forwarding) is verified and working
 - VPS has Docker and git installed
+- `applycling` port 8080 is exposed on localhost (in docker-compose.prod.yml since PR #39)
 
 ## Setup
 
-### 1. Build the hermes-agent image
-
-Clone and build hermes-agent on the VPS:
+### 1. Install Hermes on the VPS
 
 ```bash
-cd /opt
-git clone https://github.com/nous/hermes-agent.git
-cd hermes-agent
-docker build -t hermes-agent:latest .
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
 ```
 
-The build takes a few minutes. The resulting image is ~2 GB.
+This installs the `hermes` CLI and dependencies.
 
 ### 2. Create the applycling profile
 
-Create the profile directory structure:
+Create the profile directory:
 
 ```bash
-mkdir -p /opt/hermes-profile/profiles/applycling/sessions
+mkdir -p ~/.hermes/profiles/applycling/sessions
 ```
 
 #### config.yaml
 
-Copy the local applycling profile config:
-
-```bash
-scp ~/.hermes/profiles/applycling/config.yaml root@vps:/opt/hermes-profile/profiles/applycling/
-```
-
-Or create a minimal one:
+Create `~/.hermes/profiles/applycling/config.yaml`:
 
 ```yaml
 model:
@@ -59,47 +53,56 @@ agent:
 
 #### .env
 
-Create `/opt/hermes-profile/profiles/applycling/.env`:
+Create `~/.hermes/profiles/applycling/.env`:
 
 ```bash
-# Telegram
-TELEGRAM_BOT_TOKEN=<same as local applycling bot>
+# Telegram (same bot token as local applycling profile)
+TELEGRAM_BOT_TOKEN=<your bot token>
 TELEGRAM_ALLOWED_USERS=26605267
 
-# Routing LLM (DeepSeek — separate from pipeline's Anthropic key)
+# Routing LLM (DeepSeek — minimal tokens for URL routing)
 DEEPSEEK_API_KEY=<your deepseek key>
 
-# Intake — internal Docker network, not the public URL
-APPLYCLING_INTAKE_URL=http://applycling:8080/api/intake
+# Intake — localhost since Hermes runs on the host
+APPLYCLING_INTAKE_URL=http://127.0.0.1:8080/api/intake
 APPLYCLING_INTAKE_SECRET=<same as /opt/applycling/.env>
 
-# Gateway token (generate with: openssl rand -hex 16)
-HERMES_GATEWAY_TOKEN=<generate new>
+# Gateway token
+HERMES_GATEWAY_TOKEN=<openssl rand -hex 16>
 ```
-
-Important: `APPLYCLING_INTAKE_URL` uses the internal Docker hostname
-`applycling:8080`, not `https://app.applycling.com/api/intake`. The Hermes
-container is on the same Docker network and reaches applycling directly.
 
 #### SOUL.md
 
-Copy the forwarding template:
+From your laptop:
 
 ```bash
-cp docs/deploy/hermes_forwarding_template.md /opt/hermes-profile/profiles/applycling/SOUL.md
+scp ~/.hermes/profiles/applycling/SOUL.md root@applycling:~/.hermes/profiles/applycling/
 ```
 
-### 3. Start Hermes
+Or copy the template from the repo:
 
 ```bash
-cd /opt/applycling/app
-docker compose -f docker-compose.prod.yml up -d hermes
+cp /opt/applycling/app/docs/deploy/hermes_forwarding_template.md ~/.hermes/profiles/applycling/SOUL.md
+```
+
+### 3. Install and start the gateway service
+
+```bash
+hermes --profile applycling gateway install --force
+```
+
+This creates a systemd service that runs `hermes --profile applycling gateway run`.
+
+Check status:
+
+```bash
+systemctl status hermes-gateway-applycling
+hermes --profile applycling gateway status
 ```
 
 ### 4. Stop local Hermes
 
-On your laptop, stop the local Hermes gateway so it doesn't compete for the
-Telegram bot token:
+On your laptop:
 
 ```bash
 launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling
@@ -107,21 +110,18 @@ launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling
 
 ### 5. Verify
 
-Send a job URL through Telegram. The hosted Hermes should pick it up and forward
-to the intake endpoint.
+Send a job URL through Telegram. The hosted Hermes should pick it up.
 
 ```bash
-# Check Hermes logs
-docker compose -f docker-compose.prod.yml logs -f hermes
+# Watch logs
+hermes --profile applycling logs --follow
 ```
 
-## Rollback to Phase 1
-
-If something goes wrong, revert to local Hermes:
+## Rollback
 
 ```bash
-# On VPS: stop the hosted Hermes
-docker compose -f docker-compose.prod.yml stop hermes
+# On VPS: stop hosted Hermes
+systemctl stop hermes-gateway-applycling
 
 # On laptop: restart local Hermes
 launchctl bootstrap gui/$(id -u)/ai.hermes.gateway-applycling
@@ -131,16 +131,13 @@ launchctl bootstrap gui/$(id -u)/ai.hermes.gateway-applycling
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| Hermes container exits immediately | Missing profile files | Check `/opt/hermes-profile/profiles/applycling/` has config.yaml, .env, SOUL.md |
-| Telegram not responding | Old local Hermes still running | `launchctl bootout` on laptop |
-| "Connection refused" to intake | Wrong INTAKE_URL | Must be `http://applycling:8080/api/intake` (internal) |
+| Hermes can't reach intake | Port 8080 not exposed | Check `docker-compose.prod.yml` has `127.0.0.1:8080:8080` |
+| Telegram not responding | Local Hermes still running | `launchctl bootout` on laptop |
 | "Invalid intake secret" (401) | Secret mismatch | Check APPLYCLING_INTAKE_SECRET matches `/opt/applycling/.env` |
 | DEEPSEEK_API_KEY missing | Profile .env incomplete | Hermes needs a routing LLM even for simple forwarding |
 
 ## Limitations
 
-- `/healthz` on the workbench covers applycling + Postgres, not Hermes liveness.
-  If Hermes stops polling Telegram, check: `docker compose -f docker-compose.prod.yml ps hermes`
-- Hermes sessions are stored in the hermes-profile mount and persist across
-  container restarts.
-- The hermes-agent image must be rebuilt when hermes-agent is updated upstream.
+- `/healthz` covers applycling + Postgres, not Hermes. Check: `systemctl status hermes-gateway-applycling`
+- Hermes sessions stored at `~/.hermes/profiles/applycling/sessions/`
+- Updates: re-run the install script to update hermes-agent

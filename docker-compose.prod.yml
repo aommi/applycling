@@ -30,9 +30,9 @@ services:
       - /opt/applycling/data:/app/data
       - /opt/applycling/output:/app/output
     command: ["python", "-m", "applycling.cli", "ui", "serve", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "127.0.0.1:8080:8080"  # localhost only — for host-installed Hermes
     restart: unless-stopped
-    # Port 8080 is internal only — Caddy reverse proxies to it.
-    # Do NOT expose 8080 on the host unless you know what you're doing.
 
   caddy:
     image: caddy:2
@@ -45,18 +45,6 @@ services:
       - caddy_config:/config
     depends_on:
       - applycling
-    restart: unless-stopped
-
-  hermes:
-    image: hermes-agent:latest
-    container_name: hermes-applycling
-    depends_on:
-      - applycling
-    volumes:
-      - /opt/hermes-profile:/opt/data
-    env_file:
-      - /opt/hermes-profile/profiles/applycling/.env
-    command: ["gateway", "run", "--profile", "applycling"]
     restart: unless-stopped
 
 volumes:
