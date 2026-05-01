@@ -45,3 +45,10 @@ Telegram → hosted Hermes (VPS) → POST 127.0.0.1:8080/api/intake
 - Config output_dir bug: fixed + deploy checklist added (#36)
 - hermes-agent has no public Docker image — future: containerize when available
 - One-time setup pain: TELEGRAM_BOT_TOKEN + DEEPSEEK_API_KEY must be in /opt/applycling/.env
+
+### Current Product Question
+
+- User is reassessing positioning because LinkedIn now has a native Job tracker and Hermes-per-user setup conflicts with the original multi-user bot idea.
+- Key framing: tracker/status is commoditized; applycling's defensible wedge is URL → high-quality application package + exact artifact history, with CLI/library/MCP as the strongest near-term distribution.
+- Product strategy reframed in `docs/planning/PRODUCT_STRATEGY.md`: applycling is a package engine with two front doors — hosted Telegram-first product for normal users, MCP server for agent-native power users.
+- Updated strategy kills generic multi-channel gateway middleware for now; direct Telegram Bot API + `/start <token>` binding is the proposed v1 hosted lane. Hermes remains dogfood/power-user path via MCP skill wrapper, not consumer runtime.
