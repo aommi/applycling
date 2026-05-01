@@ -47,6 +47,18 @@ services:
       - applycling
     restart: unless-stopped
 
+  hermes:
+    image: hermes-agent:latest
+    container_name: hermes-applycling
+    depends_on:
+      - applycling
+    volumes:
+      - /opt/hermes-profile:/opt/data
+    env_file:
+      - /opt/hermes-profile/profiles/applycling/.env
+    command: ["gateway", "run", "--profile", "applycling"]
+    restart: unless-stopped
+
 volumes:
   pgdata:
   caddy_data:
