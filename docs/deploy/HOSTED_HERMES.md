@@ -21,86 +21,42 @@ Telegram → hosted Hermes → POST http://127.0.0.1:8080/api/intake → pipelin
 
 ## Setup
 
+### 0. One-time: add Hermes secrets to applycling env
+
+On your laptop, get the values:
+
+```bash
+grep TELEGRAM_BOT_TOKEN ~/.hermes/profiles/applycling/.env
+grep DEEPSEEK_API_KEY ~/.hermes/.env
+```
+
+On the VPS, add them to `/opt/applycling/.env`:
+
+```bash
+echo 'TELEGRAM_BOT_TOKEN=<paste>' >> /opt/applycling/.env
+echo 'TELEGRAM_ALLOWED_USERS=26605267' >> /opt/applycling/.env
+echo 'DEEPSEEK_API_KEY=<paste>' >> /opt/applycling/.env
+```
+
+This is one-time. The setup script reads all secrets from `/opt/applycling/.env`.
+
 ### 1. Install Hermes on the VPS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
 ```
 
-This installs the `hermes` CLI and dependencies.
-
-### 2. Create the applycling profile
-
-Create the profile directory:
+### 2. Run the setup script
 
 ```bash
-mkdir -p ~/.hermes/profiles/applycling/sessions
+cd /opt/applycling/app && git pull
+bash scripts/setup_hosted_hermes.sh
 ```
 
-#### config.yaml
+This reads shared secrets from `/opt/applycling/.env` (Telegram bot token, DeepSeek
+key, intake secret), creates the Hermes profile, and installs the gateway service.
 
-Create `~/.hermes/profiles/applycling/config.yaml`:
-
-```yaml
-model:
-  default: deepseek-v4-pro
-  provider: deepseek
-toolsets:
-  - hermes-cli
-agent:
-  max_turns: 90
-```
-
-#### .env
-
-Create `~/.hermes/profiles/applycling/.env`:
-
-```bash
-# Telegram (same bot token as local applycling profile)
-TELEGRAM_BOT_TOKEN=<your bot token>
-TELEGRAM_ALLOWED_USERS=26605267
-
-# Routing LLM (DeepSeek — minimal tokens for URL routing)
-DEEPSEEK_API_KEY=<your deepseek key>
-
-# Intake — localhost since Hermes runs on the host
-APPLYCLING_INTAKE_URL=http://127.0.0.1:8080/api/intake
-APPLYCLING_INTAKE_SECRET=<same as /opt/applycling/.env>
-
-# Gateway token
-HERMES_GATEWAY_TOKEN=<openssl rand -hex 16>
-```
-
-#### SOUL.md
-
-From your laptop:
-
-```bash
-scp ~/.hermes/profiles/applycling/SOUL.md root@applycling:~/.hermes/profiles/applycling/
-```
-
-Or copy the template from the repo:
-
-```bash
-cp /opt/applycling/app/docs/deploy/hermes_forwarding_template.md ~/.hermes/profiles/applycling/SOUL.md
-```
-
-### 3. Install and start the gateway service
-
-```bash
-hermes --profile applycling gateway install --force
-```
-
-This creates a systemd service that runs `hermes --profile applycling gateway run`.
-
-Check status:
-
-```bash
-systemctl status hermes-gateway-applycling
-hermes --profile applycling gateway status
-```
-
-### 4. Stop local Hermes
+### 3. Stop local Hermes
 
 On your laptop:
 
@@ -108,12 +64,12 @@ On your laptop:
 launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling
 ```
 
-### 5. Verify
+### 4. Verify
 
-Send a job URL through Telegram. The hosted Hermes should pick it up.
+Send a job URL through Telegram:
 
 ```bash
-# Watch logs
+# Watch logs on VPS
 hermes --profile applycling logs --follow
 ```
 
@@ -141,3 +97,12 @@ launchctl bootstrap gui/$(id -u)/ai.hermes.gateway-applycling
 - `/healthz` covers applycling + Postgres, not Hermes. Check: `systemctl status hermes-gateway-applycling`
 - Hermes sessions stored at `~/.hermes/profiles/applycling/sessions/`
 - Updates: re-run the install script to update hermes-agent
+
+## Future: Containerization
+
+The long-term plan is to add Hermes as a Docker Compose service alongside
+applycling, removing the need for a separate host install. This requires
+either a published hermes-agent Docker image or building from source on the VPS.
+
+Current blocker: hermes-agent has a Dockerfile but no public image on GHCR/Docker
+Hub. Once available, add to `docker-compose.prod.yml` and delete this doc.
