@@ -93,7 +93,7 @@ This sprint intentionally does **not** satisfy the full closed-beta requirements
 | Add health/log visibility good enough for host restart/debugging | Done |
 | Enforce one active generation run for the single dogfood user using `pipeline_runs` | Done |
 | Phase 1: preserve existing local Hermes flow while forwarding generation to hosted applycling | Done |
-| Phase 2: move Hermes itself into the hosted environment | Pending |
+| Phase 2: move Hermes itself into the hosted environment | Done |
 | Complete a real hosted smoke test across the highest-use paths: Telegram intake, mobile status check, and web review | Done |
 | Document the delta from hosted dogfood to closed beta | Done |
 
@@ -185,7 +185,7 @@ The sprint is done when:
 - [x] Submitting/regenerating a job does not require holding an HTTP request open for the full pipeline duration.
 - [x] A second generation attempt is rejected or clearly blocked while one run is active, then allowed again after a generated/failed terminal state.
 - [x] Phase 1: a real job URL sent through local Hermes completes generation in the hosted environment.
-- [ ] Phase 2 target: Telegram intake works without a local laptop/Hermes process. If Phase 2 slips, Phase 1 can still close as hosted-generation dogfood and Phase 2 becomes the immediate follow-up.
+- [x] Phase 2 target: Telegram intake works without a local laptop/Hermes process. If Phase 2 slips, Phase 1 can still close as hosted-generation dogfood and Phase 2 becomes the immediate follow-up.
 - [x] Mobile UI can check job status.
 - [x] Desktop web UI can review generated artifacts and prep materials.
 - [x] Existing CLI/local entry points remain supported unless explicitly documented otherwise.
