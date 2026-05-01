@@ -5,51 +5,49 @@
 **Sprint:** Host Dogfooding (docs/planning/HOST_DOGFOODING_SPRINT.md)
 **Date:** 2026-04-30
 **Test suite:** 227 passed, 12 skipped
+**Gates:** 19/20 verified — only Phase 2 (hosted Hermes) remains
 
-### Merged (Gates 1-5, verified locally)
-
-| Gate | PRs | What | Verified |
-|---|---|---|---|
-| 1 | #26 | Deploy config (compose, Caddyfile, DEPLOY.md) | Compose YAML valid, services listed |
-| 2 | #28 | Active-run guard (pipeline_runs, atomic INSERT) | Migration, partial index, concurrent insert test, guard block |
-| 3 | #27, #29 | Artifact docs, healthz, async submit | Healthz 200, submit form, guard rejection 409 |
-| 4 | #30 | Basic Auth, fail-fast validators | 401/200/exempt/bypass, NO_AUTH blocked in Postgres |
-| 5 | #31 | /api/intake, Pydantic HttpUrl | 401/422/200/409, per-request secret |
-
-### Verified (Gate 6 — I1 Smoke)
-
-| What | Result |
-|---|---|
-| Telegram → local Hermes → hosted intake → generation | 200 OK, job created (3fc23920) |
-| Active-run guard in hosted mode | 409 on concurrent submit |
-| Bind mount artifact survival | TEST_SURVIVAL.txt survived restart |
-| Generated artifacts (17 files) | resume.pdf, cover_letter.pdf, etc. |
-| Hermes SOUL.md uses env vars for forwarding | POSTs to $APPLYCLING_INTAKE_URL |
-| Openclaw bootout to give Hermes the bot | launchctl bootout ai.openclaw.gateway |
-
-### Pending
+### All Gates Merged
 
 | Gate | PRs | What |
 |---|---|---|
-| 7 | #32 | Merge hosted Hermes profile docs + forwarding template |
-| 8 | #33 | Merge docs fixes, VPS deploy checklist, runbook |
+| 1 | #26 | Deploy config (compose, Caddyfile, DEPLOY.md) |
+| 2 | #28 | Active-run guard (pipeline_runs, atomic INSERT) |
+| 3 | #27, #29 | Artifact docs, healthz, async submit |
+| 4 | #30 | Basic Auth, fail-fast validators |
+| 5 | #31 | /api/intake, Pydantic HttpUrl |
+| 6 (smoke) | - | Telegram → intake → generation, bind mount, 409 guard |
+| 7 (docs) | #35, #37 | Hermes forwarding profile, sprint gate checklist |
+| 8 (docs) | #36 | Deploy checklist fix (output_dir), smoke results |
+
+### Gate 6 Smoke Results
+
+- Telegram → local Hermes → intake → generation: 200 OK (job 3fc23920)
+- Active-run guard: 409 on concurrent submit
+- Bind mount survival: verified with TEST_SURVIVAL.txt
+- Workbench UI: job board, status, artifacts — all verified
+- Mobile UI: usable
+- 19/20 acceptance gates checked off
+
+### Phase 2 Prep (Ready for Deploy)
+
+- `docker-compose.prod.yml`: hermes service added
+- `docs/deploy/HOSTED_HERMES.md`: full setup guide
+- Profile structure: `/opt/hermes-profile/profiles/applycling/`
+- Intake URL: `http://applycling:8080/api/intake` (internal Docker network)
+- Image: `hermes-agent:latest` (built from repo on VPS)
+
+### Phase 2 Deploy Steps (to do on VPS)
+
+1. Clone hermes-agent: `git clone https://github.com/nous/hermes-agent.git /opt/hermes-agent`
+2. Build image: `cd /opt/hermes-agent && docker build -t hermes-agent:latest .`
+3. Create profile: `mkdir -p /opt/hermes-profile/profiles/applycling/sessions`
+4. Provision config.yaml, .env, SOUL.md from laptop
+5. Start: `docker compose -f docker-compose.prod.yml up -d hermes`
+6. Stop local: `launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling`
 
 ### Open Issues
 
 - `test_concurrent_inserts_only_one_succeeds` FK fix committed to main (973fd99)
 - Server startup in Postgres mode requires all auth/secrets vars or fails fast
-- `register_startup_sweep()` captures store at import time — needs DATABASE_URL even to import in Postgres mode
-
-### Bugs Found (Gate 6 Smoke)
-
-- **Config output_dir:** VPS `config.json` had laptop path `/Users/amirali/Documents/ApplyCling-Output` instead of `/app/output`. Fixed manually on VPS. Need deploy checklist item in DEPLOY.md.
-
-## 2026-04-29/30 — Hermes Forwarding Gateway Setup
-
-- Hermes applycling profile at `~/.hermes/profiles/applycling/`
-- SOUL.md: forwarding agent POSTs job URLs to `$APPLYCLING_INTAKE_URL`
-- Env vars in profile `.env` (NOT global `~/.hermes/.env` — profiles have independent dotenv)
-- Gateway running via launchd (`ai.hermes.gateway-applycling.plist`, KeepAlive)
-- Intake endpoint verified: POST to `app.applycling.com/api/intake` → 200 OK
-- End-to-end: Telegram URL → Hermes → intake → generation (job 3fc23920)
-- Profile knowledge saved to Hermes memory and applycling semantic.md
+- Config output_dir bug: VPS config.json had laptop path — fixed, deploy checklist added (#36)
