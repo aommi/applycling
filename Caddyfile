@@ -1,20 +1,23 @@
 # Note: for the Caddy Docker container, this file should be mounted to /etc/caddy/Caddyfile
-# This is handled automatically in docker-compose.prod.yml
+# This is handled automatically in docker-compose.prod.yml.
+#
+# Two sites:
+#   applycling.com (+ www) → static landing page from /srv/landing
+#   app.applycling.com     → reverse proxy to the workbench
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# REPLACE the hostname below with your actual domain before first deploy.
-# Caddy will attempt to issue a Let's Encrypt certificate for whatever hostname
-# is listed here — "your-domain.com" will fail TLS issuance.
-# ═══════════════════════════════════════════════════════════════════════════════
+applycling.com, www.applycling.com {
+    root * /srv/landing
+    file_server
+    encode gzip zstd
 
-your-domain.com {
-    # Enable automatic HTTPS via Let's Encrypt
-    # Caddy auto-issues and auto-renews certificates
+    log {
+        output stdout
+    }
+}
 
-    # Reverse proxy to the applycling workbench
+app.applycling.com {
     reverse_proxy applycling:8080
 
-    # Log format for docker logs
     log {
         output stdout
     }
