@@ -23,6 +23,8 @@ Where <agent> is one of:
 FLAGS (valid only with 'all'):
     --force        When used with 'all', generate ALL agents regardless of config
                    or previous generation state.
+    --check        Compare generated files against expected output. Exit non-zero
+                   on drift. Mutually exclusive with --force.
 
 NOTE: codex and hermes both write AGENTS.md. The hermes version is a superset
 (adds agentskills.io note). If you use both agents, run `hermes` or `all`.
