@@ -60,6 +60,7 @@ See `.agent/memory-kit/README.md` for the full cross-repo setup guide. The short
 
 These live at project root and are shared across all agents:
 - `memory/semantic.md` — distilled project knowledge (≤500 lines)
-- `memory/working.md` — live task state (≤300 lines)
+- `memory/working.example.md` — tracked template for working memory
+- `memory/working.md` — live task state (≤300 lines), local gitignored, bootstrapped from example
 - `DECISIONS.md` — append-only decisions log
 - `dev/[task]/` — active task context

@@ -1,5 +1,6 @@
 Before answering:
 
+0. If `memory/working.md` does not exist, create it by copying `memory/working.example.md`, then read `memory/working.md`.
 1. Read memory/working.md for current state (semantic.md was loaded at session start)
 2. If your reasoning feels uncertain or inconsistent with prior context, re-read memory/semantic.md
 3. Only load /dev/[task]/* if this turn involves that specific task
