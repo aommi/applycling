@@ -35,6 +35,9 @@ dependencies = [
 postgres = [
     "psycopg[binary]>=3.2",
 ]
+mcp = [
+    "mcp[cli]>=1.0,<2.0",
+]
 
 [project.scripts]
 applycling = "applycling.cli:main"

@@ -2502,5 +2502,61 @@ def profile_edit(key: str, value: str) -> None:
     console.print(f"[green]Profile updated:[/green] {key} = {profile_update[key]!r}")
 
 
+# ---------- mcp ----------
+
+
+@main.group("mcp")
+def mcp_group() -> None:
+    """MCP server: expose applycling as tools for Claude Desktop, Cursor, etc."""
+
+
+@mcp_group.command("serve")
+def mcp_serve() -> None:
+    """Start the applycling MCP server over stdio (for MCP clients).
+
+    Stdout is reserved for JSON-RPC. All logging goes to stderr.
+
+    Usage:
+      applycling mcp serve
+
+    Then configure your MCP client (Claude Desktop, Cursor, etc.) with
+    the config snippet from: applycling mcp config
+    """
+    try:
+        from applycling.mcp_server import mcp as _mcp
+    except ImportError:
+        click.echo(
+            "MCP support not installed. Run: pip install -e '.[mcp]'",
+            err=True,
+        )
+        sys.exit(1)
+
+    _mcp.run()
+
+
+@mcp_group.command("config")
+def mcp_config() -> None:
+    """Print the MCP client config as JSON (for copy-paste into client config).
+
+    Paste this into your MCP client's config file:
+      - Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json
+      - Cursor: .cursor/mcp.json
+    """
+    import sys as _sys
+    import json as _json
+    from applycling.storage import ROOT as _REPO_ROOT
+
+    config = {
+        "mcpServers": {
+            "applycling": {
+                "command": _sys.executable,
+                "args": ["-m", "applycling.cli", "mcp", "serve"],
+                "cwd": str(_REPO_ROOT),
+            }
+        }
+    }
+    print(_json.dumps(config, indent=2))  # print() is fine — this is a CLI command
+
+
 if __name__ == "__main__":
     main()

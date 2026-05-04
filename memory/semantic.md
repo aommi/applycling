@@ -32,6 +32,7 @@
 - **Deterministic pipeline:** User intent is always "URL → package". No agent routing needed yet (context-based resolvers are planned).
 - **Escaped braces in skills:** `{{` and `}}` render as literal `{`/`}` after `str.format`.
 - **Conditional logic stays in Python:** Skills have no `if/else`. Caller pre-computes strings, passes as inputs.
+- **MCP parity:** When a new pipeline capability ships, the corresponding MCP tool ships in the same PR. Pipeline and MCP surface must not drift.
 
 ## Important Decisions (see DECISIONS.md for full log)
 

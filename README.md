@@ -516,3 +516,42 @@ To switch back to SQLite: unset `APPLYCLING_DB_BACKEND` or set it to `sqlite`.
 - No authentication — single-user local tool
 - Pipeline runs synchronously (blocks the request until generation completes)
 - SQLite by default; Postgres available via `APPLYCLING_DB_BACKEND=postgres DATABASE_URL=...`
+
+## Using applycling via MCP
+
+applycling can act as an MCP (Model Context Protocol) server, making its
+pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
+
+### Setup
+
+1. Install with MCP support:
+   ```bash
+   pip install -e ".[mcp]"
+   ```
+
+2. Complete the standard setup:
+   ```bash
+   applycling setup
+   ```
+
+3. Get your client config:
+   ```bash
+   applycling mcp config
+   ```
+
+4. Paste the JSON output into your MCP client config:
+   - **Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Cursor:** `.cursor/mcp.json`
+
+5. Restart your client. applycling tools are now available.
+
+### Example Prompts
+
+- "Generate an application for https://example.com/jobs/123"
+- "Show my tracked job applications"
+
+### Client Timeout Note
+
+The `add_job` tool runs the full pipeline synchronously (2–5 minutes). If your
+MCP client has a request timeout below 5 minutes, increase it or use the CLI
+directly (`applycling add <url>`).

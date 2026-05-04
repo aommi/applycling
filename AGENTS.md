@@ -64,6 +64,7 @@ These skill files follow the agentskills.io frontmatter standard — Hermes's `/
 - storage.save_config() merges — never call it with only partial keys unless merging is the intent
 - Skill templates use `str.format` — escape braces with `{{` and `}}`
 - Conditional logic stays in Python, not skill templates
+- When a new top-level pipeline capability ships, the corresponding MCP tool ships in the same PR; internal steps inside existing capabilities flow through MCP by continuing to call the pipeline library API
 - applycling pipeline API keys live in .env at repo root (gitignored). Hermes gateway keys live in ~/.hermes/profiles/applycling/.env, provisioned by scripts/setup_hermes_telegram.sh
 - vision.md holds vision + assumptions only — on merge, move shipped capabilities to memory/semantic.md and remove from the Vision section; update Assumptions if a premise is invalidated
 
@@ -81,6 +82,8 @@ ln -s memory/semantic.md MEMORY.md
 
 The project's `memory/semantic.md` remains the single source of truth.
 <!-- amk:end -->
+
+
 
 
 
