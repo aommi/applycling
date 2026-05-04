@@ -508,10 +508,20 @@ def test_interview_prep_rejects_invalid_stage(monkeypatch):
     assert result["job_id"] == "job_001"
 
 
-def test_interview_prep_configuration_error(monkeypatch):
+def test_interview_prep_configuration_error(monkeypatch, tmp_path):
     """interview_prep returns configuration_error for missing config."""
     from applycling.mcp_server import interview_prep
     from applycling.package_actions import ConfigurationError
+
+    # Setup a valid job + package so it reaches config resolution
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("test")
+    (pkg / "job_description.md").write_text("test")
+
+    job = _make_job(id="job_cfg", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
 
     def _raise_cfg():
         raise ConfigurationError("No config found.")
@@ -520,7 +530,7 @@ def test_interview_prep_configuration_error(monkeypatch):
         "applycling.package_actions._load_config_safe", _raise_cfg
     )
 
-    result = interview_prep("job_001")
+    result = interview_prep("job_cfg")
     assert result["error"] == "configuration_error"
 
 

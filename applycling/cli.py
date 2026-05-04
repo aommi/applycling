@@ -1115,16 +1115,17 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     """Generate stage-specific interview prep for a job."""
     from .package_actions import ConfigurationError, generate_interview_prep_for_job
 
-    stage = stage_arg if stage_arg else None
+    stage: str | None = None
     model = model_arg if model_arg else None
     provider = provider_arg if provider_arg else None
 
-    # Resolve stage label for display before calling the helper
+    # Resolve stage label for display and normalize case before calling the helper
     if stage_arg:
         key = stage_arg.lower().strip()
         if key not in _PREP_STAGE_LABELS:
             console.print(f"[red]Unknown stage '{stage_arg}'.[/red] Valid: {', '.join(_PREP_STAGES)}")
             sys.exit(1)
+        stage = key
         stages_str = _PREP_STAGE_LABELS[key]
     else:
         stages_str = ", ".join(_PREP_STAGE_LABELS.values())

@@ -269,9 +269,8 @@ def generate_interview_prep_for_job(
     from applycling import llm
     from applycling.text_utils import clean_llm_output
 
-    cfg = _load_config_safe()
-    eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
-
+    # Load job + validate package FIRST — so missing-job errors are
+    # deterministic regardless of config state.
     job = get_store().load_job(job_id)
 
     if not job.package_folder:
@@ -279,6 +278,10 @@ def generate_interview_prep_for_job(
     folder = Path(job.package_folder)
     if not folder.exists() or not folder.is_dir():
         raise FileNotFoundError(f"Package folder not found: {folder}")
+
+    # Config/model resolution after job validation — so missing-job errors surface first.
+    cfg = _load_config_safe()
+    eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
 
     # Validate stage
     if stage is not None and stage not in _PREP_STAGES:
@@ -372,9 +375,7 @@ def refine_package_for_job(
     if not feedback.strip():
         raise ValueError("Feedback is required for refinement.")
 
-    cfg = _load_config_safe()
-    eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
-
+    # Load job + validate package BEFORE config — so missing-job errors surface first.
     job = get_store().load_job(job_id)
 
     if not job.package_folder:
@@ -382,6 +383,9 @@ def refine_package_for_job(
     folder = Path(job.package_folder)
     if not folder.exists() or not folder.is_dir():
         raise FileNotFoundError(f"Package folder not found: {folder}")
+
+    cfg = _load_config_safe()
+    eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
 
     resume, job_description, strategy, _brief = _validate_package_files(folder)
 
