@@ -298,7 +298,7 @@ def generate_interview_prep_for_job(
     # Intel collection
     vision_model = cfg.get("intel_vision_model", "")
     vision_provider = cfg.get("intel_vision_provider", eff_provider) if vision_model else ""
-    intel_folder_text, _intel_warnings = _read_intel_folder(
+    intel_folder_text, intel_warnings = _read_intel_folder(
         folder, vision_model=vision_model, vision_provider=vision_provider,
     )
 
@@ -353,6 +353,7 @@ def generate_interview_prep_for_job(
         "artifacts": [
             {"name": "interview_prep.md", "path": str(out_path), "kind": "interview_prep"}
         ],
+        "warnings": intel_warnings,
         "status": "complete",
     }
 
