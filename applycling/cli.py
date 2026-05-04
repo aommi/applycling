@@ -1116,6 +1116,9 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     v_name = Path(result["version_folder"]).name
     console.print(f"[dim]Previous version archived to [bold]{v_name}/[/bold][/dim]")
 
+    for w in result.get("warnings", []):
+        console.print(f"[yellow]{w}[/yellow]")
+
 
 # ---------- prep ----------
 
@@ -1184,9 +1187,12 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
             if intel_dir.exists():
                 intel_files = [f for f in sorted(intel_dir.iterdir()) if not f.is_dir()]
                 if intel_files:
-                    cfg = storage.load_config()
+                    try:
+                        cfg = storage.load_config()
+                    except storage.StorageError:
+                        cfg = {}
                     vision_model = cfg.get("intel_vision_model", "")
-                    vision_provider = cfg.get("intel_vision_provider", "test") if vision_model else ""
+                    vision_provider = cfg.get("intel_vision_provider", "") if vision_model else ""
                     processable = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if vision_model else set())
                     loaded = [f for f in intel_files if f.suffix.lower() in processable]
                     if vision_model:
@@ -1240,6 +1246,9 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     console.print()
     console.print(Panel(prep_text, title="[bold]Interview Prep[/bold]", style="green"))
     console.print(f"\n[green]Saved:[/green] {out_path}")
+
+    for w in result.get("warnings", []):
+        console.print(f"[yellow]{w}[/yellow]")
 
 
 # ---------- questions ----------
