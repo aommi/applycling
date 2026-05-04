@@ -421,6 +421,21 @@ def test_update_job_status_invalid_transition(monkeypatch):
     assert result["job_id"] == "job_001"
 
 
+def test_update_job_status_job_not_found(monkeypatch):
+    """update_job_status returns error when job not found."""
+    from applycling.mcp_server import update_job_status
+    from applycling.tracker import TrackerError
+
+    def _raise(*args, **kwargs):
+        raise TrackerError("No job found for id: bad")
+
+    monkeypatch.setattr("applycling.jobs_service.set_job_status", _raise)
+
+    result = update_job_status("bad", "applied")
+    assert result["error"] == "job_not_found"
+    assert result["job_id"] == "bad"
+
+
 def test_interview_prep_missing_job_returns_error(monkeypatch):
     """interview_prep returns structured error for missing job."""
     from applycling.mcp_server import interview_prep
@@ -610,10 +625,16 @@ def test_refine_package_versions_before_writing(monkeypatch, tmp_path):
 
     result = refine_package("job_r", feedback="improve it")
     assert result["status"] == "complete"
-    # Check v{n}/ snapshot was created
+    # Check v{n}/ snapshot was created and contains old content
     v_folders = [d for d in pkg.iterdir() if d.is_dir() and d.name.startswith("v")]
     assert len(v_folders) >= 1
     assert "version_folder" in result
+
+    v_folder = v_folders[0]
+    assert (v_folder / "resume.md").exists()
+    assert "Old Resume" in (v_folder / "resume.md").read_text()
+    assert (v_folder / "cover_letter.md").exists()
+    assert "Old CL" in (v_folder / "cover_letter.md").read_text()
 
 
 def test_refine_package_artifact_filter(monkeypatch, tmp_path):

@@ -375,6 +375,8 @@ def refine_package_for_job(
     if not feedback.strip():
         raise ValueError("Feedback is required for refinement.")
 
+    warnings: list[str] = []
+
     # Load job + validate package BEFORE config — so missing-job errors surface first.
     job = get_store().load_job(job_id)
 
@@ -387,7 +389,7 @@ def refine_package_for_job(
     cfg = _load_config_safe()
     eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
 
-    resume, job_description, strategy, _brief = _validate_package_files(folder)
+    resume, job_description, strategy, existing_brief = _validate_package_files(folder)
 
     # Load existing artifacts
     def _read(fname: str) -> str:
@@ -395,7 +397,6 @@ def refine_package_for_job(
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
     existing_cover_letter = _read("cover_letter.md")
-    existing_brief = _read("positioning_brief.md")
     existing_email = _read("email_inmail.md")
 
     # Determine which artifacts to refine
@@ -403,8 +404,7 @@ def refine_package_for_job(
         explicit = _parse_refine_only(", ".join(artifacts))
     else:
         explicit: list[str] = []
-        if resume:
-            explicit.append("resume")
+        explicit.append("resume")
         if existing_cover_letter:
             explicit.append("cover_letter")
         if existing_brief:
@@ -449,7 +449,7 @@ def refine_package_for_job(
             for chunk in llm.format_resume(refined_body, eff_model, provider=eff_provider):
                 fmt_chunks.append(chunk)
         except llm.LLMError:
-            pass  # Use unformatted output
+            warnings.append("Format pass failed — using unformatted output.")
         formatted_body = clean_llm_output("".join(fmt_chunks)) or refined_body
 
         # Profile header assembly
@@ -479,8 +479,8 @@ def refine_package_for_job(
             if cfg.get("generate_docx", False):
                 render.markdown_to_docx(refined_resume_full, folder / "resume.docx")
                 changed_paths.append("resume.docx")
-        except Exception:
-            pass  # Render is best-effort; markdown is the source of truth
+        except Exception as e:
+            warnings.append(f"Resume render failed ({e}) — markdown updated but HTML/PDF may be stale.")
 
     # --- Refine positioning brief ---
     if "brief" in in_scope and existing_brief:
@@ -491,8 +491,8 @@ def refine_package_for_job(
                 existing_brief, current_resume, strategy, feedback, eff_model, provider=eff_provider
             ):
                 chunks.append(chunk)
-        except llm.LLMError:
-            pass  # Brief is non-critical
+        except llm.LLMError as e:
+            warnings.append(f"Brief update failed ({e}) — skipping.")
         if chunks:
             refined_brief = clean_llm_output("".join(chunks))
             if refined_brief.strip():
@@ -510,8 +510,8 @@ def refine_package_for_job(
                 existing_cover_letter, strategy, feedback, eff_model, provider=eff_provider
             ):
                 chunks.append(chunk)
-        except llm.LLMError:
-            pass
+        except llm.LLMError as e:
+            warnings.append(f"Cover letter refinement failed ({e}) — skipping.")
         if chunks:
             refined_cl = clean_llm_output("".join(chunks))
             if refined_cl.strip():
@@ -527,8 +527,8 @@ def refine_package_for_job(
                     if cfg.get("generate_docx", False):
                         render.markdown_to_docx(cl_md, folder / "cover_letter.docx")
                         changed_paths.append("cover_letter.docx")
-                except Exception:
-                    pass
+                except Exception as e:
+                    warnings.append(f"Cover letter render failed ({e}) — markdown updated but HTML/PDF may be stale.")
 
     # --- Refine email ---
     if "email" in in_scope and existing_email:
@@ -538,8 +538,8 @@ def refine_package_for_job(
                 existing_email, strategy, feedback, eff_model, provider=eff_provider
             ):
                 chunks.append(chunk)
-        except llm.LLMError:
-            pass
+        except llm.LLMError as e:
+            warnings.append(f"Email/InMail refinement failed ({e}) — skipping.")
         if chunks:
             refined_email = clean_llm_output("".join(chunks))
             if refined_email.strip():
@@ -556,5 +556,6 @@ def refine_package_for_job(
         "package_folder": str(folder),
         "artifacts": [{"name": p, "path": str(folder / p), "kind": Path(p).stem} for p in changed_paths],
         "version_folder": str(v_folder),
+        "warnings": warnings,
         "status": "complete",
     }
