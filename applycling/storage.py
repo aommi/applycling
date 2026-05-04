@@ -18,6 +18,25 @@ LINKEDIN_PROFILE_PATH = DATA_DIR / "linkedin_profile.md"
 APPLICANT_PROFILE_PATH = DATA_DIR / "applicant_profile.json"
 TELEGRAM_CONFIG_PATH = DATA_DIR / "telegram.json"
 
+# --- Application Profile schema ---
+
+PROFILE_SCHEMA_VERSION = "1.0"
+
+DEFERRED_PROFILE_FIELDS = [
+    "work_auth",
+    "sponsorship_needed",
+    "relocation",
+    "relocation_cities",
+    "remote_preference",
+    "comp_expectation",
+    "notice_period",
+    "earliest_start_date",
+    "salary_expectations",
+    "relocation_constraints",
+    "detailed_job_preferences",
+    "role_specific_positioning",
+]
+
 
 def _ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -106,15 +125,69 @@ def load_job(job_id: str) -> dict[str, Any]:
     raise StorageError(f"No job found with id '{job_id}'.")
 
 
+def load_profile() -> dict[str, Any]:
+    """Return the unified Application Profile.
+
+    Validates schema_version, backfills missing fields with sensible defaults,
+    and returns {} when no profile exists. Never returns None.
+    """
+    import warnings
+
+    unified: dict[str, Any] = {}
+    if PROFILE_PATH.exists():
+        try:
+            unified = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            unified = {}
+
+    # --- Schema version ---
+    current_version = unified.get("schema_version")
+    if not current_version:
+        unified["schema_version"] = PROFILE_SCHEMA_VERSION
+    elif current_version != PROFILE_SCHEMA_VERSION:
+        warnings.warn(
+            f"Profile schema version '{current_version}' differs from "
+            f"current '{PROFILE_SCHEMA_VERSION}'. Some fields may be missing.",
+            stacklevel=2,
+        )
+
+    # --- Backfill new fields with sensible defaults ---
+    _NEW_FIELD_DEFAULTS: dict[str, Any] = {
+        "portfolio": "",
+        "personal_site": "",
+        "target_role_family": "",
+        "positioning_preference": "",
+        "tracks": [],
+        "salary_expectations": "",
+        "relocation_constraints": "",
+        "detailed_job_preferences": "",
+        "story_bank_path": "",
+        "role_specific_positioning": "",
+    }
+    for key, default in _NEW_FIELD_DEFAULTS.items():
+        if key not in unified:
+            unified[key] = default
+
+    # Ensure deferred boolean fields exist as None when unset
+    for key in ("sponsorship_needed", "relocation"):
+        if key not in unified:
+            unified[key] = None
+
+    return unified
+
+
 def save_profile(profile: dict[str, Any]) -> None:
+    """Merge `profile` into the existing unified profile and persist.
+
+    Preserves all existing fields not present in `profile`. Sets
+    schema_version only if it is currently missing (never bumps).
+    """
     _ensure_dirs()
-    PROFILE_PATH.write_text(json.dumps(profile, indent=2), encoding="utf-8")
-
-
-def load_profile() -> dict[str, Any] | None:
-    if not PROFILE_PATH.exists():
-        return None
-    return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    existing = load_profile()
+    existing.update(profile)
+    if not existing.get("schema_version"):
+        existing["schema_version"] = PROFILE_SCHEMA_VERSION
+    PROFILE_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
 
 def load_stories() -> str | None:
@@ -145,22 +218,91 @@ def save_linkedin_profile(text: str) -> None:
 
 
 def load_applicant_profile() -> dict[str, Any]:
-    """Return applicant profile, or empty dict when file is missing."""
-    if not APPLICANT_PROFILE_PATH.exists():
-        return {}
-    return json.loads(APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))
+    """Deprecated — use load_profile() instead.
+
+    Returns the deferred-fields subset of the unified profile so existing
+    callers (e.g. setup wizard showing current values) still work.
+    """
+    import warnings
+
+    warnings.warn(
+        "load_applicant_profile() is deprecated. Use load_profile().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    unified = load_profile()
+    return {
+        k: v for k, v in unified.items()
+        if k in DEFERRED_PROFILE_FIELDS and v is not None
+    }
 
 
 def save_applicant_profile(profile: dict[str, Any]) -> None:
-    _ensure_dirs()
-    existing: dict[str, Any] = {}
-    if APPLICANT_PROFILE_PATH.exists():
-        try:
-            existing = json.loads(APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    existing.update(profile)
-    APPLICANT_PROFILE_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    """Deprecated — use save_profile() instead.
+
+    Merges fields into the unified profile. Preserves all other fields.
+    """
+    import warnings
+
+    warnings.warn(
+        "save_applicant_profile() is deprecated. Use save_profile().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    save_profile(profile)
+
+
+def profile_completeness(profile: dict) -> str:
+    """Return profile completeness state.
+
+    Returns one of: "missing_contact", "missing_resume", "ready",
+    "enriched", "complete".
+
+    Rules:
+      missing_contact: name or email is empty (checked first)
+      missing_resume: name + email ok, but RESUME_PATH doesn't exist
+      ready: name + email + resume exist
+      enriched: ready + >= 3 fields in DEFERRED_PROFILE_FIELDS are non-empty
+      complete: ready + ALL fields in DEFERRED_PROFILE_FIELDS are non-empty
+                (Boolean False counts as non-empty; None does not)
+    """
+    if not profile.get("name") or not profile.get("email"):
+        return "missing_contact"
+    if not RESUME_PATH.exists():
+        return "missing_resume"
+
+    deferred_count = sum(
+        1 for k in DEFERRED_PROFILE_FIELDS
+        if profile.get(k) not in (None, "", [])
+    )
+    if deferred_count == len(DEFERRED_PROFILE_FIELDS):
+        return "complete"
+    if deferred_count >= 3:
+        return "enriched"
+    return "ready"
+
+
+def missing_required_fields(profile: dict, required: list[str]) -> list[str]:
+    """Return field names from `required` that are missing/unset in profile.
+
+    "Missing" means: None, empty string (""), or empty list ([]).
+    Boolean fields: False is NOT missing — it's a valid sentinel meaning "no."
+    Use None for "unset / user hasn't answered."
+
+    This is consistent with profile_completeness(), which counts False as
+    non-empty when tallying deferred fields.
+    """
+
+    def _is_missing(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str) and value == "":
+            return True
+        if isinstance(value, list) and len(value) == 0:
+            return True
+        return False  # bool False and int 0 are valid sentinels
+
+    return [f for f in required if _is_missing(profile.get(f))]
 
 
 def load_telegram_config() -> dict[str, Any]:

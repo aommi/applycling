@@ -77,8 +77,8 @@ class PipelineContext:
     # Optional pre-existing job id (used when persist_job=False)
     job_id: str = ""
 
-    # Optional applicant profile (from data/applicant_profile.json)
-    applicant_profile: dict[str, Any] = field(default_factory=dict)
+    # applicant_profile is now a @property extracted from the unified profile.
+    # See the @property below — do not declare it as a dataclass field.
 
     @classmethod
     def from_config(
@@ -125,8 +125,6 @@ class PipelineContext:
         # Get tracker store
         store = tracker.get_store()
 
-        applicant_profile = storage.load_applicant_profile()
-
         return cls(
             data_dir=Path(data_dir or storage.DATA_DIR),
             output_dir=output,
@@ -134,12 +132,27 @@ class PipelineContext:
             resume=resume or "",
             stories=stories or "",
             linkedin_profile=linkedin_profile,
-            applicant_profile=applicant_profile,
             config=config,
             model=final_model,
             provider=final_provider,
             tracker_store=store,
         )
+
+    @property
+    def applicant_profile(self) -> dict:
+        """Backward-compat: deferred fields extracted from unified profile.
+
+        Returns a dict containing only keys in storage.DEFERRED_PROFILE_FIELDS.
+        Non-deferred fields (name, email, voice_tone, etc.) must be read via
+        ``context.profile.get("key")``. Never returns None — always a dict.
+        """
+        from applycling.storage import DEFERRED_PROFILE_FIELDS
+
+        return {
+            k: self.profile.get(k)
+            for k in DEFERRED_PROFILE_FIELDS
+            if k in self.profile
+        }
 
 
 @dataclass
@@ -1094,7 +1107,6 @@ def run_add_notify(
     profile = storage.load_profile() or {}
     stories = storage.load_stories() or ""
     linkedin_profile = storage.load_linkedin_profile() if cfg.get("use_linkedin_profile", True) else None
-    applicant_profile = storage.load_applicant_profile()
 
     ctx = PipelineContext(
         data_dir=storage.DATA_DIR,
@@ -1103,7 +1115,6 @@ def run_add_notify(
         resume=storage.load_resume(),
         stories=stories,
         linkedin_profile=linkedin_profile,
-        applicant_profile=applicant_profile,
         config=cfg,
         model=final_model,
         provider=final_provider,

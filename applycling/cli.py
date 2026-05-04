@@ -368,6 +368,8 @@ def setup() -> None:
             "location": Prompt.ask("Location",     default=existing.get("location", "")),
             "linkedin": Prompt.ask("LinkedIn URL", default=existing.get("linkedin", "")),
             "github":   Prompt.ask("GitHub URL",   default=existing.get("github", "")),
+            "portfolio": Prompt.ask("Portfolio URL [optional]", default=existing.get("portfolio", "")),
+            "personal_site": Prompt.ask("Personal site URL [optional]", default=existing.get("personal_site", "")),
         }
         console.print("\n[bold]Writing style[/bold] [dim](injected into every tailoring prompt)[/dim]")
         p["voice_tone"] = Prompt.ask(
@@ -2431,6 +2433,73 @@ def ui_serve(host: str, port: int) -> None:
     import uvicorn
     from applycling.ui import app
     uvicorn.run(app, host=host, port=port)
+
+
+# ---------- profile ----------
+
+
+@main.group()
+def profile() -> None:
+    """View and edit your Application Profile."""
+
+
+@profile.command("status")
+def profile_status() -> None:
+    """Show profile completeness and what's missing."""
+    p = storage.load_profile()
+    state = storage.profile_completeness(p)
+
+    state_colors = {
+        "missing_contact": "red",
+        "missing_resume": "red",
+        "ready": "yellow",
+        "enriched": "green",
+        "complete": "green",
+    }
+    color = state_colors.get(state, "white")
+    console.print(f"\nProfile status: [{color}]{state}[/{color}]")
+
+    if state == "missing_contact":
+        console.print("  [dim]→ Add your name and email via [bold]applycling setup[/bold][/dim]")
+    elif state == "missing_resume":
+        console.print("  [dim]→ Add your base resume via [bold]applycling setup[/bold][/dim]")
+    elif state == "ready":
+        console.print("  [dim]→ Your profile is ready for your first package.[/dim]")
+        missing_deferred = storage.missing_required_fields(p, storage.DEFERRED_PROFILE_FIELDS)
+        if missing_deferred:
+            console.print(f"  [dim]→ Optional fields not set: {', '.join(missing_deferred)}[/dim]")
+    elif state == "enriched":
+        console.print("  [dim]→ Your profile is enriched. Keep going![/dim]")
+        missing_deferred = storage.missing_required_fields(p, storage.DEFERRED_PROFILE_FIELDS)
+        if missing_deferred:
+            console.print(f"  [dim]→ Remaining: {', '.join(missing_deferred)}[/dim]")
+    elif state == "complete":
+        console.print("  [dim]→ All fields filled. Your profile is complete.[/dim]")
+    console.print()
+
+
+@profile.command("edit")
+@click.option("--key", required=True, help="Field name to edit")
+@click.option("--value", required=True, help="New value (JSON literal for lists/dicts, plain string otherwise)")
+def profile_edit(key: str, value: str) -> None:
+    """Quick-edit a single profile field.
+
+    String values are used as-is. Lists and dicts are parsed as JSON.
+    Examples:
+      applycling profile edit --key work_auth --value "Canadian PR"
+      applycling profile edit --key relocation_cities --value '["Toronto","NYC"]'
+      applycling profile edit --key sponsorship_needed --value true
+    """
+    import json as _json
+
+    profile_update: dict[str, Any] = {}
+    try:
+        profile_update[key] = _json.loads(value)
+    except (_json.JSONDecodeError, ValueError):
+        profile_update[key] = value  # plain string
+
+    storage.save_profile(profile_update)
+    console.print(f"[green]Profile updated:[/green] {key} = {profile_update[key]!r}")
 
 
 if __name__ == "__main__":

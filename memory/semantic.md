@@ -2,6 +2,7 @@
 
 ## Core Systems
 
+- **Unified Application Profile:** `data/profile.json` is the single source of truth for profile, contact, and applicant fields. `profile_completeness()` returns one of 5 states (missing_contact → missing_resume → ready → enriched → complete). `DEFERRED_PROFILE_FIELDS` defines the deferred set. `data/applicant_profile.json` functions are deprecated wrappers. `applycling profile status` and `profile edit` CLI commands available.
 - **Skills architecture:** 16 LLM prompts live in `applycling/skills/<name>/SKILL.md` with YAML frontmatter (name, description, inputs, output_file, model_hint, temperature). Loader in `applycling/skills/loader.py` — `load_skill(name).render(**kwargs)` validates inputs, renders via `str.format`.
 - **Pipeline:** `applycling/pipeline.py` — `PipelineContext`, `PipelineStep`, `PipelineRun`. Linear deterministic flow: `role_intel → resume_tailor → profile_summary → format_resume → positioning_brief → cover_letter → email_inmail → fit_summary`. All callers (CLI, local workbench, OpenClaw) use this library API.
 - **Additional capabilities:** `interview_prep` (composes `interview_prep` + `questions` skills) and `follow_up_outreach` (composes follow-up skills) — both shipped and usable today via CLI.
