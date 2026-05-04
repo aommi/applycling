@@ -559,7 +559,7 @@ def test_refine_package_missing_package_returns_error(monkeypatch):
     )
 
     result = refine_package("job_001", feedback="improve it")
-    assert result["error"] == "invalid_request"
+    assert result["error"] == "package_file_missing"
 
 
 def test_refine_package_versions_before_writing(monkeypatch, tmp_path):

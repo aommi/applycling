@@ -1067,6 +1067,25 @@ def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str,
     if only.strip():
         artifacts = [a.strip() for a in only.split(",") if a.strip()]
 
+    # Quick scope preview (display only — real scope logic is in the helper)
+    if folder and folder.exists():
+        existing = set()
+        for fname in ("resume.md", "cover_letter.md", "positioning_brief.md", "email_inmail.md"):
+            if (folder / fname).exists():
+                if fname == "resume.md":
+                    existing.add("resume")
+                elif fname == "cover_letter.md":
+                    existing.add("cover_letter")
+                elif fname == "positioning_brief.md":
+                    existing.add("brief")
+                elif fname == "email_inmail.md":
+                    existing.add("email")
+        scope = sorted(existing)
+        if artifacts is not None:
+            scope = [a for a in scope if a in set(artifacts)]
+        if scope:
+            console.print(f"\n[dim]Artifacts in scope: {', '.join(scope)}[/dim]")
+
     # Run the shared helper
     try:
         result = refine_package_for_job(
@@ -1130,10 +1149,12 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     else:
         stages_str = ", ".join(_PREP_STAGE_LABELS.values())
 
-    # Display header (before the work starts)
+    # Display header and context (before the work starts)
     try:
         store = get_store()
         job = store.load_job(job_id)
+        folder = Path(job.package_folder) if job.package_folder else None
+
         console.print(
             Panel.fit(
                 f"[bold]Interview Prep[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
@@ -1141,6 +1162,53 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
                 style="cyan",
             )
         )
+
+        # Display context summary (same as old CLI behavior)
+        if folder and folder.exists():
+            def _read(fname: str) -> str:
+                p = folder / fname
+                return p.read_text(encoding="utf-8") if p.exists() else ""
+
+            resume = _read("resume.md")
+            strategy = _read("strategy.md")
+            positioning_brief = _read("positioning_brief.md")
+
+            console.print("\n[dim]Context loaded for prep:[/dim]")
+            console.print(f"[dim]  {'resume.md':<28} ✓[/dim]")
+            console.print(f"[dim]  {'job description':<28} ✓[/dim]")
+            console.print(f"[dim]  {'role intel / strategy':<28} {'✓' if strategy else '—'}[/dim]")
+            console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief else '—'}[/dim]")
+
+            # Intel folder summary
+            intel_dir = folder / "intel"
+            if intel_dir.exists():
+                intel_files = [f for f in sorted(intel_dir.iterdir()) if not f.is_dir()]
+                if intel_files:
+                    cfg = storage.load_config()
+                    vision_model = cfg.get("intel_vision_model", "")
+                    vision_provider = cfg.get("intel_vision_provider", "test") if vision_model else ""
+                    processable = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if vision_model else set())
+                    loaded = [f for f in intel_files if f.suffix.lower() in processable]
+                    if vision_model:
+                        console.print(f"[dim]  {'vision model':<28} {vision_model} ({vision_provider})[/dim]")
+                    for f in loaded:
+                        label = "intel/" + f.name
+                        note = ""
+                        if f.suffix.lower() in _INTEL_IMAGE_EXTS:
+                            cache_path = intel_dir / ".cache" / f"{f.stem}.extracted.md"
+                            note = " (cached)" if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime else " (vision)"
+                        console.print(f"[dim]  {label:<28} ✓{note}[/dim]")
+                    skipped = [f for f in intel_files if f not in loaded]
+                    for f in skipped:
+                        console.print(f"[dim]  {'intel/' + f.name:<28} ✗[/dim]")
+                else:
+                    console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here[/dim]")
+            else:
+                console.print(f"[dim]  {'intel/ (not present)':<28} —[/dim]")
+
+            notion_notes = store.load_job_notes(job_id)
+            console.print(f"[dim]  {'Notion page notes':<28} {'✓' if notion_notes else '— (not connected or empty)'}[/dim]")
+            console.print()
     except TrackerError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)

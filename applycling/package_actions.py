@@ -274,7 +274,7 @@ def generate_interview_prep_for_job(
     job = get_store().load_job(job_id)
 
     if not job.package_folder:
-        raise ValueError("No package folder recorded for this job.")
+        raise FileNotFoundError("No package folder recorded for this job.")
     folder = Path(job.package_folder)
     if not folder.exists() or not folder.is_dir():
         raise FileNotFoundError(f"Package folder not found: {folder}")
@@ -379,7 +379,7 @@ def refine_package_for_job(
     job = get_store().load_job(job_id)
 
     if not job.package_folder:
-        raise ValueError("No package folder recorded for this job.")
+        raise FileNotFoundError("No package folder recorded for this job.")
     folder = Path(job.package_folder)
     if not folder.exists() or not folder.is_dir():
         raise FileNotFoundError(f"Package folder not found: {folder}")
