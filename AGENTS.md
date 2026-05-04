@@ -34,9 +34,9 @@ If reasoning becomes uncertain or inconsistent with prior context, re-read `memo
 
 ### Memory Discipline
 
-- `memory/semantic.md` — current build state; propose updates; wait for approval before writing
+- `memory/semantic.md` — current build state; update directly after changes; summarize what you changed
 - `memory/working.md` — live task state; update freely after each response; no approval needed
-- `DECISIONS.md` — append-only log of architectural decisions; propose entries for approval
+- `DECISIONS.md` — append-only log of architectural decisions; update directly after changes; summarize new entries
 - `vision.md` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated; **never put current state here** (that's `semantic.md`), **never put planning details here** (tickets, checklists, phases)
 - `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed
 
@@ -82,6 +82,8 @@ ln -s memory/semantic.md MEMORY.md
 
 The project's `memory/semantic.md` remains the single source of truth.
 <!-- amk:end -->
+
+
 
 
 

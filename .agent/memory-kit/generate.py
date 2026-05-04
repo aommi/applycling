@@ -29,6 +29,13 @@ FLAGS (valid only with 'all'):
 NOTE: codex and hermes both write AGENTS.md. The hermes version is a superset
 (adds agentskills.io note). If you use both agents, run `hermes` or `all`.
 
+ADAPTER CONTRACT:
+    Each adapter module must export:
+      - generate(project_root, config) -> str    # writes agent files, returns status
+      - check(project_root, config) -> list[str] # returns drift diffs (empty = clean)
+      - referenced_memory_files() -> list[str]   # .md files the adapter's Memory
+                                                  #   Discipline section references
+
 RE-RUN SAFETY:
     Running `generate.py all` multiple times is safe. Already-generated agents
     are skipped unless their output files are missing or --force is used.
@@ -199,6 +206,10 @@ def cmd_init(project_root: Path) -> None:
                 "semantic": "memory/semantic.md",
                 "working": "memory/working.md",
                 "decisions": "DECISIONS.md",
+            },
+            "approval_mode": {
+                "default": "auto",
+                "review": [],
             },
             "task_directory": "dev/[task]/",
         },
@@ -435,6 +446,29 @@ def _run_check(project_root: Path, config: dict, enabled_agents: list[str]) -> i
                 print(f"  DRIFT {name:<13}")
                 print(diff)
                 print()
+
+    # ── Approval mode config validation ────────────────────────────────
+    from adapters.utils import validate_approval_mode
+
+    referenced_files = set()
+    for name in enabled_agents:
+        adapter_name = name.replace("-", "_")
+        try:
+            mod = importlib.import_module(f"adapters.{adapter_name}")
+        except ImportError:
+            continue
+        if hasattr(mod, "referenced_memory_files"):
+            referenced_files.update(mod.referenced_memory_files())
+
+    if referenced_files:
+        import sys as _sys
+        approval_msgs = validate_approval_mode(config, referenced_files)
+        for msg in approval_msgs:
+            if msg.startswith("DRIFT"):
+                drift_count += 1
+                print(msg)
+            elif msg.startswith("INFO"):
+                print(msg, file=_sys.stderr)
 
     if drift_count:
         print(f"\n{drift_count} file(s) have drifted. Run `generate.py all` to regenerate.")

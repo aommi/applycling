@@ -19,10 +19,7 @@ Run this workflow after completing significant work to update project memory.
    - Resolved assumptions (from `dev/[task]/context.md` Assumptions section)
 
 4. If ANY qualifies as architecturally or operationally significant:
-   - Draft the proposed update — show the user exactly what would be written and to which file
-   - Wait for explicit approval ("looks good", "yes", "approve") before writing
-   - On approval: write to `semantic.md` and/or `DECISIONS.md` and/or `context.md`
-   - On correction: apply the user's edit, then write
+{approval_flow}
 
 5. Always, regardless of significance:
    - Update `memory/working.md` to reflect current state — this does NOT require approval

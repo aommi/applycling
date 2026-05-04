@@ -26,7 +26,4 @@ re-read `memory/semantic.md` before continuing.
 If the user's message describes work outside the current `working.md` focus,
 ask: "This looks like a different task — should I archive the current state first?"
 
-## Approval Gate
-- `memory/semantic.md` and `DECISIONS.md` require explicit user approval before writing.
-- `memory/working.md` may be updated freely, including rewriting from scratch if stale.
-- Never write speculatively to `semantic.md` or `DECISIONS.md`.
+{approval_gate}

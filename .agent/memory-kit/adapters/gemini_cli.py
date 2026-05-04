@@ -13,7 +13,7 @@ GEMINI.md structure:
 """
 from pathlib import Path
 
-from .utils import write_managed_section, check_managed_section, check_fully_generated
+from .utils import write_managed_section, check_managed_section, check_fully_generated, build_memory_discipline
 
 
 _MANAGED_TEMPLATE = """\
@@ -41,19 +41,7 @@ Do not speculatively load files "just in case".
 
 If reasoning becomes uncertain or inconsistent with prior context, re-read `memory/semantic.md` before continuing.
 
-### Memory Discipline
-
-- `memory/semantic.md` — current build state; propose updates; wait for approval before writing
-- `memory/working.md` — live task state; update freely after each response; no approval needed
-- `DECISIONS.md` — append-only log of architectural decisions; propose entries for approval
-- `{arch_file}` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated; **never put current state here** (that's `semantic.md`), **never put planning details here** (tickets, checklists, phases)
-- `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed
-
-**DECISIONS.md vs. Assumptions distinction:**
-- `DECISIONS.md` = immutable log — "we chose X on date Y because Z" — never edited, only superseded by appending
-- `{arch_file}` Assumptions = live load-bearing premises — mutable; when invalidated, append a supersession to `DECISIONS.md` first, then update the assumption
-
-**On PR merge:** check `{arch_file}` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption.
+{memory_discipline}
 
 ---
 
@@ -69,6 +57,16 @@ Before implementing a feature, read `{arch_file}`. It is the canonical record of
 """
 
 
+def referenced_memory_files() -> list[str]:
+    """Return the set of .md files this adapter's Memory Discipline references."""
+    return [
+        "memory/semantic.md",
+        "memory/working.md",
+        "DECISIONS.md",
+        "dev/[task]/context.md",
+    ]
+
+
 def _build_managed_content(config: dict) -> str:
     """Build the managed-section content from config."""
     arch_file = config.get("architecture", {}).get("file", "vision.md")
@@ -77,6 +75,7 @@ def _build_managed_content(config: dict) -> str:
     return _MANAGED_TEMPLATE.format(
         arch_file=arch_file,
         conventions_md=conventions_md,
+        memory_discipline=build_memory_discipline(config, arch_file),
     )
 
 

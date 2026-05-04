@@ -17,7 +17,7 @@ OpenClaw has no native project-root file convention. Two install options:
 """
 from pathlib import Path
 
-from .utils import write_managed_section, check_managed_section
+from .utils import write_managed_section, check_managed_section, build_memory_discipline
 
 
 _MANAGED_TEMPLATE = """\
@@ -64,13 +64,18 @@ Before implementing a feature, read `{arch_file}`. It is the canonical record of
 
 ---
 
-## Memory Discipline
-
-- `memory/semantic.md` — propose updates; wait for approval before writing
-- `memory/working.md` — update freely after each response; no approval needed
-- `DECISIONS.md` — append-only; propose entries for approval
-- `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed
+{memory_discipline}
 """
+
+
+def referenced_memory_files() -> list[str]:
+    """Return the set of .md files this adapter's Memory Discipline references."""
+    return [
+        "memory/semantic.md",
+        "memory/working.md",
+        "DECISIONS.md",
+        "dev/[task]/context.md",
+    ]
 
 
 def _build_managed_content(config: dict) -> str:
@@ -81,6 +86,7 @@ def _build_managed_content(config: dict) -> str:
     return _MANAGED_TEMPLATE.format(
         arch_file=arch_file,
         conventions_md=conventions_md,
+        memory_discipline=build_memory_discipline(config, arch_file),
     )
 
 

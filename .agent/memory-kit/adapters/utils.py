@@ -160,3 +160,145 @@ def check_fully_generated(
         )
     )
     return "".join(diff_lines)
+
+# ── Approval Mode ────────────────────────────────────────────────────────────
+
+# Canonical memory-file registry. Adding a file here is the ONLY edit needed
+# to render it in Memory Discipline output across all adapters.
+MEMORY_FILE_DESCRIPTORS = [
+    {
+        "path": "memory/semantic.md",
+        "description": "current build state",
+        "review_text": "propose updates; wait for approval before writing",
+        "auto_text": "update directly after changes; summarize what you changed",
+    },
+    {
+        "path": "memory/working.md",
+        "description": "live task state",
+        "review_text": "update freely after each response; no approval needed",
+        "auto_text": "update freely after each response; no approval needed",
+    },
+    {
+        "path": "DECISIONS.md",
+        "description": "append-only log of architectural decisions",
+        "review_text": "propose entries for approval",
+        "auto_text": "update directly after changes; summarize new entries",
+    },
+    {
+        "path": "dev/[task]/context.md",
+        "description": "log confirmed assumptions immediately",
+        "review_text": "no approval needed",
+        "auto_text": "no approval needed",
+    },
+]
+
+# Files that have their own contract and never appear in approval_mode.
+# arch_file (vision.md) is rendered separately because its prose differs.
+EXCLUDED_FROM_APPROVAL_MODE = {"vision.md"}
+
+
+def mode_for(path: str, config: dict) -> str:
+    """Return 'review' or 'auto' for a memory file path based on config."""
+    approval = config.get("memory", {}).get("approval_mode", {})
+    default_mode = approval.get("default", "review")
+    review_list = approval.get("review", [])
+    return "review" if path in review_list else default_mode
+
+
+def build_memory_discipline(config: dict, arch_file: str) -> str:
+    """Build Memory Discipline markdown from config.approval_mode + descriptors.
+
+    Emits a self-contained block starting with ``### Memory Discipline``.
+    Adapters place this block where a level-3 heading fits their document.
+    """
+    bullets = []
+    for d in MEMORY_FILE_DESCRIPTORS:
+        text = d["review_text"] if mode_for(d["path"], config) == "review" else d["auto_text"]
+        bullets.append(f"- `{d['path']}` — {d['description']}; {text}")
+
+    # arch_file rendered separately — its semantics aren't governed by approval_mode
+    arch_bullet = (
+        f"- `{arch_file}` — principles, load-bearing assumptions, planned capabilities; "
+        "update only on merge when a capability ships or an assumption is invalidated; "
+        "**never put current state here** (that's `semantic.md`), **never put planning details here** "
+        "(tickets, checklists, phases)"
+    )
+    # Insert arch_file bullet before dev/[task]/context.md to match current ordering
+    bullets.insert(-1, arch_bullet)
+
+    return "### Memory Discipline\n\n" + "\n".join(bullets) + f"""
+
+**DECISIONS.md vs. Assumptions distinction:**
+- `DECISIONS.md` = immutable log — "we chose X on date Y because Z" — never edited, only superseded by appending
+- `{arch_file}` Assumptions = live load-bearing premises — mutable; when invalidated, append a supersession to `DECISIONS.md` first, then update the assumption
+
+**On PR merge:** check `{arch_file}` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption."""
+
+
+def build_approval_gate(config: dict) -> str:
+    """Build the Approval Gate rule section for Antigravity templates."""
+    sem = mode_for("memory/semantic.md", config)
+    dec = mode_for("DECISIONS.md", config)
+
+    if sem == "review" or dec == "review":
+        lines = ["## Approval Gate"]
+        if sem == "review":
+            lines.append("- `memory/semantic.md` requires explicit user approval before writing.")
+        else:
+            lines.append("- `memory/semantic.md` may be updated directly; summarize changes.")
+        if dec == "review":
+            lines.append("- `DECISIONS.md` requires explicit user approval before writing.")
+        else:
+            lines.append("- `DECISIONS.md` may be updated directly; summarize new entries.")
+        lines.append("- `memory/working.md` may be updated freely, including rewriting from scratch if stale.")
+        lines.append("- Never write speculatively to files that require approval.")
+        return "\n".join(lines)
+    else:
+        return (
+            "## Approval Gate\n\n"
+            "All memory files may be updated directly. Summarize what changed.\n"
+            "- `memory/working.md` may be updated freely, including rewriting from scratch if stale."
+        )
+
+
+# Frozen at v3 release — files that default to 'review' under backward compat.
+COMPAT_REVIEW_DEFAULTS = {"memory/semantic.md", "DECISIONS.md"}
+
+
+def validate_approval_mode(config: dict, referenced_files: set[str]) -> list[str]:
+    """Validate approval_mode coverage. Returns list of drift/info messages.
+
+    DRIFT messages (real problems) cause --check to exit non-zero.
+    INFO messages go to stderr but exit 0 — they are nudges, not blockers.
+    """
+    approval = config.get("memory", {}).get("approval_mode")
+    review_list = set((approval or {}).get("review", []))
+    known_paths = {d["path"] for d in MEMORY_FILE_DESCRIPTORS}
+    checkable = referenced_files - EXCLUDED_FROM_APPROVAL_MODE
+
+    msgs = []
+
+    # 1. Adapter declared a file the registry doesn't know about
+    for path in sorted(checkable - known_paths):
+        msgs.append(
+            f"DRIFT registry: {path} declared in adapter referenced_memory_files() "
+            f"but missing from MEMORY_FILE_DESCRIPTORS in utils.py"
+        )
+
+    # 2. Stale review entry — no adapter uses it
+    for path in sorted(review_list - checkable):
+        msgs.append(
+            f"DRIFT config: {path} in approval_mode.review but no adapter references it"
+        )
+
+    # 3. Compat-default scope notice
+    if approval is None:
+        always_auto_compat = {"memory/working.md", "dev/[task]/context.md"}
+        unknown_to_compat = checkable - COMPAT_REVIEW_DEFAULTS - always_auto_compat
+        if unknown_to_compat:
+            msgs.append(
+                f"INFO compat: approval_mode unset; these files default to 'auto' under compat "
+                f"({sorted(unknown_to_compat)}) — set approval_mode explicitly to confirm."
+            )
+
+    return msgs

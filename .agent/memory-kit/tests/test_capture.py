@@ -10,6 +10,11 @@ from adapters.claude_code import _build_stop_sh, _normalize_capture_at
 from adapters.utils import ensure_gitignored
 
 
+def _cfg(**overrides):
+    """Minimal config for _build_stop_sh tests."""
+    return overrides  # empty = compat default (review for semantic/DECISIONS)
+
+
 def test_normalize_default_when_memory_missing():
     assert _normalize_capture_at({}) == ["response", "merge"]
 
@@ -52,14 +57,14 @@ def _check_bash_syntax(script: str) -> None:
 
 
 def test_build_empty_warns_and_has_valid_syntax():
-    script = _build_stop_sh([])
+    script = _build_stop_sh([], _cfg())
     assert "Warning: memory.capture_at is empty" in script
     assert "Add response, commit, and/or merge" in script
     _check_bash_syntax(script)
 
 
 def test_build_response_only_skips_sentinel_logic():
-    script = _build_stop_sh(["response"])
+    script = _build_stop_sh(["response"], _cfg())
     assert "git -C \"$REPO_ROOT\" diff HEAD --name-only" in script
     assert "emit_memory_reminder" in script
     assert "SENTINEL" not in script
@@ -67,7 +72,7 @@ def test_build_response_only_skips_sentinel_logic():
 
 
 def test_build_commit_only_uses_range_scan():
-    script = _build_stop_sh(["commit"])
+    script = _build_stop_sh(["commit"], _cfg())
     assert "SENTINEL" in script
     assert "rev-list" in script
     assert "HAS_COMMIT" in script
@@ -76,7 +81,7 @@ def test_build_commit_only_uses_range_scan():
 
 
 def test_build_merge_only_detects_merge_commits():
-    script = _build_stop_sh(["merge"])
+    script = _build_stop_sh(["merge"], _cfg())
     assert "SENTINEL" in script
     assert "HAS_MERGE" in script
     assert "Merge commit detected" in script
@@ -84,7 +89,7 @@ def test_build_merge_only_detects_merge_commits():
 
 
 def test_build_commit_and_merge_can_fire_both_levels():
-    script = _build_stop_sh(["commit", "merge"])
+    script = _build_stop_sh(["commit", "merge"], _cfg())
     assert "HAS_COMMIT" in script
     assert "HAS_MERGE" in script
     assert "Merge commit detected" in script
@@ -92,7 +97,7 @@ def test_build_commit_and_merge_can_fire_both_levels():
 
 
 def test_build_all_levels_includes_response_and_range_logic():
-    script = _build_stop_sh(["response", "commit", "merge"])
+    script = _build_stop_sh(["response", "commit", "merge"], _cfg())
     assert "diff HEAD --name-only" in script
     assert "rev-list" in script
     assert "SENTINEL" in script
@@ -100,13 +105,13 @@ def test_build_all_levels_includes_response_and_range_logic():
 
 
 def test_build_header_reflects_enabled_levels():
-    script = _build_stop_sh(["response", "merge"])
+    script = _build_stop_sh(["response", "merge"], _cfg())
     assert "capture levels: response, merge" in script
 
 
 def test_build_uses_revlist_parents_not_grep():
     # grep -c exits 1 on zero matches; rev-list --parents | wc -w is safe under set -e
-    script = _build_stop_sh(["commit", "merge"])
+    script = _build_stop_sh(["commit", "merge"], _cfg())
     assert "grep -c" not in script
     assert "rev-list --parents" in script
     assert "wc -w" in script

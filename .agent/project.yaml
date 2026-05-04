@@ -113,3 +113,6 @@ memory:
     working: memory/working.md
     decisions: DECISIONS.md
   task_directory: dev/[task]/
+  approval_mode:
+    default: auto
+    review: []

@@ -13,7 +13,7 @@ Windsurf Adapter — generates .windsurfrules at project root
 """
 from pathlib import Path
 
-from .utils import write_managed_section, check_managed_section
+from .utils import write_managed_section, check_managed_section, build_memory_discipline
 
 
 _MANAGED_TEMPLATE = """\
@@ -47,6 +47,10 @@ If reasoning becomes uncertain or inconsistent with prior context, re-read `memo
 
 ---
 
+{memory_discipline}
+
+---
+
 ## Architecture
 
 Before implementing a feature, read `{arch_file}`. It is the canonical record of architectural principles, load-bearing assumptions, and planned capabilities — not current build state (that lives in `memory/semantic.md`).
@@ -59,6 +63,16 @@ Before implementing a feature, read `{arch_file}`. It is the canonical record of
 """
 
 
+def referenced_memory_files() -> list[str]:
+    """Return the set of .md files this adapter's Memory Discipline references."""
+    return [
+        "memory/semantic.md",
+        "memory/working.md",
+        "DECISIONS.md",
+        "dev/[task]/context.md",
+    ]
+
+
 def _build_managed_content(config: dict) -> str:
     """Build the managed-section content from config."""
     arch_file = config.get("architecture", {}).get("file", "vision.md")
@@ -67,6 +81,7 @@ def _build_managed_content(config: dict) -> str:
     return _MANAGED_TEMPLATE.format(
         arch_file=arch_file,
         conventions_md=conventions_md,
+        memory_discipline=build_memory_discipline(config, arch_file),
     )
 
 

@@ -21,6 +21,7 @@ from .utils import (
     check_managed_section,
     check_fully_generated,
     GENERATED_BANNER_SH,
+    mode_for,
 )
 
 
@@ -94,8 +95,15 @@ def _normalize_capture_at(config: dict) -> list[str]:
     return result
 
 
-def _build_stop_sh(capture_at: list[str]) -> str:
-    """Generate stop.sh content based on normalized capture levels."""
+def _build_stop_sh(capture_at: list[str], config: dict) -> str:
+    """Generate stop.sh content based on normalized capture levels and config."""
+    sem_mode = mode_for("memory/semantic.md", config)
+    dec_mode = mode_for("DECISIONS.md", config)
+
+    if sem_mode == "review" or dec_mode == "review":
+        reminder_line = '  echo "- semantic.md / DECISIONS.md: PROPOSE first, write only on approval"'
+    else:
+        reminder_line = '  echo "- semantic.md / DECISIONS.md: update directly; summarize changes"'
     if not capture_at:
         return textwrap.dedent(
             """\
@@ -119,7 +127,7 @@ def _build_stop_sh(capture_at: list[str]) -> str:
         "emit_memory_reminder() {",
         '  echo "Memory check — inspect diff and propose updates if significant:"',
         '  echo "- working.md: update current state (no approval needed)"',
-        '  echo "- semantic.md / DECISIONS.md: PROPOSE first, write only on approval"',
+        reminder_line,
         '  echo "- If intent unclear from diff, ask before proposing"',
         "}",
         "",
@@ -195,6 +203,16 @@ def _build_stop_sh(capture_at: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def referenced_memory_files() -> list[str]:
+    """Return the set of .md files this adapter's Memory Discipline references."""
+    return [
+        "memory/semantic.md",
+        "memory/working.md",
+        "DECISIONS.md",
+        "dev/[task]/context.md",
+    ]
+
+
 def _build_preprompt(project_root: Path) -> str:
     """Read the preprompt template."""
     templates = project_root / ".agent" / "memory-kit" / "templates"
@@ -216,7 +234,7 @@ def generate(project_root: Path, config: dict) -> str:
     # Write hooks/stop.sh and make executable
     stop_path = hooks_dir / "stop.sh"
     capture_at = _normalize_capture_at(config)
-    stop_path.write_text(_build_stop_sh(capture_at))
+    stop_path.write_text(_build_stop_sh(capture_at, config))
     stop_path.chmod(0o755)
     ensure_gitignored(project_root, ".agent/.last_checked_commit")
 
@@ -292,7 +310,7 @@ def check(project_root: Path, config: dict) -> list[str]:
 
     # hooks/stop.sh — fully generated
     capture_at = _normalize_capture_at(config)
-    stop_expected = _build_stop_sh(capture_at)
+    stop_expected = _build_stop_sh(capture_at, config)
     r = check_fully_generated(
         project_root / "hooks" / "stop.sh",
         stop_expected,

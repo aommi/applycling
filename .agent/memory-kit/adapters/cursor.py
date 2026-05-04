@@ -24,6 +24,7 @@ from .utils import (
     write_managed_section,
     check_managed_section,
     check_fully_generated,
+    build_memory_discipline,
 )
 
 
@@ -57,12 +58,7 @@ Do not speculatively load files "just in case".
 
 If reasoning becomes uncertain or inconsistent with prior context, re-read `memory/semantic.md` before continuing.
 
-### Memory Discipline
-
-- `memory/semantic.md` — current build state; propose updates; wait for approval before writing
-- `memory/working.md` — live task state; update freely after each response; no approval needed
-- `DECISIONS.md` — append-only log of architectural decisions; propose entries for approval
-- `{arch_file}` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated
+{memory_discipline}
 
 ### Architecture Reference
 
@@ -84,6 +80,15 @@ _CURSOR_FRONTMATTER = (
 _CURSOR_HEADER = "# Memory System"
 
 
+def referenced_memory_files() -> list[str]:
+    """Return the set of .md files this adapter's Memory Discipline references."""
+    return [
+        "memory/semantic.md",
+        "memory/working.md",
+        "DECISIONS.md",
+    ]
+
+
 def _build_managed_content(config: dict) -> str:
     """Build the managed-section content from config."""
     arch_file = config.get("architecture", {}).get("file", "vision.md")
@@ -92,6 +97,7 @@ def _build_managed_content(config: dict) -> str:
     return _MANAGED_TEMPLATE.format(
         arch_file=arch_file,
         conventions_md=conventions_md,
+        memory_discipline=build_memory_discipline(config, arch_file),
     )
 
 

@@ -21,12 +21,48 @@ from pathlib import Path
 from .utils import (
     GENERATED_BANNER_MD,
     check_fully_generated,
+    build_approval_gate,
 )
 
 
 def _banner_md(content: str) -> str:
     """Prepend the generated banner to a markdown template."""
     return GENERATED_BANNER_MD + "\n\n" + content
+
+
+def referenced_memory_files() -> list[str]:
+    """Return the set of .md files this adapter's Memory Discipline references.
+
+    Note: dev/[task]/context.md is intentionally omitted — Antigravity's
+    workflow model handles task context through its own .agents/workflows/
+    system rather than the shared memory-kit task files.
+    """
+    return [
+        "memory/semantic.md",
+        "memory/working.md",
+        "DECISIONS.md",
+    ]
+
+
+def _build_approval_flow(config: dict) -> str:
+    """Build the step 4 approval flow text for memory-update workflow."""
+    from .utils import mode_for
+    sem = mode_for("memory/semantic.md", config)
+    dec = mode_for("DECISIONS.md", config)
+
+    if sem == "review" or dec == "review":
+        lines = [
+            "   - Draft the proposed update — show the user exactly what would be written and to which file",
+            "   - Wait for explicit approval ('looks good', 'yes', 'approve') before writing",
+            "   - On approval: write to `semantic.md` and/or `DECISIONS.md` and/or `context.md`",
+            "   - On correction: apply the user's edit, then write",
+        ]
+        return "\n".join(lines)
+    else:
+        return (
+            "   - Write the update directly to the appropriate file(s). Summarize what"
+            " you changed in your response so it can be reviewed asynchronously."
+        )
 
 
 def generate(project_root: Path, config: dict) -> str:
@@ -47,9 +83,11 @@ def generate(project_root: Path, config: dict) -> str:
     ag_templates = templates / "antigravity"
 
     # Rule 1: Memory System (Always On recommended)
+    approval_gate = build_approval_gate(config)
     memory_rule = _banner_md(
         (ag_templates / "memory-system.md").read_text().format(
-            project_name=project["name"]
+            project_name=project["name"],
+            approval_gate=approval_gate,
         )
     )
 
@@ -70,7 +108,12 @@ def generate(project_root: Path, config: dict) -> str:
     workflows_dir = agents_dir / "workflows"
     workflows_dir.mkdir(parents=True, exist_ok=True)
 
-    memory_workflow = _banner_md((ag_templates / "memory-update.md").read_text())
+    approval_flow = _build_approval_flow(config)
+    memory_workflow = _banner_md(
+        (ag_templates / "memory-update.md").read_text().format(
+            approval_flow=approval_flow,
+        )
+    )
     task_switch_workflow = _banner_md((ag_templates / "task-switch.md").read_text())
 
     (workflows_dir / "memory-update.md").write_text(memory_workflow)
@@ -103,10 +146,13 @@ def check(project_root: Path, config: dict) -> list[str]:
 
     diffs = []
 
+    approval_gate = build_approval_gate(config)
+
     # Rules
     expected_memory_rule = _banner_md(
         (ag_templates / "memory-system.md").read_text().format(
-            project_name=project["name"]
+            project_name=project["name"],
+            approval_gate=approval_gate,
         )
     )
     r = check_fully_generated(
@@ -134,7 +180,12 @@ def check(project_root: Path, config: dict) -> list[str]:
         diffs.append(r)
 
     # Workflows
-    expected_memory_wf = _banner_md((ag_templates / "memory-update.md").read_text())
+    approval_flow = _build_approval_flow(config)
+    expected_memory_wf = _banner_md(
+        (ag_templates / "memory-update.md").read_text().format(
+            approval_flow=approval_flow,
+        )
+    )
     r = check_fully_generated(
         project_root / ".agents" / "workflows" / "memory-update.md",
         expected_memory_wf,
