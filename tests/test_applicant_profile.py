@@ -8,10 +8,12 @@ from applycling import pipeline, storage
 
 
 def test_save_applicant_profile_can_clear_merged_fields(tmp_path, monkeypatch):
-    profile_path = tmp_path / "applicant_profile.json"
+    profile_path = tmp_path / "profile.json"
     monkeypatch.setattr(storage, "DATA_DIR", tmp_path)
     monkeypatch.setattr(storage, "OUTPUT_DIR", tmp_path / "output")
-    monkeypatch.setattr(storage, "APPLICANT_PROFILE_PATH", profile_path)
+    monkeypatch.setattr(storage, "PROFILE_PATH", profile_path)
+    # APPLICANT_PROFILE_PATH still needed for the migration guard in load_profile
+    monkeypatch.setattr(storage, "APPLICANT_PROFILE_PATH", tmp_path / "applicant_profile.json")
 
     storage.save_applicant_profile(
         {
