@@ -21,3 +21,4 @@ changeset.
 | `get_package` | ✅ Shipped | MCP-T2 |
 | `update_job_status` | 📋 Deferred | MCP-T3 |
 | `interview_prep` | 📋 Deferred | MCP-T3 |
+| `refine_package` | 📋 Deferred | MCP-T3 |
