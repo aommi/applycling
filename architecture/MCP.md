@@ -19,6 +19,6 @@ changeset.
 | `add_job` | ✅ Shipped | MCP-T1 |
 | `list_jobs` | ✅ Shipped | MCP-T2 |
 | `get_package` | ✅ Shipped | MCP-T2 |
-| `update_job_status` | 📋 Deferred | MCP-T3 |
-| `interview_prep` | 📋 Deferred | MCP-T3 |
-| `refine_package` | 📋 Deferred | MCP-T3 |
+| `update_job_status` | ✅ Shipped | MCP-T3 |
+| `interview_prep` | ✅ Shipped | MCP-T3 |
+| `refine_package` | ✅ Shipped | MCP-T3 |

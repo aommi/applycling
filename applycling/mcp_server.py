@@ -233,3 +233,88 @@ def get_package(job_id: str) -> dict:
         },
         "truncated": total_truncated,
     }
+
+
+@mcp.tool()
+def update_job_status(job_id: str, status: str, reason: str | None = None) -> dict:
+    """Update a tracked job's status using the canonical state machine."""
+    from applycling.jobs_service import set_job_status
+    from applycling.tracker import TrackerError
+
+    try:
+        job = set_job_status(job_id, status, reason=reason)
+    except TrackerError as e:
+        return {"error": "job_not_found", "message": str(e), "job_id": job_id}
+    except ValueError as e:
+        return {
+            "error": "invalid_status_transition",
+            "message": str(e),
+            "job_id": job_id,
+            "requested_status": status,
+        }
+
+    return {"status": "complete", "job": job}
+
+
+@mcp.tool()
+def interview_prep(
+    job_id: str,
+    stage: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Generate interview prep materials for an existing job package."""
+    from applycling.package_actions import (
+        ConfigurationError,
+        generate_interview_prep_for_job,
+    )
+    from applycling.tracker import TrackerError
+
+    try:
+        return generate_interview_prep_for_job(
+            job_id, stage=stage, model=model, provider=provider
+        )
+    except TrackerError as e:
+        return {"error": "job_not_found", "message": str(e), "job_id": job_id}
+    except ConfigurationError as e:
+        return {"error": "configuration_error", "message": str(e), "job_id": job_id}
+    except ValueError as e:
+        return {"error": "invalid_request", "message": str(e), "job_id": job_id}
+    except FileNotFoundError as e:
+        return {"error": "package_file_missing", "message": str(e), "job_id": job_id}
+    except RuntimeError as e:
+        return {"error": "generation_failed", "message": str(e), "job_id": job_id}
+
+
+@mcp.tool()
+def refine_package(
+    job_id: str,
+    feedback: str,
+    artifacts: list[str] | None = None,
+    cascade: bool = False,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Refine generated package artifacts using explicit feedback."""
+    from applycling.package_actions import ConfigurationError, refine_package_for_job
+    from applycling.tracker import TrackerError
+
+    try:
+        return refine_package_for_job(
+            job_id,
+            feedback=feedback,
+            artifacts=artifacts,
+            cascade=cascade,
+            model=model,
+            provider=provider,
+        )
+    except TrackerError as e:
+        return {"error": "job_not_found", "message": str(e), "job_id": job_id}
+    except ConfigurationError as e:
+        return {"error": "configuration_error", "message": str(e), "job_id": job_id}
+    except ValueError as e:
+        return {"error": "invalid_request", "message": str(e), "job_id": job_id}
+    except FileNotFoundError as e:
+        return {"error": "package_file_missing", "message": str(e), "job_id": job_id}
+    except RuntimeError as e:
+        return {"error": "generation_failed", "message": str(e), "job_id": job_id}
