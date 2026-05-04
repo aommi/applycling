@@ -521,6 +521,34 @@ To switch back to SQLite: unset `APPLYCLING_DB_BACKEND` or set it to `sqlite`.
 
 applycling can act as an MCP (Model Context Protocol) server, making its
 pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
+Your AI assistant becomes the interface — describe the job, and it generates
+the full application package through applycling's tools.
+
+### How it works
+
+```
+Your AI client (Claude Desktop, Cursor, etc.)
+       │  stdio (JSON-RPC) — reads applycling tools
+       ▼
+applycling MCP server (runs locally)
+       │  calls pipeline directly
+       ▼
+applycling pipeline → your configured LLM → package artifacts on disk
+```
+
+The MCP server runs on your machine. It reads your Application Profile (the
+same one used by the CLI and local workbench) and your configured LLM API key.
+Your AI client calls tools like `add_job` and `get_package` — applycling does
+the heavy lifting behind the scenes.
+
+### Prerequisites
+
+Complete the standard install first (see [Install](#install) above):
+
+- Python 3.10+ with a venv
+- One configured LLM provider (Anthropic, OpenAI, Google, or Ollama)
+- API key in `.env` (for cloud providers)
+- `applycling setup` completed — profile with name, email, and resume
 
 ### Setup
 
@@ -529,7 +557,7 @@ pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
    pip install -e ".[mcp]"
    ```
 
-2. Complete the standard setup:
+2. Complete the standard setup (if not already done):
    ```bash
    applycling setup
    ```
@@ -545,7 +573,42 @@ pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
 
 5. Restart your client. applycling tools are now available.
 
+### Available Tools
+
+Once connected, your AI client has access to these tools:
+
+| Tool | What it does |
+|------|-------------|
+| `add_job(url)` | Generate a complete application package for a job URL (2–5 min) |
+| `list_jobs(limit, status)` | List your tracked job applications |
+| `get_package(job_id)` | Read text content of generated markdown artifacts |
+| `update_job_status(job_id, status)` | Move a job through the application pipeline |
+| `interview_prep(job_id, stage)` | Generate interview prep materials |
+| `refine_package(job_id, feedback)` | Iterate on artifacts with specific feedback |
+
+### Where Artifacts Live
+
+Generated packages are local folders on your machine under `output/`:
+
+```
+output/<job_id>-<company>-<title>-<date>/
+├── resume.md / .html / .pdf
+├── cover_letter.md / .html / .pdf
+├── positioning_brief.md
+├── email_inmail.md
+├── fit_summary.md
+├── interview_prep.md
+└── ...
+```
+
+`get_package` returns the text content of markdown artifacts directly in
+your chat. PDFs and other binary files remain as local files — your AI
+client can tell you the path, but it cannot send the file itself. Open
+them from the `output/` folder.
+
 ### Example Prompts
+
+Once connected, try these in your AI client:
 
 - "Generate an application for https://example.com/jobs/123"
 - "Show my recent tracked job applications"
@@ -556,6 +619,8 @@ pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
 
 ### Client Timeout Note
 
-The `add_job` tool runs the full pipeline synchronously (2–5 minutes). If your
-MCP client has a request timeout below 5 minutes, increase it or use the CLI
-directly (`applycling add <url>`).
+The `add_job` tool runs the full pipeline synchronously (2–5 minutes).
+Progress notifications appear during the run, but if your MCP client has a
+request timeout below 5 minutes, the call may be cut off before completion.
+If the client times out, run `applycling add <url>` via CLI for the
+generation step, then inspect the package with MCP read tools.
