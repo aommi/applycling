@@ -137,6 +137,12 @@ def test_add_job_success(monkeypatch, tmp_path):
         "applycling.storage.load_profile",
         lambda: {"name": "Test", "email": "t@t.com", "resume_text": "..."},
     )
+    # profile_completeness() also checks RESUME_PATH.exists()
+    # — point it at a temp file that actually exists
+    resume = tmp_path / "resume.md"
+    resume.write_text("# Resume\n")
+    import applycling.storage as _st
+    monkeypatch.setattr(_st, "RESUME_PATH", resume)
     # Mock run_add_notify to return a fixed path
     pkg = tmp_path / "packages" / "job_123"
     pkg.mkdir(parents=True)
