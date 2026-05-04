@@ -11,6 +11,38 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP, Context
 from applycling.pipeline import run_add_notify
 
+# --- Bounds for get_package artifact content ---
+MAX_PACKAGE_FILE_BYTES = 50_000
+MAX_PACKAGE_TOTAL_BYTES = 200_000
+
+
+def _job_to_mcp_dict(job) -> dict:
+    return {
+        "job_id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "status": job.status,
+        "date_added": job.date_added,
+        "date_updated": job.date_updated,
+        "source_url": job.source_url,
+        "application_url": job.application_url,
+        "fit_summary": job.fit_summary,
+        "package_folder": job.package_folder,
+    }
+
+
+def _read_text_bounded(path: Path, max_bytes: int) -> tuple[str, bool, int]:
+    raw = path.read_bytes()
+    size = len(raw)
+    truncated = size > max_bytes
+    if truncated:
+        raw = raw[:max_bytes]
+    text = raw.decode("utf-8", errors="replace")
+    if truncated:
+        text = text + "\n\n[truncated]"
+    return text, truncated, size
+
+
 mcp = FastMCP("applycling")
 
 
@@ -111,3 +143,93 @@ async def add_job(url: str, ctx: Context) -> dict:
             "status": "failed",
             "detail": traceback.format_exc(),
         }
+
+
+@mcp.tool()
+def list_jobs(limit: int = 20, status: str | None = None) -> list[dict]:
+    """List tracked job applications. Optionally filter by status."""
+    from applycling.tracker import get_store
+
+    safe_limit = max(1, min(limit, 100))
+    jobs = get_store().load_jobs()
+
+    if status:
+        jobs = [job for job in jobs if job.status == status]
+
+    return [_job_to_mcp_dict(job) for job in jobs[:safe_limit]]
+
+
+@mcp.tool()
+def get_package(job_id: str) -> dict:
+    """Return bounded artifact metadata and text content for a job package."""
+    from applycling.tracker import TrackerError, get_store
+
+    try:
+        job = get_store().load_job(job_id)
+    except TrackerError as e:
+        return {
+            "error": "job_not_found",
+            "message": str(e),
+            "job_id": job_id,
+        }
+
+    if not job.package_folder:
+        return {
+            "error": "package_missing",
+            "message": f"No package folder recorded for job {job_id}",
+            "job_id": job_id,
+        }
+
+    folder = Path(job.package_folder)
+    if not folder.exists() or not folder.is_dir():
+        return {
+            "error": "package_folder_not_found",
+            "message": f"Package folder not found: {folder}",
+            "job_id": job_id,
+            "package_folder": str(folder),
+        }
+
+    artifacts = []
+    total_bytes = 0
+    total_truncated = False
+
+    for md_file in sorted(folder.glob("*.md")):
+        try:
+            content, file_truncated, size_bytes = _read_text_bounded(
+                md_file, MAX_PACKAGE_FILE_BYTES
+            )
+        except OSError:
+            continue
+
+        content_bytes = len(content.encode("utf-8", errors="replace"))
+        if total_bytes + content_bytes > MAX_PACKAGE_TOTAL_BYTES:
+            total_truncated = True
+            break
+
+        artifacts.append(
+            {
+                "name": md_file.name,
+                "path": str(md_file),
+                "kind": md_file.stem,
+                "size_bytes": size_bytes,
+                "truncated": file_truncated,
+                "content": content,
+            }
+        )
+        total_bytes += content_bytes
+        total_truncated = total_truncated or file_truncated
+
+    return {
+        "job_id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "status": job.status,
+        "package_folder": str(folder),
+        "artifacts": artifacts,
+        "artifact_count": len(artifacts),
+        "limits": {
+            "max_file_bytes": MAX_PACKAGE_FILE_BYTES,
+            "max_total_bytes": MAX_PACKAGE_TOTAL_BYTES,
+        },
+        "truncated": total_truncated,
+    }
