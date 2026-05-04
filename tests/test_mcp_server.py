@@ -709,3 +709,37 @@ def test_mcp_server_imports_action_tools():
     assert callable(update_job_status)
     assert callable(interview_prep)
     assert callable(refine_package)
+
+
+def test_mcp_parity():
+    """Every pipeline capability exposed via CLI has a matching MCP tool.
+
+    Known gaps (CLI commands without MCP tools yet):
+      - answer → no MCP tool (application form Q&A) — planned: MCP-T5
+      - critique → no MCP tool (recruiter review) — planned: MCP-T5
+      - questions → no MCP tool (interview questions + STAR) — planned: MCP-T5
+
+    When adding a new entry to 'expected', also add the MCP tool in
+    MCP-T5 (or a follow-up ticket) before uncommenting the entry.
+    """
+    import asyncio
+    from applycling.mcp_server import mcp
+
+    # Currently matched pairs. Add new entries here when a pipeline
+    # capability ships — the test will force you to add the MCP tool.
+    expected = {
+        "add": "add_job",
+        "list": "list_jobs",
+        "status": "update_job_status",
+        "prep": "interview_prep",
+        "refine": "refine_package",
+    }
+
+    tools = asyncio.run(mcp.list_tools())
+    tool_names = {t.name for t in tools}
+
+    for cli_cmd, mcp_name in expected.items():
+        assert mcp_name in tool_names, (
+            f"CLI '{cli_cmd}' has no MCP tool '{mcp_name}'. "
+            f"Add @mcp.tool() in mcp_server.py."
+        )
