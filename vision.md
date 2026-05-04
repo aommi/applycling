@@ -213,34 +213,6 @@ its core design? If yes → here. If no → `DECISIONS.md`.
 
 Capabilities not yet built, listed by function rather than sprint order.
 
-### MCP server
-
-An `applycling mcp serve` command exposes pipeline capabilities as MCP tools, making
-applycling usable from any MCP-compatible client (Claude Desktop, Cursor, etc.) without
-touching the CLI.
-
-Each tool maps 1:1 to a pipeline capability and calls `applycling.pipeline` directly —
-never via subprocess. This keeps it on the stable public contract and means new pipeline
-features flow through automatically.
-
-Initial tool surface:
-- `add_job(url)` → `pipeline.run_add()`
-- `list_jobs()` → tracker
-- `get_package(job_id)` → artifact paths + content
-- `interview_prep(job_id)`, `refine(job_id, feedback)`
-
-**Compatibility discipline:** when a new pipeline capability ships, the corresponding MCP
-tool ships in the same PR. This is enforced via two mechanisms:
-- `memory/semantic.md` Key Patterns — active-session reminder for every agent
-- `.agent/project.yaml` conventions — propagates into all agent entry-point files
-  (CLAUDE.md, AGENTS.md, GEMINI.md, etc.) when `python .agent/generate.py all` is run,
-  so no agent can miss the rule
-
-**What it unlocks:** low-friction setup for additional users — `pip install applycling`,
-`applycling setup` (enter resume/profile), add MCP config to client. No CLI knowledge,
-no Telegram bot required. Each user still needs their own local profile and API key;
-true multi-user is Phase 3.
-
 ### Context-based resolvers
 
 Skills gain optional frontmatter fields: `trigger: always | conditional | variant`,

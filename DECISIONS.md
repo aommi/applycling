@@ -290,3 +290,23 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 - Shared UI credentials for Hermes intake.
 
 **Affects:** `docker-compose.prod.yml`, `Caddyfile`, `Dockerfile.hermes`, `applycling/ui/__init__.py`, `applycling/ui/routes.py`, `applycling/jobs_service.py`, `applycling/tracker/postgres_store.py`, `applycling/tracker/__init__.py`, `migrations/`, `docs/deploy/`
+
+---
+
+## 2026-05-04 — MCP Action Tools Shipped Before Non-Author Setup UX
+
+**Decision:** Supersede the earlier sprint sequencing that deferred MCP action/refinement tools until after MCP-T4. MCP-T3 shipped before MCP-T4 because it was independent of non-author setup UX and completed the local MCP package loop.
+
+**Reasoning:**
+- MCP-T3 depended on MCP-T2's read surface, not on MCP-T4's setup documentation or local trial checklist.
+- Implementing `update_job_status`, `interview_prep`, and `refine_package` early closed the CLI/MCP drift risk by extracting shared package-action helpers.
+- Starting MCP-T4 against a complete tool surface gives the non-author trial a more accurate setup path.
+
+**Impact:**
+- MCP local package loop is now `add_job -> list_jobs -> get_package -> refine_package / interview_prep -> update_job_status`.
+- `applycling/package_actions.py` is the shared helper boundary for CLI and MCP package actions; MCP must not call or shell out to CLI.
+- Sprint sequencing is cleanup/documentation next, then MCP-T4 local setup UX, then alpha recruitment/session work.
+
+**Supersedes:** 2026-05 sprint README sequencing that placed MCP-T4 before MCP-T3 and deferred action/refinement tools until after non-author validation.
+
+**Affects:** `applycling/mcp_server.py`, `applycling/package_actions.py`, `applycling/cli.py`, `architecture/MCP.md`, `memory/semantic.md`, `docs/planning/sprints/2026-05-mcp-alpha/README.md`, `vision.md`
