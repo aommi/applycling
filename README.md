@@ -550,6 +550,9 @@ pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
 - "Generate an application for https://example.com/jobs/123"
 - "Show my recent tracked job applications"
 - "Open the package for job_001 and summarize the generated artifacts"
+- "Mark job_001 as applied"
+- "Generate interview prep for job_001"
+- "Refine job_001's resume and cover letter to emphasize backend systems work"
 
 ### Client Timeout Note
 

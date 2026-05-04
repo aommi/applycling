@@ -189,6 +189,9 @@ class _FakeStore:
         from applycling.tracker import TrackerError
         raise TrackerError(f"No job found for id: {job_id}")
 
+    def load_job_notes(self, job_id: str) -> str:
+        return ""
+
 
 def _make_job(**overrides):
     """Factory for a Job dataclass with sensible defaults."""
@@ -382,3 +385,296 @@ def test_get_package_total_limit(monkeypatch, tmp_path):
     # First file fits (150 bytes), second would push over 200 → stop
     assert result["artifact_count"] < 3
     assert result["truncated"] is True
+
+
+# ---------------------------------------------------------------------------
+# MCP-T3: Action tools (update_job_status, interview_prep, refine_package)
+# ---------------------------------------------------------------------------
+
+
+def test_update_job_status_success(monkeypatch):
+    """update_job_status returns success dict when transition is valid."""
+    from applycling.mcp_server import update_job_status
+
+    expected_job = {"job_id": "job_001", "status": "applied", "title": "SE"}
+    monkeypatch.setattr(
+        "applycling.jobs_service.set_job_status",
+        lambda job_id, status, reason=None: expected_job,
+    )
+
+    result = update_job_status("job_001", "applied")
+    assert result["status"] == "complete"
+    assert result["job"] == expected_job
+
+
+def test_update_job_status_invalid_transition(monkeypatch):
+    """update_job_status returns error on invalid transition."""
+    from applycling.mcp_server import update_job_status
+
+    def _raise(*args, **kwargs):
+        raise ValueError("Cannot transition from 'new' to 'applied'")
+
+    monkeypatch.setattr("applycling.jobs_service.set_job_status", _raise)
+
+    result = update_job_status("job_001", "applied")
+    assert result["error"] == "invalid_status_transition"
+    assert result["job_id"] == "job_001"
+
+
+def test_interview_prep_missing_job_returns_error(monkeypatch):
+    """interview_prep returns structured error for missing job."""
+    from applycling.mcp_server import interview_prep
+    from applycling.tracker import TrackerError
+
+    monkeypatch.setattr(
+        "applycling.tracker.get_store",
+        lambda: _FakeStore(
+            raise_load_job=TrackerError("No job found for id: bad")
+        ),
+    )
+
+    result = interview_prep("bad")
+    assert result["error"] == "job_not_found"
+    assert result["job_id"] == "bad"
+
+
+def test_interview_prep_success_writes_artifact(monkeypatch, tmp_path):
+    """interview_prep writes interview_prep.md and returns metadata."""
+    from applycling.mcp_server import interview_prep
+
+    # Setup fake package folder with required files
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Resume\n\nContent.")
+    (pkg / "job_description.md").write_text("# JD\n\nJob content.")
+
+    job = _make_job(id="job_prep", title="PM", company="Acme", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._read_intel_folder",
+        lambda folder, vision_model="", vision_provider="": ("", []),
+    )
+
+    # Mock LLM to return deterministic chunks
+    class _MockLLM:
+        def interview_prep(self, *args, **kwargs):
+            yield "# Interview Prep\n\nSome content.\n"
+
+    monkeypatch.setattr("applycling.llm.interview_prep", _MockLLM().interview_prep)
+
+    result = interview_prep("job_prep")
+    assert result["status"] == "complete"
+    assert result["job_id"] == "job_prep"
+    assert result["artifacts"][0]["kind"] == "interview_prep"
+    assert (pkg / "interview_prep.md").exists()
+
+
+def test_interview_prep_rejects_invalid_stage(monkeypatch):
+    """interview_prep returns structured error for invalid stage."""
+    from applycling.mcp_server import interview_prep
+
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+
+    # Create a valid package so it reaches stage validation
+    pkg_dir = "/tmp/pkg_test_invalid_stage_t3"
+    import os
+    os.makedirs(pkg_dir, exist_ok=True)
+    (Path(pkg_dir) / "resume.md").write_text("test")
+    (Path(pkg_dir) / "job_description.md").write_text("test")
+
+    job = _make_job(id="job_001", package_folder=pkg_dir)
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = interview_prep("job_001", stage="invalid-stage")
+    assert result["error"] == "invalid_request"
+    assert result["job_id"] == "job_001"
+
+
+def test_interview_prep_configuration_error(monkeypatch):
+    """interview_prep returns configuration_error for missing config."""
+    from applycling.mcp_server import interview_prep
+    from applycling.package_actions import ConfigurationError
+
+    def _raise_cfg():
+        raise ConfigurationError("No config found.")
+
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe", _raise_cfg
+    )
+
+    result = interview_prep("job_001")
+    assert result["error"] == "configuration_error"
+
+
+def test_refine_package_requires_feedback(monkeypatch):
+    """refine_package returns error for empty feedback."""
+    from applycling.mcp_server import refine_package
+
+    result = refine_package("job_001", feedback="")
+    assert result["error"] == "invalid_request"
+
+
+def test_refine_package_missing_package_returns_error(monkeypatch):
+    """refine_package returns structured error when package folder is missing."""
+    from applycling.mcp_server import refine_package
+
+    job = _make_job(package_folder=None)
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+
+    result = refine_package("job_001", feedback="improve it")
+    assert result["error"] == "invalid_request"
+
+
+def test_refine_package_versions_before_writing(monkeypatch, tmp_path):
+    """refine_package creates v{n}/ snapshot before writing changed files."""
+    from applycling.mcp_server import refine_package
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Old Resume\n\nold content\n")
+    (pkg / "job_description.md").write_text("# JD\n\njob\n")
+    (pkg / "cover_letter.md").write_text("# Old CL\n\nold\n")
+
+    job = _make_job(id="job_r", title="SE", company="ACME", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+
+    def _mock_refine_resume(*args, **kwargs):
+        yield "# New Resume\n\nnew content\n"
+
+    def _mock_format_resume(*args, **kwargs):
+        yield "# New Resume\n\nnew content\n"
+
+    def _mock_refine_cl(*args, **kwargs):
+        yield "New cover letter."
+
+    monkeypatch.setattr("applycling.llm.refine_resume", _mock_refine_resume)
+    monkeypatch.setattr("applycling.llm.format_resume", _mock_format_resume)
+    monkeypatch.setattr("applycling.llm.refine_cover_letter", _mock_refine_cl)
+    monkeypatch.setattr(
+        "applycling.render.render_resume",
+        lambda *args, **kwargs: None,
+    )
+
+    # Mock profile loading
+    monkeypatch.setattr(
+        "applycling.storage.load_profile",
+        lambda: {"name": "Test", "email": "t@t.com"},
+    )
+
+    result = refine_package("job_r", feedback="improve it")
+    assert result["status"] == "complete"
+    # Check v{n}/ snapshot was created
+    v_folders = [d for d in pkg.iterdir() if d.is_dir() and d.name.startswith("v")]
+    assert len(v_folders) >= 1
+    assert "version_folder" in result
+
+
+def test_refine_package_artifact_filter(monkeypatch, tmp_path):
+    """refine_package with artifacts=["resume"] only changes resume."""
+    from applycling.mcp_server import refine_package
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Old Resume\n\nold content\n")
+    (pkg / "job_description.md").write_text("# JD\n\njob\n")
+    (pkg / "cover_letter.md").write_text("# Old CL\n\nold\n")
+
+    job = _make_job(id="job_r", title="SE", company="ACME", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+
+    def _mock_refine_resume(*args, **kwargs):
+        yield "# New Resume\n\nnew content\n"
+
+    def _mock_format_resume(*args, **kwargs):
+        yield "# New Resume\n\nnew content\n"
+
+    monkeypatch.setattr("applycling.llm.refine_resume", _mock_refine_resume)
+    monkeypatch.setattr("applycling.llm.format_resume", _mock_format_resume)
+    monkeypatch.setattr(
+        "applycling.render.render_resume",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "applycling.storage.load_profile",
+        lambda: {},
+    )
+
+    result = refine_package("job_r", feedback="improve it", artifacts=["resume"], cascade=False)
+    assert result["status"] == "complete"
+    # cover_letter.md should NOT have been touched
+    artifact_names = [a["name"] for a in result["artifacts"]]
+    assert "resume.md" in artifact_names
+    assert "cover_letter.md" not in artifact_names
+
+
+def test_package_actions_has_no_cli_ui_imports():
+    """applycling/package_actions.py imports no CLI/UI dependencies."""
+    import ast
+
+    path = Path(__file__).parent.parent / "applycling" / "package_actions.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    forbidden = {"click", "rich", "Prompt", "Panel", "console"}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name not in forbidden, f"Banned import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                base = node.module.split(".")[0]
+                assert base not in forbidden, f"Banned import: {node.module}"
+
+
+def test_mcp_server_imports_action_tools():
+    """MCP server exports all three action tools."""
+    from applycling.mcp_server import update_job_status, interview_prep, refine_package
+    assert callable(update_job_status)
+    assert callable(interview_prep)
+    assert callable(refine_package)

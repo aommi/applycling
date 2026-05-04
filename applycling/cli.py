@@ -1014,61 +1014,12 @@ def add(async_mode: bool, non_interactive: bool, url_arg: str, model_arg: str, p
 
 # ---------- refine ----------
 
-_ARTIFACT_ALIASES: dict[str, str] = {
-    "resume": "resume",
-    "cover-letter": "cover_letter",
-    "coverletter": "cover_letter",
-    "cl": "cover_letter",
-    "brief": "brief",
-    "positioning-brief": "brief",
-    "email": "email",
-    "inmail": "email",
-    "email-inmail": "email",
-}
-
-# Downstream cascade: regenerating X also regenerates these (in order).
-_DOWNSTREAM: dict[str, list[str]] = {
-    "resume": ["brief", "cover_letter", "email"],
-    "cover_letter": ["email"],
-    "brief": [],
-    "email": [],
-}
-
-_VERSIONABLE = {
-    "resume.md", "resume.html", "resume.pdf", "resume.docx",
-    "cover_letter.md", "cover_letter.html", "cover_letter.pdf", "cover_letter.docx",
-    "positioning_brief.md", "email_inmail.md",
-}
-
-
-def _version_artifacts(folder: Path) -> Path:
-    """Copy all versionable root files into a v{n}/ snapshot folder. Returns the snapshot path."""
-    import shutil
-    existing = sorted(
-        int(d.name[1:]) for d in folder.iterdir()
-        if d.is_dir() and d.name.startswith("v") and d.name[1:].isdigit()
-    )
-    next_v = (existing[-1] + 1) if existing else 1
-    v_folder = folder / f"v{next_v}"
-    v_folder.mkdir()
-    for fname in _VERSIONABLE:
-        src = folder / fname
-        if src.exists():
-            shutil.copy2(src, v_folder / fname)
-    return v_folder
-
-
-def _parse_refine_only(only_str: str) -> list[str]:
-    """Parse --only value into a list of canonical artifact names."""
-    if not only_str.strip():
-        return []
-    result = []
-    for part in only_str.split(","):
-        key = part.strip().lower()
-        canonical = _ARTIFACT_ALIASES.get(key)
-        if canonical and canonical not in result:
-            result.append(canonical)
-    return result
+# Artifact constants imported from shared package_actions module.
+from .package_actions import (
+    _ARTIFACT_ALIASES, _DOWNSTREAM, _VERSIONABLE, _PREP_STAGES, _PREP_STAGE_LABELS,
+    _parse_refine_only, _version_artifacts, _read_intel_folder,
+    _INTEL_IMAGE_EXTS, _INTEL_TEXT_EXTS,
+)
 
 
 @main.command()
@@ -1084,362 +1035,72 @@ def _parse_refine_only(only_str: str) -> list[str]:
 @click.option("--provider", "provider_arg", default="", help="Override provider for this run.")
 def refine(job_id: str, feedback: str, only: str, cascade: bool, model_arg: str, provider_arg: str) -> None:
     """Iterate on an existing application package with feedback."""
-    cfg = _require_config()
-    model = model_arg or cfg.get("model")
-    if not model:
-        console.print("[red]No model in config.[/red] Run setup again.")
-        sys.exit(1)
-    provider = provider_arg or cfg.get("provider", "ollama")
-    profile = storage.load_profile()
+    from .package_actions import ConfigurationError, refine_package_for_job
 
-    store = get_store()
+    model = model_arg if model_arg else None
+    provider = provider_arg if provider_arg else None
+
+    # Display header early
     try:
+        store = get_store()
         job = store.load_job(job_id)
+        folder = Path(job.package_folder) if job.package_folder else None
+        console.print(
+            Panel.fit(
+                f"[bold]Refining[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]",
+                style="cyan",
+            )
+        )
     except TrackerError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    if not job.package_folder:
-        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
-        sys.exit(1)
-
-    folder = Path(job.package_folder)
-    if not folder.exists():
-        console.print(f"[red]Package folder not found:[/red] {folder}")
-        sys.exit(1)
-
-    console.print(
-        Panel.fit(
-            f"[bold]Refining[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]",
-            style="cyan",
-        )
-    )
-
-    # Load existing artifacts.
-    def _read(fname: str) -> str:
-        p = folder / fname
-        return p.read_text(encoding="utf-8") if p.exists() else ""
-
-    existing_resume = _read("resume.md")
-    existing_cover_letter = _read("cover_letter.md")
-    existing_brief = _read("positioning_brief.md")
-    existing_email = _read("email_inmail.md")
-    strategy = _read("strategy.md")
-    # JD: prefer dedicated file, fall back to strategy.md for older packages.
-    job_description = _read("job_description.md") or strategy
-
-    if not existing_resume:
-        console.print("[red]resume.md not found in package folder.[/red]")
-        sys.exit(1)
-    if not job_description:
-        console.print("[red]No job description or strategy found in package folder.[/red]")
-        sys.exit(1)
-
-    # Collect feedback.
+    # Collect feedback (interactive prompt if empty)
     if not feedback:
         feedback = Prompt.ask("\nWhat should change? (describe the feedback)")
     if not feedback.strip():
         console.print("[yellow]No feedback provided — nothing to refine.[/yellow]")
         sys.exit(0)
 
-    # Determine which artifacts to regenerate.
-    explicit = _parse_refine_only(only)
-    if not explicit:
-        # Default: all artifacts that exist.
-        if existing_resume:
-            explicit.append("resume")
-        if existing_cover_letter:
-            explicit.append("cover_letter")
-        if existing_brief:
-            explicit.append("brief")
-        if existing_email:
-            explicit.append("email")
+    # Parse --only
+    artifacts: list[str] | None = None
+    if only.strip():
+        artifacts = [a.strip() for a in only.split(",") if a.strip()]
 
-    # Apply cascade: always when no --only; only when --cascade is explicitly passed with --only.
-    in_scope: list[str] = list(explicit)
-    if not only or cascade:
-        for artifact in list(explicit):
-            for downstream in _DOWNSTREAM.get(artifact, []):
-                if downstream not in in_scope:
-                    # Only add downstream if the file exists.
-                    fname_map = {"cover_letter": "cover_letter.md", "brief": "positioning_brief.md", "email": "email_inmail.md"}
-                    if (folder / fname_map.get(downstream, f"{downstream}.md")).exists():
-                        in_scope.append(downstream)
-
-    console.print(f"\n[dim]Artifacts in scope: {', '.join(in_scope)}[/dim]")
-
-    # Snapshot existing files to v{n}/ before writing.
-    v_folder = _version_artifacts(folder)
-    console.print(f"[dim]Archived previous version to {v_folder.name}/[/dim]\n")
-
-    step_logs: list[dict] = []
-    run_started = _utcnow()
-
-    # ---- Refine resume ----
-    refined_resume_body = ""
-    if "resume" in in_scope:
-        _s = _Step("refine_resume", step_logs, output_file="resume.md")
-        _s.prompt_text = load_skill("refine_resume").render(
-            feedback=feedback, resume=existing_resume, job_description=job_description
-        )
-        try:
-            with _s, console.status("[cyan]Refining resume...[/cyan]", spinner="dots"):
-                for chunk in llm.refine_resume(existing_resume, job_description, feedback, model, provider=provider):
-                    _s.collect(chunk)
-        except llm.LLMError as e:
-            console.print(f"[red]{e}[/red]")
-            sys.exit(1)
-        refined_body = _clean_llm_output(_s.output)
-
-        # Format pass.
-        _sf = _Step("format_resume_refine", step_logs, output_file="resume.md")
-        _sf.prompt_text = load_skill("format_resume").render(resume=refined_body)
-        try:
-            with _sf, console.status("[cyan]Formatting refined resume...[/cyan]", spinner="dots"):
-                for chunk in llm.format_resume(refined_body, model, provider=provider):
-                    _sf.collect(chunk)
-        except llm.LLMError as e:
-            console.print(f"[yellow]Format pass failed ({e}) — using unformatted output.[/yellow]")
-        formatted_body = _clean_llm_output(_sf.output) or refined_body
-
-        # Re-attach profile header (strip any existing header from the stored resume.md first).
-        import re as _re
-        # The stored resume.md has the full assembled resume including profile header.
-        # Extract just the body (everything after ## PROFILE or first ## section that isn't PROFILE).
-        body_only = formatted_body
-        resume_sections: list[str] = []
-        if profile:
-            resume_sections.append(_profile_header_markdown(profile))
-        # Check if original had a PROFILE section and preserve it.
-        profile_match = _re.search(r"## PROFILE\s*\n(.*?)(?=\n## |\Z)", existing_resume, flags=_re.DOTALL)
-        if profile_match:
-            profile_text = profile_match.group(1).strip()
-            resume_sections.append(f"## PROFILE\n\n{profile_text}")
-        resume_sections.append(body_only)
-        refined_resume_full = "\n\n".join(resume_sections)
-        refined_resume_body = refined_resume_full
-
-        # Write resume.md.
-        (folder / "resume.md").write_text(refined_resume_full, encoding="utf-8")
-
-        # Re-render HTML + PDF.
-        try:
-            with console.status("[cyan]Re-rendering resume HTML + PDF...[/cyan]", spinner="dots"):
-                render.render_resume(
-                    refined_resume_full, folder,
-                    title=f"{job.title} — {job.company}",
-                )
-            if cfg.get("generate_docx", False):
-                render.markdown_to_docx(refined_resume_full, folder / "resume.docx")
-        except Exception as e:
-            console.print(f"[yellow]Render failed ({e}) — resume.md updated but HTML/PDF may be stale.[/yellow]")
-
-    # ---- Refine positioning brief ----
-    if "brief" in in_scope and existing_brief:
-        current_resume = refined_resume_body or existing_resume
-        _s = _Step("refine_brief", step_logs, output_file="positioning_brief.md")
-        _s.prompt_text = load_skill("refine_positioning_brief").render(
-            feedback=feedback, resume=current_resume, brief=existing_brief, role_intel=strategy
-        )
-        try:
-            with _s, console.status("[cyan]Updating positioning brief...[/cyan]", spinner="dots"):
-                for chunk in llm.refine_positioning_brief(
-                    existing_brief, current_resume, strategy, feedback, model, provider=provider
-                ):
-                    _s.collect(chunk)
-        except llm.LLMError as e:
-            console.print(f"[yellow]Brief update failed ({e}) — skipping.[/yellow]")
-        if _s.output.strip():
-            refined_brief = _clean_llm_output(_s.output)
-            (folder / "positioning_brief.md").write_text(
-                f"# Positioning brief — {job.title} @ {job.company}\n\n{refined_brief}\n",
-                encoding="utf-8",
-            )
-
-    # ---- Refine cover letter ----
-    if "cover_letter" in in_scope and existing_cover_letter:
-        _s = _Step("refine_cover_letter", step_logs, output_file="cover_letter.md")
-        _s.prompt_text = load_skill("refine_cover_letter").render(
-            feedback=feedback, cover_letter=existing_cover_letter, role_intel=strategy
-        )
-        try:
-            with _s, console.status("[cyan]Refining cover letter...[/cyan]", spinner="dots"):
-                for chunk in llm.refine_cover_letter(
-                    existing_cover_letter, strategy, feedback, model, provider=provider
-                ):
-                    _s.collect(chunk)
-        except llm.LLMError as e:
-            console.print(f"[yellow]Cover letter refinement failed ({e}) — skipping.[/yellow]")
-        if _s.output.strip():
-            refined_cl = _clean_llm_output(_s.output)
-            cl_md = f"# Cover Letter — {job.title} @ {job.company}\n\n{refined_cl}\n"
-            (folder / "cover_letter.md").write_text(cl_md, encoding="utf-8")
-            try:
-                with console.status("[cyan]Re-rendering cover letter HTML + PDF...[/cyan]", spinner="dots"):
-                    cl_html = render.markdown_to_html(cl_md, title=f"Cover Letter — {job.title}")
-                    cl_html_path = folder / "cover_letter.html"
-                    cl_html_path.write_text(cl_html, encoding="utf-8")
-                    render.html_to_pdf(cl_html_path, folder / "cover_letter.pdf")
-                if cfg.get("generate_docx", False):
-                    render.markdown_to_docx(cl_md, folder / "cover_letter.docx")
-            except Exception as e:
-                console.print(f"[yellow]Cover letter render failed ({e}) — .md updated but HTML/PDF may be stale.[/yellow]")
-
-    # ---- Refine email + InMail ----
-    if "email" in in_scope and existing_email:
-        _s = _Step("refine_email", step_logs, output_file="email_inmail.md")
-        _s.prompt_text = load_skill("refine_email_inmail").render(
-            feedback=feedback, email_inmail=existing_email, role_intel=strategy
-        )
-        try:
-            with _s, console.status("[cyan]Updating email + InMail...[/cyan]", spinner="dots"):
-                for chunk in llm.refine_email_inmail(
-                    existing_email, strategy, feedback, model, provider=provider
-                ):
-                    _s.collect(chunk)
-        except llm.LLMError as e:
-            console.print(f"[yellow]Email/InMail refinement failed ({e}) — skipping.[/yellow]")
-        if _s.output.strip():
-            refined_email = _clean_llm_output(_s.output)
-            (folder / "email_inmail.md").write_text(
-                f"# Outreach — {job.title} @ {job.company}\n\n{refined_email}\n",
-                encoding="utf-8",
-            )
-
-    run_finished = _utcnow()
-
-    # Token usage display.
+    # Run the shared helper
     try:
-        import tiktoken as _tiktoken
-        _enc = _tiktoken.get_encoding("cl100k_base")
-        _total_in = sum(len(_enc.encode(s.get("prompt_text", ""))) for s in step_logs)
-        _total_out = sum(len(_enc.encode(s.get("output_text", ""))) for s in step_logs)
-        console.print(
-            f"\n[dim]Refine token usage: {_total_in:,} in + {_total_out:,} out = {_total_in + _total_out:,}  "
-            f"[{round((run_finished - run_started).total_seconds(), 1)}s][/dim]"
+        result = refine_package_for_job(
+            job_id,
+            feedback=feedback,
+            artifacts=artifacts,
+            cascade=cascade,
+            model=model,
+            provider=provider,
         )
-    except Exception:
-        pass
+    except TrackerError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ConfigurationError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
 
-    console.print(f"\n[green]Refined:[/green] [bold]{folder}[/bold]")
-    console.print(f"[dim]Previous version archived to [bold]{v_folder.name}/[/bold][/dim]")
+    console.print(f"\n[green]Refined:[/green] [bold]{result['package_folder']}[/bold]")
+    v_name = Path(result["version_folder"]).name
+    console.print(f"[dim]Previous version archived to [bold]{v_name}/[/bold][/dim]")
 
 
 # ---------- prep ----------
 
-_PREP_STAGES = ("recruiter", "hiring-manager", "technical", "executive")
-_PREP_STAGE_LABELS = {
-    "recruiter": "recruiter screen",
-    "hiring-manager": "hiring manager deep-dive",
-    "technical": "technical",
-    "executive": "executive",
-}
-
-
-_INTEL_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}
-_INTEL_TEXT_EXTS = {".md", ".txt", ".text"}
-
-
-def _read_intel_folder(
-    folder: Path,
-    vision_model: str = "",
-    vision_provider: str = "",
-) -> tuple[str, list[str]]:
-    """Read all files from intel/ subfolder.
-
-    Returns (combined_text, warnings). Warnings are shown to the user for
-    unreadable or unsupported files — nothing fails silently.
-
-    If vision_model is set, image files are processed via the vision LLM.
-    Extraction caches are stored in intel/.cache/ to keep the intel folder clean.
-    """
-    intel_dir = folder / "intel"
-    if not intel_dir.exists():
-        return "", []
-
-    # Cache lives in intel/.cache/ — hidden from the user, keeps intel/ clean.
-    cache_dir = intel_dir / ".cache"
-
-    parts: list[str] = []
-    warnings: list[str] = []
-
-    for f in sorted(intel_dir.iterdir()):
-        if f.is_dir():
-            continue
-        ext = f.suffix.lower()
-
-        if ext in _INTEL_IMAGE_EXTS:
-            # Check for cached extraction first (new location: .cache/).
-            cache_path = cache_dir / f"{f.stem}.extracted.md"
-            # Also check old location alongside image for backwards compat.
-            old_cache_path = intel_dir / f"{f.stem}.extracted.md"
-            if not cache_path.exists() and old_cache_path.exists():
-                # Migrate old cache to new location.
-                cache_dir.mkdir(exist_ok=True)
-                cache_path.write_text(old_cache_path.read_text(encoding="utf-8"), encoding="utf-8")
-                old_cache_path.unlink()
-
-            if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime:
-                try:
-                    cached = cache_path.read_text(encoding="utf-8").strip()
-                    if cached:
-                        parts.append(f"--- {f.name} (cached) ---\n{cached}")
-                        continue
-                except Exception:
-                    pass  # Fall through to re-extract.
-
-            if vision_model:
-                try:
-                    text = llm.extract_image_text(f, vision_model, vision_provider)
-                    if text.strip():
-                        parts.append(f"--- {f.name} (extracted via {vision_model}) ---\n{text.strip()}")
-                        # Cache the extraction in .cache/.
-                        cache_dir.mkdir(exist_ok=True)
-                        cache_path.write_text(text.strip(), encoding="utf-8")
-                    else:
-                        warnings.append(f"{f.name}: vision model returned empty text.")
-                except llm.LLMError as e:
-                    warnings.append(f"{f.name}: vision extraction failed ({e}).")
-            else:
-                warnings.append(
-                    f"{f.name}: image file skipped — set intel_vision_model and intel_vision_provider "
-                    f"in data/config.json to enable image extraction."
-                )
-        elif ext == ".pdf":
-            try:
-                from . import pdf_import
-                text = pdf_import.extract_text(f)
-                if text.strip():
-                    parts.append(f"--- {f.name} ---\n{text.strip()}")
-                elif vision_model:
-                    # Text extraction empty — try vision as fallback for scanned PDFs.
-                    try:
-                        # Convert first page to image not feasible without heavy deps,
-                        # so just warn with a more specific message.
-                        warnings.append(
-                            f"{f.name}: PDF appears to be image-only. "
-                            f"Vision extraction for PDFs is not yet supported — "
-                            f"screenshot the relevant pages and drop them in intel/ as .png/.jpg."
-                        )
-                    except Exception:
-                        pass
-                else:
-                    warnings.append(f"{f.name}: PDF extracted but appears to be empty or image-only — try exporting as text.")
-            except Exception as e:
-                warnings.append(f"{f.name}: could not read PDF ({e}).")
-        elif ext in _INTEL_TEXT_EXTS:
-            try:
-                text = f.read_text(encoding="utf-8").strip()
-                if text:
-                    parts.append(f"--- {f.name} ---\n{text}")
-                else:
-                    warnings.append(f"{f.name}: file is empty.")
-            except Exception as e:
-                warnings.append(f"{f.name}: could not read file ({e}).")
-        else:
-            warnings.append(f"{f.name}: unsupported file type ({ext}) — supported: .pdf, .md, .txt, images (with vision model).")
-
-    return "\n\n".join(parts), warnings
+# prep constants already imported from package_actions above
 
 
 @main.command()
@@ -1452,30 +1113,13 @@ def _read_intel_folder(
 @click.option("--provider", "provider_arg", default="", help="Override provider.")
 def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None:
     """Generate stage-specific interview prep for a job."""
-    cfg = _require_config()
-    model = model_arg or cfg.get("model")
-    if not model:
-        console.print("[red]No model in config.[/red] Run setup again.")
-        sys.exit(1)
-    provider = provider_arg or cfg.get("provider", "ollama")
+    from .package_actions import ConfigurationError, generate_interview_prep_for_job
 
-    store = get_store()
-    try:
-        job = store.load_job(job_id)
-    except TrackerError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
+    stage = stage_arg if stage_arg else None
+    model = model_arg if model_arg else None
+    provider = provider_arg if provider_arg else None
 
-    if not job.package_folder:
-        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
-        sys.exit(1)
-
-    folder = Path(job.package_folder)
-    if not folder.exists():
-        console.print(f"[red]Package folder not found:[/red] {folder}")
-        sys.exit(1)
-
-    # Resolve stages.
+    # Resolve stage label for display before calling the helper
     if stage_arg:
         key = stage_arg.lower().strip()
         if key not in _PREP_STAGE_LABELS:
@@ -1485,133 +1129,48 @@ def prep(job_id: str, stage_arg: str, model_arg: str, provider_arg: str) -> None
     else:
         stages_str = ", ".join(_PREP_STAGE_LABELS.values())
 
-    console.print(
-        Panel.fit(
-            f"[bold]Interview Prep[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
-            f"[dim]Stages: {stages_str}[/dim]",
-            style="cyan",
-        )
-    )
-
-    def _read(fname: str) -> str:
-        p = folder / fname
-        return p.read_text(encoding="utf-8") if p.exists() else ""
-
-    resume = _read("resume.md")
-    strategy = _read("strategy.md")
-    positioning_brief_text = _read("positioning_brief.md")
-    job_description = _read("job_description.md") or strategy
-
-    if not resume:
-        console.print("[red]resume.md not found in package folder.[/red]")
-        sys.exit(1)
-    if not job_description:
-        console.print("[red]No job description or strategy found in package folder.[/red]")
-        sys.exit(1)
-
-    # Collect intel: intel/ folder + Notion page notes.
-    intel_parts: list[str] = []
-    _vision_model = cfg.get("intel_vision_model", "")
-    _vision_provider = cfg.get("intel_vision_provider", provider) if _vision_model else ""
-    intel_folder_text, intel_warnings = _read_intel_folder(
-        folder, vision_model=_vision_model, vision_provider=_vision_provider,
-    )
-
-    # Print warnings first so they stand out.
-    for w in intel_warnings:
-        console.print(f"[yellow]Intel warning:[/yellow] {w}")
-
-    # Build a context summary table.
-    console.print("\n[dim]Context loaded for prep:[/dim]")
-    console.print(f"[dim]  {'resume.md':<28} ✓[/dim]")
-    console.print(f"[dim]  {'job description':<28} ✓[/dim]")
-    console.print(f"[dim]  {'role intel / strategy':<28} {'✓' if strategy else '—'}[/dim]")
-    console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief_text else '—'}[/dim]")
-
-    intel_dir = folder / "intel"
-    intel_files = [
-        f for f in sorted(intel_dir.iterdir())
-        if not f.is_dir()
-    ] if intel_dir.exists() else []
-    _processable_exts = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if _vision_model else set())
-    loaded_files = [f for f in intel_files if f.suffix.lower() in _processable_exts]
-    skipped_files = [f for f in intel_files if f not in loaded_files]
-
-    if _vision_model:
-        console.print(f"[dim]  {'vision model':<28} {_vision_model} ({_vision_provider})[/dim]")
-
-    if loaded_files:
-        for f in loaded_files:
-            label = "intel/" + f.name
-            if f.suffix.lower() in _INTEL_IMAGE_EXTS:
-                cache_path = intel_dir / ".cache" / f"{f.stem}.extracted.md"
-                note = " (cached)" if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime else " (vision)"
-            else:
-                note = ""
-            console.print(f"[dim]  {label:<28} ✓{note}[/dim]")
-    else:
-        console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here for richer prep[/dim]")
-    for f in skipped_files:
-        console.print(f"[dim]  {'intel/' + f.name:<28} ✗ (skipped — see warning above)[/dim]")
-
-    notion_notes = store.load_job_notes(job_id)
-    console.print(f"[dim]  {'Notion page notes':<28} {'✓' if notion_notes else '— (not connected or empty)'}[/dim]")
-    console.print()
-
-    if intel_folder_text:
-        intel_parts.append(intel_folder_text)
-    if notion_notes:
-        intel_parts.append(f"--- Notion page notes ---\n{notion_notes}")
-
-    intel_combined = "\n\n".join(intel_parts)
-
-    step_logs: list[dict] = []
-    _s = _Step("interview_prep", step_logs, output_file="interview_prep.md")
-    _s.prompt_text = load_skill("interview_prep").render(
-        stages=stages_str,
-        job_description=job_description,
-        resume=resume,
-        role_intel=strategy,
-        positioning_brief=positioning_brief_text or "(not provided)",
-        intel_section=f"\n=== ADDITIONAL INTEL ===\n{intel_combined}\n" if intel_combined else "",
-    )
+    # Display header (before the work starts)
     try:
-        with _s, console.status("[cyan]Generating interview prep...[/cyan]", spinner="dots"):
-            for chunk in llm.interview_prep(
-                job_description, resume, strategy, model,
-                positioning_brief=positioning_brief_text,
-                intel=intel_combined,
-                stages=stages_str,
-                provider=provider,
-            ):
-                _s.collect(chunk)
-    except llm.LLMError as e:
+        store = get_store()
+        job = store.load_job(job_id)
+        console.print(
+            Panel.fit(
+                f"[bold]Interview Prep[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
+                f"[dim]Stages: {stages_str}[/dim]",
+                style="cyan",
+            )
+        )
+    except TrackerError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    prep_text = _clean_llm_output(_s.output)
-    if not prep_text:
-        console.print("[yellow]Prep came back empty.[/yellow]")
+    # Run the shared helper
+    try:
+        result = generate_interview_prep_for_job(
+            job_id, stage=stage, model=model, provider=provider,
+        )
+    except TrackerError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ConfigurationError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    out_path = folder / "interview_prep.md"
-    out_path.write_text(
-        f"# Interview Prep — {job.title} @ {job.company}\n\n{prep_text}\n",
-        encoding="utf-8",
-    )
+    out_path = Path(result["package_folder"]) / "interview_prep.md"
+    prep_text = out_path.read_text(encoding="utf-8")
 
     console.print()
     console.print(Panel(prep_text, title="[bold]Interview Prep[/bold]", style="green"))
     console.print(f"\n[green]Saved:[/green] {out_path}")
-
-    try:
-        import tiktoken as _tiktoken
-        _enc = _tiktoken.get_encoding("cl100k_base")
-        _in = len(_enc.encode(_s.prompt_text))
-        _out = len(_enc.encode(_s.output))
-        console.print(f"[dim]Tokens: {_in:,} in + {_out:,} out  [{_s.duration}s][/dim]")
-    except Exception:
-        pass
 
 
 # ---------- questions ----------
