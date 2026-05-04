@@ -17,7 +17,8 @@ changeset.
 | Tool | Status | Ticket |
 |------|--------|--------|
 | `add_job` | ✅ Shipped | MCP-T1 |
-| `list_jobs` | 📋 Planned | MCP-T2 |
-| `get_package` | 📋 Planned | MCP-T2 |
+| `list_jobs` | ✅ Shipped | MCP-T2 |
+| `get_package` | ✅ Shipped | MCP-T2 |
 | `update_job_status` | 📋 Deferred | MCP-T3 |
 | `interview_prep` | 📋 Deferred | MCP-T3 |
+| `refine_package` | 📋 Deferred | MCP-T3 |

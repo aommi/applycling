@@ -22,6 +22,7 @@
 - **Async workbench runs:** Submit/regenerate/intake set status to `generating`, then use `schedule_pipeline_run()` fire-and-forget background execution with retained task references and error surfacing.
 - **Health endpoint:** `/healthz` returns 200 when DB is reachable and 503 when unhealthy.
 - **Hermes forwarding intake:** `/api/intake` accepts `{job_url}` validated as `HttpUrl`, authenticates with `X-Intake-Secret` using `hmac.compare_digest`, reads the secret per request, checks active-run status before creating a job, and schedules generation asynchronously.
+- **MCP server:** `applycling/mcp_server.py` exposes pipeline as MCP tools via FastMCP. `mcp serve` (stdio), `mcp config` (client JSON). Shipped tools: `add_job` (MCP-T1), `list_jobs(limit, status)` and `get_package(job_id)` (MCP-T2). `list_jobs` reads via `get_store().load_jobs()` with Notion→SQLite fallback. `get_package` returns bounded markdown artifact content with 50K file / 200K total byte caps. Architecture contract at `architecture/MCP.md`.
 - **Artifact durability:** Hosted output artifacts are persisted through the `/opt/applycling/output` bind mount; package folders remain available across container rebuilds/restarts.
 - **Two-layer LLM:** Hermes profile uses DeepSeek for routing; applycling pipeline uses Anthropic Claude for generation. Configs: `~/.hermes/profiles/applycling/config.yaml` (routing) vs `data/config.json` (generation).
 

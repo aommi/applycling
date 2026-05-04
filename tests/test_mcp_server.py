@@ -163,3 +163,222 @@ def test_add_job_success(monkeypatch, tmp_path):
     assert result["package_folder"] == str(pkg)
     assert "artifacts" in result
     assert "error" not in result
+
+
+# ---------------------------------------------------------------------------
+# MCP-T2: Read tools (list_jobs, get_package)
+# ---------------------------------------------------------------------------
+
+
+class _FakeStore:
+    """Minimal fake tracker store for MCP-T2 tests."""
+
+    def __init__(self, jobs=None, raise_load_job=None):
+        self._jobs = jobs or []
+        self._raise_load_job = raise_load_job
+
+    def load_jobs(self):
+        return list(self._jobs)
+
+    def load_job(self, job_id):
+        if self._raise_load_job:
+            raise self._raise_load_job
+        for j in self._jobs:
+            if j.id == job_id:
+                return j
+        from applycling.tracker import TrackerError
+        raise TrackerError(f"No job found for id: {job_id}")
+
+
+def _make_job(**overrides):
+    """Factory for a Job dataclass with sensible defaults."""
+    from applycling.tracker import Job
+    defaults = {
+        "id": "job_001",
+        "title": "Software Engineer",
+        "company": "Acme Corp",
+        "date_added": "2026-01-15",
+        "date_updated": "2026-01-20",
+        "status": "reviewing",
+        "source_url": "https://example.com/jobs/123",
+        "application_url": None,
+        "fit_summary": None,
+        "package_folder": None,
+    }
+    defaults.update(overrides)
+    return Job(**defaults)
+
+
+def test_list_jobs_returns_limited_jobs(monkeypatch):
+    """list_jobs returns at most 'limit' dicts with correct fields."""
+    from applycling.mcp_server import list_jobs
+
+    jobs = [_make_job(id=f"job_{i:03d}", title=f"Engineer {i}") for i in range(5)]
+    store = _FakeStore(jobs=jobs)
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = list_jobs(limit=2)
+    assert len(result) == 2
+    assert result[0]["job_id"] == "job_000"
+    assert result[0]["title"] == "Engineer 0"
+    assert result[0]["company"] == "Acme Corp"
+    # Verify all expected fields are present
+    for key in ("job_id", "title", "company", "status", "date_added",
+                "date_updated", "package_folder"):
+        assert key in result[0], f"Missing key: {key}"
+
+
+def test_list_jobs_filters_status(monkeypatch):
+    """list_jobs filters by status when provided."""
+    from applycling.mcp_server import list_jobs
+
+    jobs = [
+        _make_job(id="job_001", status="new"),
+        _make_job(id="job_002", status="reviewing"),
+        _make_job(id="job_003", status="reviewing"),
+        _make_job(id="job_004", status="applied"),
+    ]
+    store = _FakeStore(jobs=jobs)
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = list_jobs(status="reviewing")
+    assert len(result) == 2
+    assert all(j["status"] == "reviewing" for j in result)
+    assert {j["job_id"] for j in result} == {"job_002", "job_003"}
+
+
+def test_get_package_missing_job_returns_error(monkeypatch):
+    """get_package returns error dict when job is not found."""
+    from applycling.mcp_server import get_package
+    from applycling.tracker import TrackerError
+
+    store = _FakeStore(raise_load_job=TrackerError("No job found for id: bad"))
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("bad")
+    assert result["error"] == "job_not_found"
+    assert result["job_id"] == "bad"
+
+
+def test_get_package_missing_package_folder_returns_error(monkeypatch):
+    """get_package returns error when job has no package_folder."""
+    from applycling.mcp_server import get_package
+
+    job = _make_job(package_folder=None)
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("job_001")
+    assert result["error"] == "package_missing"
+    assert result["job_id"] == "job_001"
+
+
+def test_get_package_folder_not_found_returns_error(monkeypatch):
+    """get_package returns error when package folder doesn't exist."""
+    from applycling.mcp_server import get_package
+
+    job = _make_job(package_folder="/nonexistent/path")
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("job_001")
+    assert result["error"] == "package_folder_not_found"
+    assert result["job_id"] == "job_001"
+
+
+def test_get_package_returns_empty_artifacts_for_empty_folder(monkeypatch, tmp_path):
+    """get_package returns artifacts=[] when package folder has no markdown files."""
+    from applycling.mcp_server import get_package
+
+    pkg = tmp_path / "empty_pkg"
+    pkg.mkdir()
+    # Create a non-markdown file — should be ignored
+    (pkg / "notes.txt").write_text("not markdown")
+
+    job = _make_job(package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("job_001")
+    assert result["artifacts"] == []
+    assert result["artifact_count"] == 0
+    assert result["truncated"] is False
+    assert "error" not in result
+
+
+def test_get_package_returns_bounded_markdown_artifacts(monkeypatch, tmp_path):
+    """get_package returns only .md files with structured metadata."""
+    from applycling.mcp_server import get_package
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Resume\n\nExperienced engineer.")
+    (pkg / "cover_letter.md").write_text("# Cover Letter\n\nI am excited...")
+    (pkg / "notes.txt").write_text("plain text note")
+    (pkg / "strategy.md").write_text("# Strategy")
+
+    job = _make_job(package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("job_001")
+    assert result["job_id"] == "job_001"
+    assert result["artifact_count"] == 3
+    # notes.txt is excluded
+    names = [a["name"] for a in result["artifacts"]]
+    assert "notes.txt" not in names
+    assert names == ["cover_letter.md", "resume.md", "strategy.md"]  # sorted
+
+    for a in result["artifacts"]:
+        for key in ("name", "path", "kind", "size_bytes", "truncated", "content"):
+            assert key in a, f"Missing key: {key}"
+        assert a["kind"] == Path(a["name"]).stem
+
+
+def test_get_package_truncates_large_file(monkeypatch, tmp_path):
+    """get_package truncates files exceeding MAX_PACKAGE_FILE_BYTES."""
+    from applycling.mcp_server import get_package
+
+    # Monkeypatch the bounds to tiny values
+    monkeypatch.setattr("applycling.mcp_server.MAX_PACKAGE_FILE_BYTES", 100)
+    monkeypatch.setattr("applycling.mcp_server.MAX_PACKAGE_TOTAL_BYTES", 1_000_000)
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("x" * 200)  # 200 bytes, > 100 limit
+
+    job = _make_job(package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("job_001")
+    assert result["artifact_count"] == 1
+    a = result["artifacts"][0]
+    assert a["truncated"] is True
+    assert "[truncated]" in a["content"]
+    assert a["size_bytes"] == 200  # original size, not truncated size
+
+
+def test_get_package_total_limit(monkeypatch, tmp_path):
+    """get_package stops collecting when total bytes cap is hit."""
+    from applycling.mcp_server import get_package
+
+    # Set total cap low enough that only one file fits
+    monkeypatch.setattr("applycling.mcp_server.MAX_PACKAGE_FILE_BYTES", 10_000)
+    monkeypatch.setattr("applycling.mcp_server.MAX_PACKAGE_TOTAL_BYTES", 200)
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    # Each file ~150 bytes of content (content_bytes ~= file bytes since ASCII)
+    (pkg / "a_resume.md").write_text("# " + "R" * 140)
+    (pkg / "b_cover_letter.md").write_text("# " + "C" * 140)
+    (pkg / "c_brief.md").write_text("# " + "B" * 140)
+
+    job = _make_job(package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = get_package("job_001")
+    # First file fits (150 bytes), second would push over 200 → stop
+    assert result["artifact_count"] < 3
+    assert result["truncated"] is True
