@@ -6,7 +6,6 @@ All logging goes to stderr. stdout is reserved for JSON-RPC (MCP transport).
 from __future__ import annotations
 
 import asyncio
-import sys
 import traceback
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP, Context
@@ -54,6 +53,13 @@ class _MCPNotifier:
         self.artifacts.append(path)
         self._schedule(self._ctx.info(f"Artifact: {path.name}"))
 
+    def report_complete(self) -> None:
+        """Send final 100% progress — compensates for the total-1 clamp."""
+        self._step = self._total
+        self._schedule(
+            self._ctx.report_progress(self._total, self._total, message="Complete")
+        )
+
 
 @mcp.tool()
 async def add_job(url: str, ctx: Context) -> dict:
@@ -91,6 +97,7 @@ async def add_job(url: str, ctx: Context) -> dict:
     try:
         await ctx.info(f"Starting pipeline for {url}")
         package_path = await asyncio.to_thread(run_add_notify, url, notifier)
+        notifier.report_complete()
         await ctx.info(f"Package generated: {package_path}")
         return {
             "package_folder": str(package_path),

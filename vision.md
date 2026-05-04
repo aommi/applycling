@@ -17,7 +17,7 @@ applycling is a **thin orchestrator of fat markdown skills** that turns any sign
 about a job (URL, email, Telegram message, form field) into a complete application
 package.
 
-Four design commitments define the system:
+Three design commitments define the system:
 
 1. **Intelligence lives in skills, not the runtime.** Each skill is a `SKILL.md`
    file: YAML frontmatter (contract) + prompt body (behavior). The Python harness
@@ -28,19 +28,6 @@ Four design commitments define the system:
 3. **Composition is explicit.** Steps are ordered deterministically today.
    Context-based resolvers and agent-driven resolvers layer on top without
    rewriting the core.
-
-A fourth commitment governs user state:
-
-4. **The profile is a data store, not a gatekeeper.** The Application Profile
-   never blocks a user from invoking a capability. What's "mandatory" depends on
-   the capability — `add_job` needs name + email + resume; a future salary
-   negotiator might need `comp_expectation`; `interview_prep` might need
-   `target_role_family`. Each capability declares its own requirements via
-   `missing_required_fields()`, and the active surface (CLI, MCP, chat, UI) asks
-   the user to fill gaps. The profile reports completeness via
-   `profile_completeness()`; it does not enforce. This keeps the profile simple
-   (one file, additive fields) while letting capabilities evolve independently
-   without re-litigating what a "complete" profile means.
 
 This is Garry Tan's model — *thin harness, fat skills, learning loops, composition,
 triggers, quality gates* — scoped to a deterministic domain, with a documented

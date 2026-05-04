@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _mock_loop(monkeypatch):
     """Mock get_running_loop so _MCPNotifier.__init__ works in sync tests.
 
@@ -30,7 +30,7 @@ def test_mcp_server_imports():
     assert mcp is not None
 
 
-def test_mcp_notifier_notify():
+def test_mcp_notifier_notify(_mock_loop):
     """_MCPNotifier doesn't crash on notify, step increments and clamps."""
     from applycling.mcp_server import _MCPNotifier
 
@@ -46,7 +46,7 @@ def test_mcp_notifier_notify():
     assert ctx.report_progress.call_count == 25
 
 
-def test_mcp_notifier_send_document():
+def test_mcp_notifier_send_document(_mock_loop):
     """send_document appends to artifacts and doesn't crash."""
     from applycling.mcp_server import _MCPNotifier
 
@@ -58,6 +58,21 @@ def test_mcp_notifier_send_document():
     assert len(notifier.artifacts) == 1
     assert notifier.artifacts[0] == Path("/tmp/test.pdf")
     assert ctx.info.call_count == 1
+
+
+def test_mcp_notifier_report_complete(_mock_loop):
+    """report_complete sends final 100% progress."""
+    from applycling.mcp_server import _MCPNotifier
+
+    ctx = MagicMock()
+    notifier = _MCPNotifier(ctx)
+
+    notifier.report_complete()
+
+    assert notifier._step == notifier._total
+    ctx.report_progress.assert_called_once_with(
+        notifier._total, notifier._total, message="Complete"
+    )
 
 
 def test_mcp_serve_command_registered():
@@ -74,6 +89,8 @@ def test_mcp_serve_command_registered():
 
 def test_mcp_config_output():
     """mcp_config() prints valid JSON with cwd pointing to repo root."""
+    from applycling.storage import ROOT
+
     result = subprocess.run(
         [sys.executable, "-m", "applycling.cli", "mcp", "config"],
         capture_output=True,
@@ -86,8 +103,7 @@ def test_mcp_config_output():
 
     assert server["command"] == sys.executable
     assert server["args"] == ["-m", "applycling.cli", "mcp", "serve"]
-    assert "cwd" in server
-    assert Path(server["cwd"]).is_absolute()
+    assert server["cwd"] == str(ROOT)
 
 
 def test_add_job_incomplete_profile(monkeypatch):
@@ -110,3 +126,34 @@ def test_add_job_incomplete_profile(monkeypatch):
 
     assert result["error"] == "profile_incomplete"
     assert result["status"] in ("missing_resume", "missing_contact")
+
+
+def test_add_job_success(monkeypatch, tmp_path):
+    """add_job runs pipeline and returns package folder + artifact list."""
+    from applycling.mcp_server import add_job
+
+    # Mock load_profile to return a complete profile
+    monkeypatch.setattr(
+        "applycling.storage.load_profile",
+        lambda: {"name": "Test", "email": "t@t.com", "resume_text": "..."},
+    )
+    # Mock run_add_notify to return a fixed path
+    pkg = tmp_path / "packages" / "job_123"
+    pkg.mkdir(parents=True)
+    monkeypatch.setattr(
+        "applycling.mcp_server.run_add_notify",
+        lambda url, notifier, **kw: pkg,
+    )
+
+    ctx = MagicMock()
+    async def _mock_async(msg):
+        return None
+    ctx.info = _mock_async
+    ctx.error = _mock_async
+
+    result = asyncio.run(add_job("http://example.com/job", ctx))
+
+    assert result["status"] == "complete"
+    assert result["package_folder"] == str(pkg)
+    assert "artifacts" in result
+    assert "error" not in result
