@@ -61,3 +61,4 @@
 - **Env vars:** `APPLYCLING_INTAKE_URL` and `APPLYCLING_INTAKE_SECRET` in profile's `.env` (NOT global)
 - **SOUL.md:** Forwarding-mode agent that POSTs job URLs to intake endpoint
 - **Alias:** `applycling-hermes` = `hermes -p applycling`
+- **Subagent delegation:** Default transport is kanban. Model/provider: deepseek-v4-pro/deepseek. Avoids Claude API quota errors. Config: `hermes config set delegation.transport kanban && hermes config set delegation.model deepseek-v4-pro && hermes config set delegation.provider deepseek`.
