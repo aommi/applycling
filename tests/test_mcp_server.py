@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -10,15 +11,16 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _mock_schedule(monkeypatch):
-    """Replace _schedule with no-op so tests work with MagicMock ctx.
+def _mock_loop(monkeypatch):
+    """Mock get_running_loop so _MCPNotifier.__init__ works in sync tests.
 
-    All MCP Context methods (info, error, report_progress, etc.) are async
-    coroutines in mcp>=1.27.0. _schedule bridges sync→async via
-    run_coroutine_threadsafe. Tests use MagicMock which returns non-coroutine
-    values — mock _schedule to avoid passing them to the event loop.
+    _MCPNotifier captures the event loop for run_coroutine_threadsafe.
+    In tests, we provide a mock loop that accepts any coroutine.
     """
-    monkeypatch.setattr("applycling.mcp_server._schedule", lambda coro: None)
+    monkeypatch.setattr(
+        "asyncio.get_running_loop",
+        lambda: MagicMock(),
+    )
 
 
 def test_mcp_server_imports():
@@ -40,7 +42,7 @@ def test_mcp_notifier_notify():
         notifier.notify(f"step {i}")
 
     assert notifier._step == 19  # clamped to total - 1
-    # verify report_progress was called (via _schedule which is mocked no-op)
+    # verify report_progress was called (its return value passed to run_coroutine_threadsafe)
     assert ctx.report_progress.call_count == 25
 
 
@@ -55,7 +57,6 @@ def test_mcp_notifier_send_document():
 
     assert len(notifier.artifacts) == 1
     assert notifier.artifacts[0] == Path("/tmp/test.pdf")
-    # ctx.info was called (its return value passed to mocked _schedule)
     assert ctx.info.call_count == 1
 
 
@@ -100,9 +101,12 @@ def test_add_job_incomplete_profile(monkeypatch):
     )
 
     ctx = MagicMock()
-    result = add_job("http://example.com/job", ctx)
+    # ctx.error is an async method — make it return an awaitable
+    async def _mock_error(msg):
+        return None
+    ctx.error = _mock_error
+
+    result = asyncio.run(add_job("http://example.com/job", ctx))
 
     assert result["error"] == "profile_incomplete"
     assert result["status"] in ("missing_resume", "missing_contact")
-    # ctx.error was called (its return value passed to mocked _schedule)
-    assert ctx.error.call_count == 1

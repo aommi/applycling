@@ -15,20 +15,6 @@ from applycling.pipeline import run_add_notify
 mcp = FastMCP("applycling")
 
 
-def _schedule(coro):
-    """Schedule an async MCP context call on the running event loop.
-
-    All ctx methods (info, error, report_progress, etc.) are coroutines in
-    mcp>=1.27.0. Since the pipeline runs synchronously, we bridge via
-    run_coroutine_threadsafe — the coroutine is submitted to FastMCP's event
-    loop and executed there. Fire-and-forget; progress/logging is best-effort.
-    """
-    try:
-        asyncio.run_coroutine_threadsafe(coro, asyncio.get_running_loop())
-    except Exception:
-        pass
-
-
 class _MCPNotifier:
     """Adapter: forwards pipeline status messages to MCP progress updates.
 
@@ -36,17 +22,29 @@ class _MCPNotifier:
     add_job result dict. These paths are in-memory only (discarded after the
     tool returns) — MCP-T2's get_package will read from the tracker/package
     folder on disk.
+
+    run_add_notify() runs in a thread (via asyncio.to_thread) so the event
+    loop stays free to process progress/logging coroutines. This notifier
+    schedules ctx calls onto the captured main loop from the worker thread.
     """
 
     def __init__(self, ctx: Context):
         self._ctx = ctx
+        self._loop = asyncio.get_running_loop()  # captured in async add_job
         self._step = 0
         self._total = 20  # safe upper bound; clamp to prevent >100% progress
         self.artifacts: list[Path] = []  # returned in add_job result
 
+    def _schedule(self, coro):
+        """Schedule a coroutine on the main event loop, fire-and-forget."""
+        try:
+            asyncio.run_coroutine_threadsafe(coro, self._loop)
+        except Exception:
+            pass
+
     def notify(self, text: str) -> None:
         self._step = min(self._step + 1, self._total - 1)
-        _schedule(
+        self._schedule(
             self._ctx.report_progress(
                 self._step, self._total, message=text[:200]
             )
@@ -54,11 +52,11 @@ class _MCPNotifier:
 
     def send_document(self, path: Path, caption: str = "") -> None:
         self.artifacts.append(path)
-        _schedule(self._ctx.info(f"Artifact: {path.name}"))
+        self._schedule(self._ctx.info(f"Artifact: {path.name}"))
 
 
 @mcp.tool()
-def add_job(url: str, ctx: Context) -> dict:
+async def add_job(url: str, ctx: Context) -> dict:
     """Generate a complete application package for a job URL.
 
     Runs the full pipeline: scrape → role intel → resume → cover letter →
@@ -78,7 +76,7 @@ def add_job(url: str, ctx: Context) -> dict:
     profile = load_profile() or {}
     pstate = profile_completeness(profile)
     if pstate in ("missing_resume", "missing_contact"):
-        _schedule(ctx.error(f"Profile incomplete: {pstate}"))
+        await ctx.error(f"Profile incomplete: {pstate}")
         return {
             "error": "profile_incomplete",
             "status": pstate,
@@ -88,19 +86,19 @@ def add_job(url: str, ctx: Context) -> dict:
             ),
         }
 
-    # --- Run pipeline ---
+    # --- Run pipeline in a thread so the event loop stays free for progress ---
     notifier = _MCPNotifier(ctx)
     try:
-        _schedule(ctx.info(f"Starting pipeline for {url}"))
-        package_path = run_add_notify(url, notifier)
-        _schedule(ctx.info(f"Package generated: {package_path}"))
+        await ctx.info(f"Starting pipeline for {url}")
+        package_path = await asyncio.to_thread(run_add_notify, url, notifier)
+        await ctx.info(f"Package generated: {package_path}")
         return {
             "package_folder": str(package_path),
             "artifacts": [str(p) for p in notifier.artifacts],
             "status": "complete",
         }
     except Exception as e:
-        _schedule(ctx.error(f"Pipeline failed: {e}"))
+        await ctx.error(f"Pipeline failed: {e}")
         return {
             "error": str(e),
             "status": "failed",
