@@ -50,19 +50,33 @@ def _build_approval_flow(config: dict) -> str:
     sem = mode_for("memory/semantic.md", config)
     dec = mode_for("DECISIONS.md", config)
 
+    lines = [
+        "   - Draft the proposed update — show the user exactly what would be written and to which file",
+    ]
+
     if sem == "review" or dec == "review":
-        lines = [
-            "   - Draft the proposed update — show the user exactly what would be written and to which file",
-            "   - Wait for explicit approval ('looks good', 'yes', 'approve') before writing",
-            "   - On approval: write to `semantic.md` and/or `DECISIONS.md` and/or `context.md`",
-            "   - On correction: apply the user's edit, then write",
-        ]
-        return "\n".join(lines)
+        review_files = []
+        auto_files = []
+        if sem == "review":
+            review_files.append("`semantic.md`")
+        else:
+            auto_files.append("`semantic.md`")
+        if dec == "review":
+            review_files.append("`DECISIONS.md`")
+        else:
+            auto_files.append("`DECISIONS.md`")
+
+        if review_files:
+            joined = " and ".join(review_files)
+            lines.append(f"   - {joined}: wait for explicit approval before writing")
+        if auto_files:
+            joined = " and ".join(auto_files)
+            lines.append(f"   - {joined}: write directly; summarize changes")
+        lines.append("   - On correction: apply the user's edit, then write")
     else:
-        return (
-            "   - Write the update directly to the appropriate file(s). Summarize what"
-            " you changed in your response so it can be reviewed asynchronously."
-        )
+        lines.append("   - Write the update directly to the appropriate file(s). Summarize what you changed")
+
+    return "\n".join(lines)
 
 
 def generate(project_root: Path, config: dict) -> str:

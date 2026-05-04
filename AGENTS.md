@@ -91,6 +91,8 @@ The project's `memory/semantic.md` remains the single source of truth.
 
 
 
+
+
 ---
 
 ## Hermes Profile (Telegram Gateway)

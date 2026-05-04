@@ -6,7 +6,8 @@ set -euo pipefail
 emit_memory_reminder() {
   echo "Memory check — inspect diff and propose updates if significant:"
   echo "- working.md: update current state (no approval needed)"
-  echo "- semantic.md / DECISIONS.md: update directly; summarize changes"
+  echo "- semantic.md: update directly; summarize changes"
+  echo "- DECISIONS.md: update directly; summarize changes"
   echo "- If intent unclear from diff, ask before proposing"
 }
 

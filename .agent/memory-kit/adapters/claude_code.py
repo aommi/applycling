@@ -100,10 +100,16 @@ def _build_stop_sh(capture_at: list[str], config: dict) -> str:
     sem_mode = mode_for("memory/semantic.md", config)
     dec_mode = mode_for("DECISIONS.md", config)
 
-    if sem_mode == "review" or dec_mode == "review":
-        reminder_line = '  echo "- semantic.md / DECISIONS.md: PROPOSE first, write only on approval"'
-    else:
-        reminder_line = '  echo "- semantic.md / DECISIONS.md: update directly; summarize changes"'
+    sem_reminder = (
+        '  echo "- semantic.md: PROPOSE first, write only on approval"'
+        if sem_mode == "review"
+        else '  echo "- semantic.md: update directly; summarize changes"'
+    )
+    dec_reminder = (
+        '  echo "- DECISIONS.md: PROPOSE first, write only on approval"'
+        if dec_mode == "review"
+        else '  echo "- DECISIONS.md: update directly; summarize changes"'
+    )
     if not capture_at:
         return textwrap.dedent(
             """\
@@ -127,7 +133,8 @@ def _build_stop_sh(capture_at: list[str], config: dict) -> str:
         "emit_memory_reminder() {",
         '  echo "Memory check — inspect diff and propose updates if significant:"',
         '  echo "- working.md: update current state (no approval needed)"',
-        reminder_line,
+        sem_reminder,
+        dec_reminder,
         '  echo "- If intent unclear from diff, ask before proposing"',
         "}",
         "",
