@@ -6,6 +6,20 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _mock_schedule(monkeypatch):
+    """Replace _schedule with no-op so tests work with MagicMock ctx.
+
+    All MCP Context methods (info, error, report_progress, etc.) are async
+    coroutines in mcp>=1.27.0. _schedule bridges sync→async via
+    run_coroutine_threadsafe. Tests use MagicMock which returns non-coroutine
+    values — mock _schedule to avoid passing them to the event loop.
+    """
+    monkeypatch.setattr("applycling.mcp_server._schedule", lambda coro: None)
+
 
 def test_mcp_server_imports():
     """from applycling.mcp_server import mcp succeeds."""
@@ -26,7 +40,7 @@ def test_mcp_notifier_notify():
         notifier.notify(f"step {i}")
 
     assert notifier._step == 19  # clamped to total - 1
-    # verify report_progress was called
+    # verify report_progress was called (via _schedule which is mocked no-op)
     assert ctx.report_progress.call_count == 25
 
 
@@ -41,6 +55,8 @@ def test_mcp_notifier_send_document():
 
     assert len(notifier.artifacts) == 1
     assert notifier.artifacts[0] == Path("/tmp/test.pdf")
+    # ctx.info was called (its return value passed to mocked _schedule)
+    assert ctx.info.call_count == 1
 
 
 def test_mcp_serve_command_registered():
@@ -88,4 +104,5 @@ def test_add_job_incomplete_profile(monkeypatch):
 
     assert result["error"] == "profile_incomplete"
     assert result["status"] in ("missing_resume", "missing_contact")
-    ctx.error.assert_called_once()
+    # ctx.error was called (its return value passed to mocked _schedule)
+    assert ctx.error.call_count == 1

@@ -5,6 +5,7 @@ All logging goes to stderr. stdout is reserved for JSON-RPC (MCP transport).
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import traceback
 from pathlib import Path
@@ -12,6 +13,20 @@ from mcp.server.fastmcp import FastMCP, Context
 from applycling.pipeline import run_add_notify
 
 mcp = FastMCP("applycling")
+
+
+def _schedule(coro):
+    """Schedule an async MCP context call on the running event loop.
+
+    All ctx methods (info, error, report_progress, etc.) are coroutines in
+    mcp>=1.27.0. Since the pipeline runs synchronously, we bridge via
+    run_coroutine_threadsafe — the coroutine is submitted to FastMCP's event
+    loop and executed there. Fire-and-forget; progress/logging is best-effort.
+    """
+    try:
+        asyncio.run_coroutine_threadsafe(coro, asyncio.get_running_loop())
+    except Exception:
+        pass
 
 
 class _MCPNotifier:
@@ -31,19 +46,15 @@ class _MCPNotifier:
 
     def notify(self, text: str) -> None:
         self._step = min(self._step + 1, self._total - 1)
-        try:
+        _schedule(
             self._ctx.report_progress(
                 self._step, self._total, message=text[:200]
             )
-        except Exception:
-            pass  # progress is best-effort; never crash the tool
+        )
 
     def send_document(self, path: Path, caption: str = "") -> None:
         self.artifacts.append(path)
-        try:
-            self._ctx.info(f"Artifact: {path.name}")
-        except Exception:
-            pass  # best-effort logging
+        _schedule(self._ctx.info(f"Artifact: {path.name}"))
 
 
 @mcp.tool()
@@ -67,7 +78,7 @@ def add_job(url: str, ctx: Context) -> dict:
     profile = load_profile() or {}
     pstate = profile_completeness(profile)
     if pstate in ("missing_resume", "missing_contact"):
-        ctx.error(f"Profile incomplete: {pstate}")
+        _schedule(ctx.error(f"Profile incomplete: {pstate}"))
         return {
             "error": "profile_incomplete",
             "status": pstate,
@@ -80,16 +91,16 @@ def add_job(url: str, ctx: Context) -> dict:
     # --- Run pipeline ---
     notifier = _MCPNotifier(ctx)
     try:
-        ctx.info(f"Starting pipeline for {url}")
+        _schedule(ctx.info(f"Starting pipeline for {url}"))
         package_path = run_add_notify(url, notifier)
-        ctx.info(f"Package generated: {package_path}")
+        _schedule(ctx.info(f"Package generated: {package_path}"))
         return {
             "package_folder": str(package_path),
             "artifacts": [str(p) for p in notifier.artifacts],
             "status": "complete",
         }
     except Exception as e:
-        ctx.error(f"Pipeline failed: {e}")
+        _schedule(ctx.error(f"Pipeline failed: {e}"))
         return {
             "error": str(e),
             "status": "failed",

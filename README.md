@@ -548,7 +548,6 @@ pipeline available as tools in Claude Desktop, Cursor, and other MCP clients.
 ### Example Prompts
 
 - "Generate an application for https://example.com/jobs/123"
-- "Show my tracked job applications"
 
 ### Client Timeout Note
 
