@@ -703,24 +703,38 @@ def test_package_actions_has_no_cli_ui_imports():
                 assert base not in forbidden, f"Banned import: {node.module}"
 
 
-def test_mcp_server_imports_action_tools():
-    """MCP server exports all three action tools."""
-    from applycling.mcp_server import update_job_status, interview_prep, refine_package
-    assert callable(update_job_status)
-    assert callable(interview_prep)
-    assert callable(refine_package)
+def test_mcp_server_imports_all_tools():
+    """MCP server exports all 8 v1 tools — any missing import fails fast."""
+    from applycling.mcp_server import (
+        add_job,          # MCP-T1
+        list_jobs,        # MCP-T2
+        get_package,      # MCP-T2
+        update_job_status,  # MCP-T3
+        interview_prep,   # MCP-T3
+        refine_package,   # MCP-T3
+        answer_questions, # MCP-T5
+        critique_package, # MCP-T5
+        generate_questions, # MCP-T5
+    )
+    for name, fn in [
+        ("add_job", add_job),
+        ("list_jobs", list_jobs),
+        ("get_package", get_package),
+        ("update_job_status", update_job_status),
+        ("interview_prep", interview_prep),
+        ("refine_package", refine_package),
+        ("answer_questions", answer_questions),
+        ("critique_package", critique_package),
+        ("generate_questions", generate_questions),
+    ]:
+        assert callable(fn), f"{name} is not callable"
 
 
 def test_mcp_parity():
     """Every pipeline capability exposed via CLI has a matching MCP tool.
 
-    Known gaps (CLI commands without MCP tools yet):
-      - answer → no MCP tool (application form Q&A) — planned: MCP-T5
-      - critique → no MCP tool (recruiter review) — planned: MCP-T5
-      - questions → no MCP tool (interview questions + STAR) — planned: MCP-T5
-
-    When adding a new entry to 'expected', also add the MCP tool in
-    MCP-T5 (or a follow-up ticket) before uncommenting the entry.
+    All 8 pipeline capabilities are now covered. When adding a new
+    CLI command, add its MCP counterpart here to keep parity enforced.
     """
     import asyncio
     from applycling.mcp_server import mcp
@@ -733,6 +747,9 @@ def test_mcp_parity():
         "status": "update_job_status",
         "prep": "interview_prep",
         "refine": "refine_package",
+        "answer": "answer_questions",
+        "critique": "critique_package",
+        "questions": "generate_questions",
     }
 
     tools = asyncio.run(mcp.list_tools())
@@ -743,3 +760,318 @@ def test_mcp_parity():
             f"CLI '{cli_cmd}' has no MCP tool '{mcp_name}'. "
             f"Add @mcp.tool() in mcp_server.py."
         )
+
+
+# ---------------------------------------------------------------------------
+# MCP-T5: answer_questions / critique_package / generate_questions
+# ---------------------------------------------------------------------------
+
+
+# --- answer_questions ---
+
+
+def test_answer_questions_missing_job(monkeypatch):
+    """answer_questions returns job_not_found for nonexistent job_id."""
+    from applycling.mcp_server import answer_questions
+    from applycling.tracker import TrackerError
+
+    store = _FakeStore(raise_load_job=TrackerError("No job found for id: bad"))
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = answer_questions("bad_id", questions="Tell me about yourself")
+    assert result["error"] == "job_not_found"
+
+
+def test_answer_questions_empty_questions(monkeypatch):
+    """answer_questions returns invalid_request for empty questions."""
+    from applycling.mcp_server import answer_questions
+
+    result = answer_questions("job_001", questions="   ")
+    assert result["error"] == "invalid_request"
+
+
+def test_answer_questions_missing_package(monkeypatch):
+    """answer_questions returns package_file_missing when no package folder."""
+    from applycling.mcp_server import answer_questions
+
+    job = _make_job(package_folder=None)
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = answer_questions("job_001", questions="What is your background?")
+    assert result["error"] == "package_file_missing"
+
+
+def test_answer_questions_configuration_error(monkeypatch, tmp_path):
+    """answer_questions returns configuration_error for missing config."""
+    from applycling.mcp_server import answer_questions
+    from applycling.package_actions import ConfigurationError
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("test")
+    (pkg / "job_description.md").write_text("test")
+
+    job = _make_job(id="job_cfg", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    def _raise_cfg():
+        raise ConfigurationError("No config found.")
+
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe", _raise_cfg
+    )
+
+    result = answer_questions("job_cfg", questions="text")
+    assert result["error"] == "configuration_error"
+
+
+def test_answer_questions_success(monkeypatch, tmp_path):
+    """answer_questions writes answers.md and returns metadata."""
+    from applycling.mcp_server import answer_questions
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Resume\n\ntest resume\n")
+    (pkg / "job_description.md").write_text("# JD\n\njob desc\n")
+
+    job = _make_job(id="job_a", title="SWE", company="ACME", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+    monkeypatch.setattr(
+        "applycling.storage.load_profile", lambda: None
+    )
+    monkeypatch.setattr(
+        "applycling.storage.load_stories", lambda: ""
+    )
+
+    # Mock the LLM to return answers
+    def _fake_answer(*args, **kwargs):
+        yield "Sure, here are your answers."
+
+    monkeypatch.setattr(
+        "applycling.llm.answer_questions", _fake_answer
+    )
+
+    result = answer_questions("job_a", questions="Tell me about yourself")
+    assert result["status"] == "complete"
+    assert result["title"] == "SWE"
+    assert result["company"] == "ACME"
+    assert len(result["artifacts"]) == 1
+    assert result["artifacts"][0]["kind"] == "answers"
+
+    # Verify file was written
+    answers_path = Path(result["package_folder"]) / "answers.md"
+    assert answers_path.exists()
+    content = answers_path.read_text()
+    assert "Sure, here are your answers." in content
+
+
+# --- critique_package ---
+
+
+def test_critique_missing_job(monkeypatch):
+    """critique_package returns job_not_found for nonexistent job_id."""
+    from applycling.mcp_server import critique_package
+    from applycling.tracker import TrackerError
+
+    store = _FakeStore(raise_load_job=TrackerError("No job found for id: bad"))
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = critique_package("bad_id")
+    assert result["error"] == "job_not_found"
+
+
+def test_critique_missing_package(monkeypatch):
+    """critique_package returns package_file_missing when no package folder."""
+    from applycling.mcp_server import critique_package
+
+    job = _make_job(package_folder=None)
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = critique_package("job_001")
+    assert result["error"] == "package_file_missing"
+
+
+def test_critique_configuration_error(monkeypatch, tmp_path):
+    """critique_package returns configuration_error for missing config."""
+    from applycling.mcp_server import critique_package
+    from applycling.package_actions import ConfigurationError
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("test")
+    (pkg / "job_description.md").write_text("test")
+
+    job = _make_job(id="job_cfg", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    def _raise_cfg():
+        raise ConfigurationError("No config found.")
+
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe", _raise_cfg
+    )
+
+    result = critique_package("job_cfg")
+    assert result["error"] == "configuration_error"
+
+
+def test_critique_success(monkeypatch, tmp_path):
+    """critique_package writes critique.md and returns metadata."""
+    from applycling.mcp_server import critique_package
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Resume\n\ntest\n")
+    (pkg / "job_description.md").write_text("# JD\n\ntest\n")
+
+    job = _make_job(id="job_c", title="SWE", company="ACME", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+
+    def _fake_critique(*args, **kwargs):
+        yield "This resume is excellent."
+
+    monkeypatch.setattr("applycling.llm.critique", _fake_critique)
+
+    result = critique_package("job_c")
+    assert result["status"] == "complete"
+    assert result["title"] == "SWE"
+    assert result["company"] == "ACME"
+    assert len(result["artifacts"]) == 1
+    assert result["artifacts"][0]["kind"] == "critique"
+
+    critique_path = Path(result["package_folder"]) / "critique.md"
+    assert critique_path.exists()
+    content = critique_path.read_text()
+    assert "This resume is excellent." in content
+
+
+# --- generate_questions ---
+
+
+def test_generate_questions_missing_job(monkeypatch):
+    """generate_questions returns job_not_found for nonexistent job_id."""
+    from applycling.mcp_server import generate_questions
+    from applycling.tracker import TrackerError
+
+    store = _FakeStore(raise_load_job=TrackerError("No job found for id: bad"))
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = generate_questions("bad_id")
+    assert result["error"] == "job_not_found"
+
+
+def test_generate_questions_invalid_stage(monkeypatch, tmp_path):
+    """generate_questions returns invalid_request for unknown stage."""
+    from applycling.mcp_server import generate_questions
+
+    # Need a valid package to reach stage validation
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("test")
+    (pkg / "job_description.md").write_text("test")
+
+    job = _make_job(id="job_stg", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = generate_questions("job_stg", stage="invalid-stage")
+    assert result["error"] == "invalid_request"
+
+
+def test_generate_questions_missing_package(monkeypatch):
+    """generate_questions returns package_file_missing when no package folder."""
+    from applycling.mcp_server import generate_questions
+
+    job = _make_job(package_folder=None)
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    result = generate_questions("job_001")
+    assert result["error"] == "package_file_missing"
+
+
+def test_generate_questions_configuration_error(monkeypatch, tmp_path):
+    """generate_questions returns configuration_error for missing config."""
+    from applycling.mcp_server import generate_questions
+    from applycling.package_actions import ConfigurationError
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("test")
+    (pkg / "job_description.md").write_text("test")
+
+    job = _make_job(id="job_cfg", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+
+    def _raise_cfg():
+        raise ConfigurationError("No config found.")
+
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe", _raise_cfg
+    )
+
+    result = generate_questions("job_cfg")
+    assert result["error"] == "configuration_error"
+
+
+def test_generate_questions_success(monkeypatch, tmp_path):
+    """generate_questions writes questions.md and returns metadata."""
+    from applycling.mcp_server import generate_questions
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "resume.md").write_text("# Resume\n\ntest\n")
+    (pkg / "job_description.md").write_text("# JD\n\ntest\n")
+
+    job = _make_job(id="job_q", title="SWE", company="ACME", package_folder=str(pkg))
+    store = _FakeStore(jobs=[job])
+
+    monkeypatch.setattr("applycling.tracker.get_store", lambda: store)
+    monkeypatch.setattr(
+        "applycling.package_actions._load_config_safe",
+        lambda: {"model": "test-model", "provider": "test"},
+    )
+    monkeypatch.setattr(
+        "applycling.package_actions._resolve_model_provider",
+        lambda cfg, model, provider: ("test-model", "test-provider"),
+    )
+
+    def _fake_questions(*args, **kwargs):
+        yield "1. Tell me about a time you resolved a conflict."
+
+    monkeypatch.setattr(
+        "applycling.llm.generate_questions", _fake_questions
+    )
+
+    result = generate_questions("job_q", stage="recruiter")
+    assert result["status"] == "complete"
+    assert result["title"] == "SWE"
+    assert result["company"] == "ACME"
+    assert len(result["artifacts"]) == 1
+    assert result["artifacts"][0]["kind"] == "questions"
+
+    questions_path = Path(result["package_folder"]) / "questions.md"
+    assert questions_path.exists()
+    content = questions_path.read_text()
+    assert "Tell me about a time" in content

@@ -318,3 +318,111 @@ def refine_package(
         return {"error": "package_file_missing", "message": str(e), "job_id": job_id}
     except RuntimeError as e:
         return {"error": "generation_failed", "message": str(e), "job_id": job_id}
+
+
+@mcp.tool()
+def answer_questions(
+    job_id: str,
+    questions: str,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Draft answers to application form questions for a package.
+
+    The caller must supply the application form questions as text.
+    Generated answers are appended to answers.md in the package folder
+    with a timestamp header — prior runs are never overwritten.
+    """
+    from applycling.package_actions import (
+        ConfigurationError,
+        generate_answers_for_job,
+    )
+    from applycling.tracker import TrackerError
+
+    try:
+        return generate_answers_for_job(
+            job_id, questions=questions, model=model, provider=provider
+        )
+    except TrackerError as e:
+        return {"error": "job_not_found", "message": str(e), "job_id": job_id}
+    except ConfigurationError as e:
+        return {"error": "configuration_error", "message": str(e), "job_id": job_id}
+    except ValueError as e:
+        return {"error": "invalid_request", "message": str(e), "job_id": job_id}
+    except FileNotFoundError as e:
+        return {"error": "package_file_missing", "message": str(e), "job_id": job_id}
+    except RuntimeError as e:
+        return {"error": "generation_failed", "message": str(e), "job_id": job_id}
+
+
+@mcp.tool()
+def critique_package(
+    job_id: str,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Senior recruiter review of a complete application package.
+
+    Uses the strongest available model for the configured provider.
+    The critique is written to critique.md in the package folder.
+    """
+    from applycling.package_actions import (
+        ConfigurationError,
+        critique_package_for_job,
+    )
+    from applycling.tracker import TrackerError
+
+    try:
+        return critique_package_for_job(
+            job_id, model=model, provider=provider
+        )
+    except TrackerError as e:
+        return {"error": "job_not_found", "message": str(e), "job_id": job_id}
+    except ConfigurationError as e:
+        return {"error": "configuration_error", "message": str(e), "job_id": job_id}
+    except ValueError as e:
+        return {"error": "invalid_request", "message": str(e), "job_id": job_id}
+    except FileNotFoundError as e:
+        return {"error": "package_file_missing", "message": str(e), "job_id": job_id}
+    except RuntimeError as e:
+        return {"error": "generation_failed", "message": str(e), "job_id": job_id}
+
+
+@mcp.tool()
+def generate_questions(
+    job_id: str,
+    stage: str | None = None,
+    count: int = 5,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Generate targeted interview questions with STAR answer frameworks.
+
+    Generates for all interview stages unless a specific stage is given
+    (recruiter / hiring-manager / technical / executive).
+    Each run appends a new dated section to questions.md.
+    """
+    from applycling.package_actions import (
+        ConfigurationError,
+        generate_questions_for_job,
+    )
+    from applycling.tracker import TrackerError
+
+    try:
+        return generate_questions_for_job(
+            job_id,
+            stage=stage,
+            count=count,
+            model=model,
+            provider=provider,
+        )
+    except TrackerError as e:
+        return {"error": "job_not_found", "message": str(e), "job_id": job_id}
+    except ConfigurationError as e:
+        return {"error": "configuration_error", "message": str(e), "job_id": job_id}
+    except ValueError as e:
+        return {"error": "invalid_request", "message": str(e), "job_id": job_id}
+    except FileNotFoundError as e:
+        return {"error": "package_file_missing", "message": str(e), "job_id": job_id}
+    except RuntimeError as e:
+        return {"error": "generation_failed", "message": str(e), "job_id": job_id}

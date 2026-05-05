@@ -1269,202 +1269,56 @@ def questions(job_id: str, stage_arg: str, count: int, model_arg: str, provider_
     Appends to questions.md in the package folder. Each run adds a new
     dated section — previous questions are never overwritten.
     """
-    cfg = _require_config()
-    model = model_arg or cfg.get("model")
-    if not model:
-        console.print("[red]No model in config.[/red] Run setup again.")
-        sys.exit(1)
-    provider = provider_arg or cfg.get("provider", "ollama")
+    from applycling.package_actions import (
+        ConfigurationError,
+        generate_questions_for_job,
+    )
+    from applycling.tracker import TrackerError
 
-    store = get_store()
+    stage = stage_arg if stage_arg else None
+
     try:
-        job = store.load_job(job_id)
+        result = generate_questions_for_job(
+            job_id,
+            stage=stage,
+            count=count,
+            model=model_arg or None,
+            provider=provider_arg or None,
+        )
     except TrackerError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    if not job.package_folder:
-        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    folder = Path(job.package_folder)
-    if not folder.exists():
-        console.print(f"[red]Package folder not found:[/red] {folder}")
+    except ConfigurationError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    # Resolve which stages to generate.
-    if stage_arg:
-        key = stage_arg.lower().strip()
-        if key not in _PREP_STAGE_LABELS:
-            console.print(f"[red]Unknown stage '{stage_arg}'.[/red] Valid: {', '.join(_PREP_STAGES)}")
-            sys.exit(1)
-        stages_to_run = [(key, _PREP_STAGE_LABELS[key])]
-    else:
-        stages_to_run = list(_PREP_STAGE_LABELS.items())
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
 
     console.print(
-        Panel.fit(
-            f"[bold]Interview Questions[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
-            f"[dim]{count} questions × {len(stages_to_run)} stage(s)[/dim]",
-            style="cyan",
+        "[bold]Interview Questions[/bold] [cyan]{}[/cyan] — {}  [dim]({})[/dim]".format(
+            result["company"], result["title"], result["job_id"]
         )
     )
 
-    def _read(fname: str) -> str:
-        p = folder / fname
-        return p.read_text(encoding="utf-8") if p.exists() else ""
+    for w in result.get("warnings", []):
+        console.print(f"[yellow]{w}[/yellow]")
 
-    resume = _read("resume.md")
-    strategy = _read("strategy.md")
-    positioning_brief_text = _read("positioning_brief.md")
-    job_description = _read("job_description.md") or strategy
-
-    if not resume:
-        console.print("[red]resume.md not found in package folder.[/red]")
-        sys.exit(1)
-    if not job_description:
-        console.print("[red]No job description or strategy found in package folder.[/red]")
-        sys.exit(1)
-
-    # Read intel folder + Notion notes.
-    _vision_model = cfg.get("intel_vision_model", "")
-    _vision_provider = cfg.get("intel_vision_provider", provider) if _vision_model else ""
-    intel_folder_text, intel_warnings = _read_intel_folder(
-        folder, vision_model=_vision_model, vision_provider=_vision_provider,
-    )
-    for w in intel_warnings:
-        console.print(f"[yellow]Intel warning:[/yellow] {w}")
-
-    # Context summary.
-    console.print("\n[dim]Context loaded:[/dim]")
-    console.print(f"[dim]  {'resume.md':<28} ✓[/dim]")
-    console.print(f"[dim]  {'job description':<28} ✓[/dim]")
-    console.print(f"[dim]  {'role intel / strategy':<28} {'✓' if strategy else '—'}[/dim]")
-    console.print(f"[dim]  {'positioning brief':<28} {'✓' if positioning_brief_text else '—'}[/dim]")
-
-    intel_dir = folder / "intel"
-    intel_files = [
-        f for f in sorted(intel_dir.iterdir())
-        if not f.is_dir()
-    ] if intel_dir.exists() else []
-    _processable_exts = {".pdf"} | _INTEL_TEXT_EXTS | (_INTEL_IMAGE_EXTS if _vision_model else set())
-    loaded_files = [f for f in intel_files if f.suffix.lower() in _processable_exts]
-    if _vision_model:
-        console.print(f"[dim]  {'vision model':<28} {_vision_model} ({_vision_provider})[/dim]")
-    if loaded_files:
-        for f in loaded_files:
-            label = "intel/" + f.name
-            if f.suffix.lower() in _INTEL_IMAGE_EXTS:
-                cache_path = intel_dir / ".cache" / f"{f.stem}.extracted.md"
-                note = " (cached)" if cache_path.exists() and cache_path.stat().st_mtime >= f.stat().st_mtime else " (vision)"
-            else:
-                note = ""
-            console.print(f"[dim]  {label:<28} ✓{note}[/dim]")
-    else:
-        console.print(f"[dim]  {'intel/ (empty)':<28} — tip: drop .pdf/.md/.txt files here[/dim]")
-
-    notion_notes = store.load_job_notes(job_id)
-    console.print(f"[dim]  {'Notion page notes':<28} {'✓' if notion_notes else '— (not connected or empty)'}[/dim]")
-    console.print()
-
-    intel_parts: list[str] = []
-    if intel_folder_text:
-        intel_parts.append(intel_folder_text)
-    if notion_notes:
-        intel_parts.append(f"--- Notion page notes ---\n{notion_notes}")
-    intel_combined = "\n\n".join(intel_parts)
-
-    # Load existing questions.md for deduplication context.
-    questions_path = folder / "questions.md"
-    existing_questions = ""
+    questions_path = Path(result["package_folder"]) / "questions.md"
     if questions_path.exists():
-        existing_questions = questions_path.read_text(encoding="utf-8").strip()
-
-    # Generate questions for each stage and append.
-    import datetime as _dt
-    today = _dt.date.today().isoformat()
-    all_new_sections: list[str] = []
-    step_logs: list[dict] = []
-
-    for _stage_key, _stage_label in stages_to_run:
-        _s = _Step(f"questions_{_stage_key}", step_logs, output_file="questions.md")
-        _s.prompt_text = load_skill("questions").render(
-            count=count,
-            stage=_stage_label,
-            job_description=job_description,
-            resume=resume,
-            role_intel=strategy,
-            positioning_brief=positioning_brief_text or "(not provided)",
-            intel_section=f"\n=== ADDITIONAL INTEL ===\n{intel_combined}\n" if intel_combined else "",
-            existing_questions=existing_questions or "(none yet)",
-        )
-        try:
-            with _s, console.status(f"[cyan]Generating questions for {_stage_label}...[/cyan]", spinner="dots"):
-                for chunk in llm.generate_questions(
-                    job_description, resume, strategy, model,
-                    positioning_brief=positioning_brief_text,
-                    intel=intel_combined,
-                    existing_questions=existing_questions,
-                    stage=_stage_label,
-                    count=count,
-                    provider=provider,
-                ):
-                    _s.collect(chunk)
-        except llm.LLMError as e:
-            console.print(f"[red]{e}[/red]")
-            sys.exit(1)
-
-        section_text = _clean_llm_output(_s.output)
-        if not section_text:
-            console.print(f"[yellow]No output for stage '{_stage_label}' — skipping.[/yellow]")
-            continue
-
-        section = f"## Questions — {_stage_label.title()} (generated {today})\n\n{section_text}"
-        all_new_sections.append(section)
-        # Accumulate so subsequent stages know all already-generated questions.
-        existing_questions = (existing_questions + "\n\n" + section).strip()
-
-    if not all_new_sections:
-        console.print("[yellow]No questions were generated.[/yellow]")
-        sys.exit(1)
-
-    new_content = "\n\n---\n\n".join(all_new_sections)
-
-    # Append to questions.md (never overwrite).
-    if questions_path.exists():
-        existing_file = questions_path.read_text(encoding="utf-8").rstrip()
-        questions_path.write_text(
-            existing_file + "\n\n---\n\n" + new_content + "\n",
-            encoding="utf-8",
-        )
-        console.print(f"\n[green]Appended to:[/green] {questions_path}")
-    else:
-        questions_path.write_text(
-            f"# Interview Questions — {job.title} @ {job.company}\n\n{new_content}\n",
-            encoding="utf-8",
-        )
+        questions_text = questions_path.read_text(encoding="utf-8")
+        console.print()
+        console.print(Panel(questions_text, title="[bold]Interview Questions[/bold]", style="green"))
         console.print(f"\n[green]Saved:[/green] {questions_path}")
-
-    console.print(Panel(new_content, title="[bold]Interview Questions[/bold]", style="green"))
-
-    try:
-        import tiktoken as _tiktoken
-        _enc = _tiktoken.get_encoding("cl100k_base")
-        _total_in = sum(len(_enc.encode(s.get("prompt_text", ""))) for s in step_logs)
-        _total_out = sum(len(_enc.encode(s.get("output_text", ""))) for s in step_logs)
-        console.print(f"[dim]Tokens: {_total_in:,} in + {_total_out:,} out[/dim]")
-    except Exception:
-        pass
 
 
 # ---------- critique ----------
-
-# Strongest model per provider — critique warrants maximum judgment.
-_CRITIQUE_MODELS: dict[str, str] = {
-    "anthropic": "claude-opus-4-6",
-    "openai": "gpt-4o",
-    "google": "gemini-2.5-pro",
-}
 
 
 @main.command()
@@ -1473,105 +1327,49 @@ _CRITIQUE_MODELS: dict[str, str] = {
 @click.option("--provider", "provider_arg", default="", help="Override provider.")
 def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
     """Senior recruiter review of a complete application package."""
-    cfg = _require_config()
-    provider = provider_arg or cfg.get("provider", "ollama")
-    # Default to strongest model for the provider; fall back to configured model.
-    # config.json "critique_models" overrides the hardcoded dict per provider.
-    _effective_models = {**_CRITIQUE_MODELS, **cfg.get("critique_models", {})}
-    strongest = _effective_models.get(provider)
-    model = model_arg or strongest or cfg.get("model")
-    if not model:
-        console.print("[red]No model in config.[/red] Run setup again.")
-        sys.exit(1)
-    if not model_arg and not strongest:
-        console.print(f"[dim]No stronger model known for {provider} — using configured model: {model}[/dim]")
+    from applycling.package_actions import (
+        ConfigurationError,
+        critique_package_for_job,
+    )
+    from applycling.tracker import TrackerError
 
-    store = get_store()
     try:
-        job = store.load_job(job_id)
+        result = critique_package_for_job(
+            job_id,
+            model=model_arg or None,
+            provider=provider_arg or None,
+        )
     except TrackerError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    if not job.package_folder:
-        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    folder = Path(job.package_folder)
-    if not folder.exists():
-        console.print(f"[red]Package folder not found:[/red] {folder}")
+    except ConfigurationError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    console.print(
-        Panel.fit(
-            f"[bold]Critique[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]\n"
-            f"[dim]Model: {model} ({provider})[/dim]",
-            style="cyan",
-        )
-    )
-
-    def _read(fname: str) -> str:
-        p = folder / fname
-        return p.read_text(encoding="utf-8") if p.exists() else ""
-
-    resume = _read("resume.md")
-    cover_letter_text = _read("cover_letter.md")
-    strategy = _read("strategy.md")
-    positioning_brief_text = _read("positioning_brief.md")
-    job_description = _read("job_description.md") or strategy
-
-    if not resume:
-        console.print("[red]resume.md not found in package folder.[/red]")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-    if not job_description:
-        console.print("[red]No job description or strategy found in package folder.[/red]")
-        sys.exit(1)
-
-    step_logs: list[dict] = []
-    _s = _Step("critique", step_logs, output_file="critique.md")
-    _s.prompt_text = load_skill("critique").render(
-        job_description=job_description,
-        resume=resume,
-        cover_letter=cover_letter_text or "(not provided)",
-        role_intel=strategy,
-        positioning_brief=positioning_brief_text or "(not provided)",
-    )
-    try:
-        with _s, console.status("[cyan]Running recruiter critique...[/cyan]", spinner="dots"):
-            for chunk in llm.critique(
-                job_description, resume, strategy, model,
-                cover_letter=cover_letter_text,
-                positioning_brief=positioning_brief_text,
-                provider=provider,
-            ):
-                _s.collect(chunk)
-    except llm.LLMError as e:
+    except RuntimeError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    critique_text = _clean_llm_output(_s.output)
-    if not critique_text:
-        console.print("[yellow]Critique came back empty.[/yellow]")
-        sys.exit(1)
-
-    out_path = folder / "critique.md"
-    out_path.write_text(
-        f"# Critique — {job.title} @ {job.company}\n\n{critique_text}\n",
-        encoding="utf-8",
+    console.print(
+        "[bold]Critique[/bold] [cyan]{}[/cyan] — {}  [dim]({})[/dim]".format(
+            result["company"], result["title"], result["job_id"]
+        )
     )
 
-    console.print()
-    console.print(Panel(critique_text, title="[bold]Recruiter Critique[/bold]", style="magenta"))
-    console.print(f"\n[green]Saved:[/green] {out_path}")
+    for w in result.get("warnings", []):
+        console.print(f"[yellow]{w}[/yellow]")
 
-    try:
-        import tiktoken as _tiktoken
-        _enc = _tiktoken.get_encoding("cl100k_base")
-        _in = len(_enc.encode(_s.prompt_text))
-        _out = len(_enc.encode(_s.output))
-        console.print(f"[dim]Tokens: {_in:,} in + {_out:,} out  [{_s.duration}s][/dim]")
-    except Exception:
-        pass
+    critique_path = Path(result["package_folder"]) / "critique.md"
+    if critique_path.exists():
+        critique_text = critique_path.read_text(encoding="utf-8")
+        console.print()
+        console.print(Panel(critique_text, title="[bold]Recruiter Critique[/bold]", style="magenta"))
+        console.print(f"\n[green]Saved:[/green] {critique_path}")
 
 
 # ---------- answer ----------
@@ -1582,157 +1380,84 @@ def critique(job_id: str, model_arg: str, provider_arg: str) -> None:
 @click.option("--model", "model_arg", default="", help="Override model for this run.")
 @click.option("--provider", "provider_arg", default="", help="Override provider.")
 def answer(job_id: str, model_arg: str, provider_arg: str) -> None:
-    """Draft answers to application form questions for a job."""
-    from . import pipeline as _pipeline
+    """Draft answers to application form questions for a job.
 
-    cfg = _require_config()
-    model = model_arg or cfg.get("model")
-    if not model:
-        console.print("[red]No model in config.[/red] Run setup again.")
-        sys.exit(1)
-    provider = provider_arg or cfg.get("provider", "ollama")
-
-    store = get_store()
-    try:
-        job = store.load_job(job_id)
-    except TrackerError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-
-    if not job.package_folder:
-        console.print("[red]No package folder recorded for this job.[/red] Run `applycling add` first.")
-        sys.exit(1)
-
-    folder = Path(job.package_folder)
-    if not folder.exists():
-        console.print(f"[red]Package folder not found:[/red] {folder}")
-        sys.exit(1)
-
-    console.print(
-        Panel.fit(
-            f"[bold]Answer Questions[/bold] [cyan]{job.company}[/cyan] — {job.title}  [dim]({job_id})[/dim]",
-            style="cyan",
-        )
+    Reads questions interactively, then calls the shared helper to
+    generate and save answers. Accept/edit/refine loop lets you
+    iterate before writing the final version.
+    """
+    from applycling.package_actions import (
+        ConfigurationError,
+        generate_answers_for_job,
     )
-
-    try:
-        ctx = _pipeline.PipelineContext.from_config(model=model, provider=provider)
-    except storage.StorageError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
 
     questions = _read_multiline("Paste form questions (end with ---):")
     if not questions.strip():
         console.print("[yellow]No questions provided — nothing to answer.[/yellow]")
-        sys.exit(0)
+        return
 
-    step_logs: list[dict] = []
-    current_answer = ""
     feedback_lines: list[str] = []
-
-    def _read_artifact(fname: str) -> str:
-        p = folder / fname
-        return p.read_text(encoding="utf-8") if p.exists() else ""
-
-    if not _read_artifact("resume.md"):
-        console.print(f"[red]Package folder is missing resume.md — folder may be incomplete:[/red] {folder}")
-        sys.exit(1)
-
-    _ap_block = _pipeline._applicant_profile_block(ctx.applicant_profile) if ctx.applicant_profile else ""
-    _resume = _read_artifact("resume.md")
-    _role_intel = _read_artifact("strategy.md")
-    _company_context = _read_artifact("company_context.md")
-    _positioning_brief = _read_artifact("positioning_brief.md")
-
     while True:
-        # Build questions block: original questions + any accumulated feedback.
         questions_block = questions
         if feedback_lines:
-            questions_block += "\n\n" + "\n".join(f"Refinement request: {f}" for f in feedback_lines)
+            questions_block += "\n\n" + "\n".join(
+                f"Refinement request: {f}" for f in feedback_lines
+            )
 
-        _s = _Step("answer_questions", step_logs, output_file="answers.md")
-        _s.prompt_text = load_skill("answer_questions").render(
-            resume=_resume,
-            stories=ctx.stories or "(not provided)",
-            role_intel=_role_intel or "(not provided)",
-            company_context=_company_context or "(not provided)",
-            positioning_brief=_positioning_brief or "(not provided)",
-            applicant_profile=f"\n=== APPLICANT PROFILE ===\n{_ap_block}" if _ap_block else "",
-            questions=questions_block,
-        )
         try:
-            with _s, console.status("[cyan]Drafting answers...[/cyan]", spinner="dots"):
-                for chunk in llm.answer_questions(
-                    resume=_resume,
-                    stories=ctx.stories,
-                    role_intel=_role_intel,
-                    company_context=_company_context,
-                    positioning_brief=_positioning_brief,
-                    applicant_profile=_ap_block,
-                    questions=questions_block,
-                    model=model,
-                    provider=provider,
-                ):
-                    _s.collect(chunk)
-        except llm.LLMError as e:
+            result = generate_answers_for_job(
+                job_id,
+                questions=questions_block,
+                model=model_arg or None,
+                provider=provider_arg or None,
+            )
+        except Exception as e:
             console.print(f"[red]{e}[/red]")
             sys.exit(1)
 
-        current_answer = _clean_llm_output(_s.output)
-        if not current_answer:
-            console.print("[yellow]No answer generated.[/yellow]")
-            sys.exit(1)
+        answers_path = Path(result["package_folder"]) / "answers.md"
+        if answers_path.exists():
+            current_answer = answers_path.read_text(encoding="utf-8")
+        else:
+            current_answer = ""
 
         console.print()
-        console.print(Panel(current_answer, title="[bold]Drafted Answers[/bold]", style="green"))
+        console.print(
+            Panel(current_answer, title="[bold]Drafted Answers[/bold]", style="green")
+        )
 
-        choice = _pick("What next?", ["accept", "edit", "refine", "quit"], default="accept")
+        choice = _pick(
+            "What next?", ["accept", "edit", "refine", "quit"], default="accept"
+        )
 
         if choice == "accept":
-            break
+            console.print(f"\n[green]Saved:[/green] {answers_path}")
+            return
         elif choice == "edit":
             try:
                 edited = click.edit(current_answer, extension=".md")
             except click.UsageError:
-                console.print("[yellow]Could not open editor ($EDITOR unset?) — keeping current draft.[/yellow]")
+                console.print(
+                    "[yellow]Could not open editor ($EDITOR unset?) — keeping current draft.[/yellow]"
+                )
                 edited = None
             if edited is not None:
                 stripped = edited.strip()
-                current_answer = stripped if stripped else current_answer
-            break
+                if stripped:
+                    answers_path.write_text(stripped + "\n", encoding="utf-8")
+            console.print(f"\n[green]Saved:[/green] {answers_path}")
+            return
         elif choice == "refine":
             feedback = Prompt.ask("Feedback (describe what to change)")
             if feedback.strip():
                 feedback_lines.append(feedback.strip())
             else:
-                console.print("[dim]No feedback given — re-running with same prompt.[/dim]")
+                console.print(
+                    "[dim]No feedback given — re-running with same prompt.[/dim]"
+                )
         elif choice == "quit":
-            console.print("[dim]Discarded — nothing saved.[/dim]")
+            console.print("[dim]Discarded — answers may already be saved from generation.[/dim]")
             return
-
-    # Append to answers.md with timestamp header (never overwrite prior runs).
-    timestamp = _utcnow().strftime("%Y-%m-%d %H:%M")
-    section = f"## Answers — {timestamp}\n\n{current_answer}"
-    answers_path = folder / "answers.md"
-    if answers_path.exists():
-        existing = answers_path.read_text(encoding="utf-8").rstrip()
-        answers_path.write_text(existing + "\n\n---\n\n" + section + "\n", encoding="utf-8")
-        console.print(f"\n[green]Appended to:[/green] {answers_path}")
-    else:
-        answers_path.write_text(
-            f"# Application Answers — {job.title} @ {job.company}\n\n{section}\n",
-            encoding="utf-8",
-        )
-        console.print(f"\n[green]Saved:[/green] {answers_path}")
-
-    try:
-        import tiktoken as _tiktoken
-        _enc = _tiktoken.get_encoding("cl100k_base")
-        _total_in = sum(len(_enc.encode(s.get("prompt_text", ""))) for s in step_logs)
-        _total_out = sum(len(_enc.encode(s.get("output_text", ""))) for s in step_logs)
-        console.print(f"[dim]Tokens: {_total_in:,} in + {_total_out:,} out[/dim]")
-    except Exception:
-        pass
 
 
 # ---------- list / view / status ----------

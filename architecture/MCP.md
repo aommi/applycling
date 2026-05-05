@@ -22,3 +22,6 @@ changeset.
 | `update_job_status` | ✅ Shipped | MCP-T3 |
 | `interview_prep` | ✅ Shipped | MCP-T3 |
 | `refine_package` | ✅ Shipped | MCP-T3 |
+| `answer_questions` | ✅ Shipped | MCP-T5 |
+| `critique_package` | ✅ Shipped | MCP-T5 |
+| `generate_questions` | ✅ Shipped | MCP-T5 |
