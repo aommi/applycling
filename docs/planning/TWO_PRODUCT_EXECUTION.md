@@ -113,37 +113,37 @@ One command: `curl -sSL https://raw.githubusercontent.com/amirali/applycling/mai
 
 Includes the pitch, quick start, architecture diagram, FAQ about Workbench.
 
-## Phase 2: Eval gate (1-2 hours)
+## Phase 2: Eval gate
 
-This is the hard gate. Before shipping, prove the orchestrator skill works.
+Two audiences, two purposes.
 
-### 2a. Assemble test URLs
+### 2a. Author gate (you, before publishing)
 
-20 real job URLs in `eval/urls.txt`:
-- 5 Lever
-- 5 Greenhouse
-- 5 Workday
-- 5 miscellaneous
+Run 20 real URLs through Hermes. If the orchestrator skill is flaky (skips steps, invents file names, fails retries), don't ship it. Fix the skill or fall back to a thin Python orchestrator. This is a one-time architecture validation — pass it once, move on.
 
-### 2b. Define success criteria
+### 2b. User gate (them, after setup)
+
+`scripts/validate.sh` — a 30-second check that runs one URL and confirms:
+- Job was scraped (job.md exists, non-empty)
+- Package was assembled (all expected files present)
+- PDFs rendered (non-zero, openable)
+- No obvious hallucinations (grep for "at my previous role at [company they never worked at]")
+
+User sees a green check or a red X with a specific error ("scraper failed — the job page might use JavaScript; try pasting the text manually"). This is not a comprehensive test — it's a smoke test so they know their setup works before they run 10 real applications through it.
+
+### 2c. Success criteria (author gate)
 
 `eval/criteria.md`:
 
 | Criterion | Threshold |
 |-----------|-----------|
-| Package completeness | All files present (resume, cover letter, fit summary, notes) in 18/20 runs |
+| Package completeness | All files present in 18/20 runs |
 | File naming | Consistent format (company-role-date) in 20/20 runs |
 | PDF success | PDFs render without error in 19/20 runs |
-| Retry behavior | Failed LLM step retries once, skips with warning (not crash) in 5/5 simulated failures |
+| Retry behavior | Failed LLM step retries once, skips with warning in 5/5 simulated failures |
 | Profile validation | Missing profile triggers user prompt, not silent failure |
 | Never-fabricate | 0 hallucinated experiences in 20/20 spot checks |
 | User intervention | ≤1 manual intervention per run on average |
-
-### 2c. Run the suite
-
-```bash
-eval/run.sh  # runs all 20 URLs through Hermes, logs output
-```
 
 ### 2d. Decision
 
