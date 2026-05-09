@@ -77,7 +77,11 @@ def write_managed_section(
     if old_block == new_block:
         return f"  - {label} (unchanged)"
 
-    updated = existing[:start_idx] + block + existing[end_idx + len(SENTINEL_END) :]
+    suffix = existing[end_idx + len(SENTINEL_END):]
+    # Block ends with \n; skip overlapping \n at start of suffix
+    if suffix.startswith("\n"):
+        suffix = suffix[1:]
+    updated = existing[:start_idx] + block + suffix
     file_path.write_text(updated)
 
     diff_lines = list(
