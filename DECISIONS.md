@@ -310,3 +310,21 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 **Supersedes:** 2026-05 sprint README sequencing that placed MCP-T4 before MCP-T3 and deferred action/refinement tools until after non-author validation.
 
 **Affects:** `applycling/mcp_server.py`, `applycling/package_actions.py`, `applycling/cli.py`, `architecture/MCP.md`, `memory/semantic.md`, `docs/planning/sprints/2026-05-mcp-alpha/README.md`, `vision.md`
+
+---
+
+## 2026-05-05 — Folder-Per-Skill Directory Convention
+
+**Decision:** Skills live as `applycling/skills/<name>/SKILL.md` (one directory per skill) rather than flat `applycling/skills/<name>.md` files.
+
+**Reasoning:**
+- The sprint explicitly plans learning loops with `LEARNED.md` per skill, injected as `{learned_patterns}` into renders. Once that ships, each skill directory will have at minimum two files (`SKILL.md` + `LEARNED.md`).
+- The folder-per-skill convention follows the agentskills.io standard the loader already expects — `load_skill(name)` resolves to `skills/<name>/SKILL.md`.
+- It provides a clear home for per-skill supporting files (`references/`, `templates/`, `scripts/`) without naming-convention gymnastics or later migration pain.
+- The overhead of 16 directories vs 16 files is a one-time setup cost that pays off the moment any skill grows beyond a single file.
+
+**Rejected alternatives:**
+- Flat `skills/<name>.md` files: simpler to browse today, but creates a migration when `LEARNED.md` or supporting files arrive. Naming conventions like `answer_questions.learned.md` pollute the namespace and break the loader's existing resolution logic.
+- Hybrid (flat for single-file skills, folders for multi-file): inconsistent, harder for the loader to resolve, and requires prediction of which skills will grow.
+
+**Affects:** `applycling/skills/`, `applycling/skills/loader.py`

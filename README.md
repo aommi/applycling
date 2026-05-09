@@ -585,6 +585,9 @@ Once connected, your AI client has access to these tools:
 | `update_job_status(job_id, status)` | Move a job through the application pipeline |
 | `interview_prep(job_id, stage)` | Generate interview prep materials |
 | `refine_package(job_id, feedback)` | Iterate on artifacts with specific feedback |
+| `answer_questions(job_id, questions)` | Draft answers to application form questions |
+| `critique_package(job_id)` | Senior recruiter review of your package |
+| `generate_questions(job_id, stage, count)` | Generate targeted interview questions with STAR frameworks |
 
 ### Where Artifacts Live
 
@@ -616,6 +619,9 @@ Once connected, try these in your AI client:
 - "Mark job_001 as applied"
 - "Generate interview prep for job_001"
 - "Refine job_001's resume and cover letter to emphasize backend systems work"
+- "Answer the application form questions for job_001"
+- "Critique my application package for job_001"
+- "Generate interview questions for job_001 (recruiter screen)"
 
 ### Client Timeout Note
 

@@ -560,3 +560,360 @@ def refine_package_for_job(
         "warnings": warnings,
         "status": "complete",
     }
+
+
+# ---------------------------------------------------------------------------
+# Generate answers to application form questions
+# ---------------------------------------------------------------------------
+
+
+def generate_answers_for_job(
+    job_id: str,
+    *,
+    questions: str,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Draft answers to application form questions for a package.
+
+    Appends to answers.md with a timestamp header — never overwrites
+    prior runs. Caller supplies the questions text; the helper handles
+    all LLM interaction, profile loading, and artifact writing.
+    """
+    from applycling.tracker import get_store
+    from applycling.skills.loader import load_skill
+    from applycling import llm
+    from applycling.text_utils import clean_llm_output
+    from applycling.storage import load_profile, load_stories
+    from applycling.pipeline import _applicant_profile_block
+
+    if not questions.strip():
+        raise ValueError("Questions are required.")
+
+    # Load job + validate package FIRST — missing-job errors surface first.
+    job = get_store().load_job(job_id)
+
+    if not job.package_folder:
+        raise FileNotFoundError("No package folder recorded for this job.")
+    folder = Path(job.package_folder)
+    if not folder.exists() or not folder.is_dir():
+        raise FileNotFoundError(f"Package folder not found: {folder}")
+
+    cfg = _load_config_safe()
+    eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
+
+    resume, _job_desc, strategy, positioning_brief = _validate_package_files(folder)
+
+    # Profile-derived inputs (same as CLI PipelineContext.from_config).
+    profile = load_profile()
+    ap_block = _applicant_profile_block(profile) if profile else ""
+    stories = load_stories() or ""
+
+    company_context = ""
+    cc_path = folder / "company_context.md"
+    if cc_path.exists():
+        company_context = cc_path.read_text(encoding="utf-8")
+
+    chunks: list[str] = []
+    try:
+        for chunk in llm.answer_questions(
+            resume=resume,
+            stories=stories,
+            role_intel=strategy,
+            company_context=company_context,
+            positioning_brief=positioning_brief,
+            applicant_profile=ap_block,
+            questions=questions,
+            model=eff_model,
+            provider=eff_provider,
+        ):
+            chunks.append(chunk)
+    except llm.LLMError as e:
+        raise RuntimeError(f"LLM answer_questions failed: {e}") from e
+
+    answer_text = clean_llm_output("".join(chunks))
+    if not answer_text:
+        raise RuntimeError("Answers came back empty.")
+
+    # Append to answers.md with timestamp header (never overwrite).
+    import datetime as _dt
+
+    timestamp = _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d %H:%M")
+    section = f"## Answers — {timestamp}\n\n{answer_text}"
+
+    answers_path = folder / "answers.md"
+    if answers_path.exists():
+        existing = answers_path.read_text(encoding="utf-8").rstrip()
+        answers_path.write_text(
+            existing + "\n\n---\n\n" + section + "\n", encoding="utf-8"
+        )
+    else:
+        answers_path.write_text(
+            f"# Application Answers — {job.title} @ {job.company}\n\n{section}\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "job_id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "package_folder": str(folder),
+        "artifacts": [
+            {"name": "answers.md", "path": str(answers_path), "kind": "answers"}
+        ],
+        "warnings": [],
+        "status": "complete",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Senior recruiter critique
+# ---------------------------------------------------------------------------
+
+
+# Strongest model per provider — critique warrants maximum judgment.
+_CRITIQUE_MODELS: dict[str, str] = {
+    "anthropic": "claude-opus-4-6",
+    "openai": "gpt-4o",
+    "google": "gemini-2.5-pro",
+}
+
+
+def critique_package_for_job(
+    job_id: str,
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Senior recruiter review of a complete application package.
+
+    Uses the strongest available model for the configured provider
+    (overridable via model/provider args or config critique_models dict).
+    """
+    from applycling.tracker import get_store
+    from applycling.skills.loader import load_skill
+    from applycling import llm
+    from applycling.text_utils import clean_llm_output
+
+    # Load job + validate package BEFORE config.
+    job = get_store().load_job(job_id)
+
+    if not job.package_folder:
+        raise FileNotFoundError("No package folder recorded for this job.")
+    folder = Path(job.package_folder)
+    if not folder.exists() or not folder.is_dir():
+        raise FileNotFoundError(f"Package folder not found: {folder}")
+
+    cfg = _load_config_safe()
+    eff_provider = provider or cfg.get("provider", "ollama")
+
+    # Resolve model: arg > critique_models config > _CRITIQUE_MODELS > config model.
+    effective_models = {**_CRITIQUE_MODELS, **cfg.get("critique_models", {})}
+    strongest = effective_models.get(eff_provider)
+    eff_model = model or strongest or cfg.get("model", "")
+    if not eff_model:
+        raise ConfigurationError("No model available for critique.")
+
+    resume, job_description, strategy, positioning_brief = _validate_package_files(
+        folder
+    )
+
+    cover_letter = ""
+    cl_path = folder / "cover_letter.md"
+    if cl_path.exists():
+        cover_letter = cl_path.read_text(encoding="utf-8")
+
+    chunks: list[str] = []
+    try:
+        for chunk in llm.critique(
+            job_description=job_description,
+            resume=resume,
+            role_intel=strategy,
+            model=eff_model,
+            cover_letter=cover_letter,
+            positioning_brief=positioning_brief,
+            provider=eff_provider,
+        ):
+            chunks.append(chunk)
+    except llm.LLMError as e:
+        raise RuntimeError(f"LLM critique failed: {e}") from e
+
+    critique_text = clean_llm_output("".join(chunks))
+    if not critique_text:
+        raise RuntimeError("Critique came back empty.")
+
+    out_path = folder / "critique.md"
+    out_path.write_text(
+        f"# Critique — {job.title} @ {job.company}\n\n{critique_text}\n",
+        encoding="utf-8",
+    )
+
+    return {
+        "job_id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "package_folder": str(folder),
+        "artifacts": [
+            {"name": "critique.md", "path": str(out_path), "kind": "critique"}
+        ],
+        "warnings": [],
+        "status": "complete",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Generate targeted interview questions
+# ---------------------------------------------------------------------------
+
+
+def generate_questions_for_job(
+    job_id: str,
+    *,
+    stage: str | None = None,
+    count: int = 5,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
+    """Generate targeted interview questions with STAR frameworks.
+
+    Generates for all interview stages unless a specific stage is given.
+    Each run appends a new dated section to questions.md — previous
+    questions are never overwritten.
+    """
+    from applycling.tracker import get_store
+    from applycling.skills.loader import load_skill
+    from applycling import llm
+    from applycling.text_utils import clean_llm_output
+
+    # Load job + validate package FIRST.
+    job = get_store().load_job(job_id)
+
+    if not job.package_folder:
+        raise FileNotFoundError("No package folder recorded for this job.")
+    folder = Path(job.package_folder)
+    if not folder.exists() or not folder.is_dir():
+        raise FileNotFoundError(f"Package folder not found: {folder}")
+
+    if stage is not None and stage not in _PREP_STAGES:
+        raise ValueError(
+            f"Unknown stage '{stage}'. Valid: {', '.join(_PREP_STAGES)}"
+        )
+
+    cfg = _load_config_safe()
+    eff_model, eff_provider = _resolve_model_provider(cfg, model, provider)
+
+    resume, job_description, strategy, positioning_brief = _validate_package_files(
+        folder
+    )
+
+    # Resolve which stages to generate.
+    if stage is not None:
+        stages_to_run = [(stage, _PREP_STAGE_LABELS[stage])]
+    else:
+        stages_to_run = list(_PREP_STAGE_LABELS.items())
+
+    warnings: list[str] = []
+
+    # Intel collection.
+    vision_model = cfg.get("intel_vision_model", "")
+    vision_provider = (
+        cfg.get("intel_vision_provider", eff_provider) if vision_model else ""
+    )
+    intel_folder_text, intel_warnings = _read_intel_folder(
+        folder,
+        vision_model=vision_model,
+        vision_provider=vision_provider,
+    )
+    warnings.extend(intel_warnings)
+
+    store = get_store()
+    notion_notes = store.load_job_notes(job_id)
+
+    intel_parts: list[str] = []
+    if intel_folder_text:
+        intel_parts.append(intel_folder_text)
+    if notion_notes:
+        intel_parts.append(f"--- Notion page notes ---\n{notion_notes}")
+    intel_combined = "\n\n".join(intel_parts)
+
+    # Load existing questions for deduplication context.
+    questions_path = folder / "questions.md"
+    existing_questions = ""
+    if questions_path.exists():
+        existing_questions = questions_path.read_text(encoding="utf-8").strip()
+
+    import datetime as _dt
+
+    today = _dt.date.today().isoformat()
+    all_new_sections: list[str] = []
+
+    for _stage_key, _stage_label in stages_to_run:
+        try:
+            chunks: list[str] = []
+            for chunk in llm.generate_questions(
+                job_description=job_description,
+                resume=resume,
+                role_intel=strategy,
+                model=eff_model,
+                positioning_brief=positioning_brief,
+                intel=intel_combined,
+                existing_questions=existing_questions,
+                stage=_stage_label,
+                count=count,
+                provider=eff_provider,
+            ):
+                chunks.append(chunk)
+        except llm.LLMError as e:
+            raise RuntimeError(
+                f"LLM generate_questions ({_stage_label}) failed: {e}"
+            ) from e
+
+        section_text = clean_llm_output("".join(chunks))
+        if not section_text:
+            warnings.append(
+                f"No output for stage '{_stage_label}' — skipping."
+            )
+            continue
+
+        section = (
+            f"## Questions — {_stage_label.title()} (generated {today})\n\n"
+            f"{section_text}"
+        )
+        all_new_sections.append(section)
+        # Accumulate for deduplication in subsequent stages.
+        existing_questions = (existing_questions + "\n\n" + section).strip()
+
+    if not all_new_sections:
+        raise RuntimeError("No questions were generated.")
+
+    new_content = "\n\n---\n\n".join(all_new_sections)
+
+    # Append to questions.md (never overwrite).
+    if questions_path.exists():
+        existing_file = questions_path.read_text(encoding="utf-8").rstrip()
+        questions_path.write_text(
+            existing_file + "\n\n---\n\n" + new_content + "\n",
+            encoding="utf-8",
+        )
+    else:
+        questions_path.write_text(
+            f"# Interview Questions — {job.title} @ {job.company}\n\n"
+            f"{new_content}\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "job_id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "package_folder": str(folder),
+        "artifacts": [
+            {
+                "name": "questions.md",
+                "path": str(questions_path),
+                "kind": "questions",
+            }
+        ],
+        "warnings": warnings,
+        "status": "complete",
+    }
