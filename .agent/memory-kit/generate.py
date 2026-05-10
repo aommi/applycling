@@ -207,6 +207,8 @@ def cmd_init(project_root: Path) -> None:
                 "semantic": "memory/semantic.md",
                 "working": "memory/working.md",
                 "decisions": "DECISIONS.md",
+                "candidates": "memory/candidates.md",
+                "candidates_rejected": "memory/candidates.rejected.md",
             },
             "approval_mode": {
                 "default": "auto",
@@ -230,6 +232,37 @@ def cmd_init(project_root: Path) -> None:
     if not semantic_path.exists():
         semantic_path.write_text("# Semantic Memory\n\n")
         created.append("memory/semantic.md")
+
+    # candidates.md — staged lessons awaiting promotion (tracked)
+    candidates_path = memory_dir / "candidates.md"
+    if not candidates_path.exists():
+        candidates_path.write_text(
+            "# Candidate Lessons\n\n"
+            "Claims that have recurred across sessions but haven't yet been "
+            "promoted to semantic.md with a **Why accepted:** rationale.\n\n"
+            "Format:\n"
+            "```\n"
+            "### claim heading (stable identifier — greppable, linkable)\n"
+            "- Staged: YYYY-MM-DD\n"
+            "- Sources:\n"
+            "  - <commit-hash> or <file:line> or <session-ref>\n"
+            "```\n\n"
+            "Before appending a new claim, grep this file for near-duplicate headings.\n"
+            "On promotion: move the entire heading block to semantic.md.\n"
+            "On rejection: move the entire heading block to candidates.rejected.md.\n\n"
+        )
+        created.append("memory/candidates.md")
+
+    # candidates.rejected.md — rejected claims with reasons (tracked)
+    rejected_path = memory_dir / "candidates.rejected.md"
+    if not rejected_path.exists():
+        rejected_path.write_text(
+            "# Rejected Candidates\n\n"
+            "Claims that were staged in candidates.md but rejected with a "
+            "**Why rejected:** rationale. Preserved to prevent re-litigation.\n\n"
+            "Never delete entries from this file without a superseding reason.\n\n"
+        )
+        created.append("memory/candidates.rejected.md")
 
     # working.example.md — tracked template for local working memory
     example_path = memory_dir / "working.example.md"

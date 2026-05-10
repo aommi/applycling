@@ -112,6 +112,8 @@ memory:
     semantic: memory/semantic.md
     working: memory/working.md
     decisions: DECISIONS.md
+    candidates: memory/candidates.md
+    candidates_rejected: memory/candidates.rejected.md
   task_directory: dev/[task]/
   approval_mode:
     default: auto

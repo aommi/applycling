@@ -37,14 +37,22 @@ If reasoning becomes uncertain or inconsistent with prior context, re-read `memo
 - `memory/semantic.md` — current build state; update directly after changes; summarize what you changed
 - `memory/working.md` — live task state; update freely after each response; no approval needed
 - `DECISIONS.md` — append-only log of architectural decisions; update directly after changes; summarize new entries
-- `vision.md` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated; **never put current state here** (that's `semantic.md`), **never put planning details here** (tickets, checklists, phases)
 - `dev/[task]/context.md` — log confirmed assumptions immediately; no approval needed
+- `memory/candidates.md` — staged lessons awaiting promotion; append-only, one heading per claim; append candidate claims with source pointers; never edit existing entries
+- `vision.md` — principles, load-bearing assumptions, planned capabilities; update only on merge when a capability ships or an assumption is invalidated; **never put current state here** (that's `semantic.md`), **never put planning details here** (tickets, checklists, phases)
+- `memory/candidates.rejected.md` — promoted-by-move from candidates.md; each entry includes a Why rejected: reason; move entries from candidates.md with Why rejected: appended
 
 **DECISIONS.md vs. Assumptions distinction:**
 - `DECISIONS.md` = immutable log — "we chose X on date Y because Z" — never edited, only superseded by appending
 - `vision.md` Assumptions = live load-bearing premises — mutable; when invalidated, append a supersession to `DECISIONS.md` first, then update the assumption
 
 **On PR merge:** check `vision.md` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption.
+
+**Stage → Graduate promotion (#11):**
+- `memory/candidates.md` — append-only staging queue. Each entry is a `###` heading claim with a `- Staged: YYYY-MM-DD` date and a `- Sources:` bullet list (commit hashes, session refs, or file:line pointers). Before appending, grep candidates.md for matching claims — if found, append a source bullet to the existing heading instead of creating a duplicate. One heading per claim.
+- `memory/semantic.md` — on promotion, move the entire heading block from candidates.md into semantic.md with a one-line `**Why accepted:**` rationale appended. The candidate entry disappears from candidates.md.
+- `memory/candidates.rejected.md` — on rejection, move the heading block here with a one-line `**Why rejected:**` reason. Preserves the churn history to prevent re-litigation.
+- All promotions and rejections are committed separately with `promote:` or `reject:` commit message prefixes. The diff *is* the audit trail.
 
 ---
 
@@ -82,6 +90,8 @@ ln -s memory/semantic.md MEMORY.md
 
 The project's `memory/semantic.md` remains the single source of truth.
 <!-- amk:end -->
+
+
 
 
 

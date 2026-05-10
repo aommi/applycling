@@ -77,11 +77,7 @@ def write_managed_section(
     if old_block == new_block:
         return f"  - {label} (unchanged)"
 
-    suffix = existing[end_idx + len(SENTINEL_END):]
-    # Block ends with \n; skip overlapping \n at start of suffix
-    if suffix.startswith("\n"):
-        suffix = suffix[1:]
-    updated = existing[:start_idx] + block + suffix
+    updated = existing[:start_idx] + block + existing[end_idx + len(SENTINEL_END) :]
     file_path.write_text(updated)
 
     diff_lines = list(
@@ -194,6 +190,18 @@ MEMORY_FILE_DESCRIPTORS = [
         "review_text": "no approval needed",
         "auto_text": "no approval needed",
     },
+    {
+        "path": "memory/candidates.md",
+        "description": "staged lessons awaiting promotion; append-only, one heading per claim",
+        "review_text": "append candidate claims with source pointers; never edit existing entries",
+        "auto_text": "append candidate claims with source pointers; never edit existing entries",
+    },
+    {
+        "path": "memory/candidates.rejected.md",
+        "description": "promoted-by-move from candidates.md; each entry includes a Why rejected: reason",
+        "review_text": "move entries from candidates.md with Why rejected: appended",
+        "auto_text": "move entries from candidates.md with Why rejected: appended",
+    },
 ]
 
 # Files that have their own contract and never appear in approval_mode.
@@ -201,8 +209,20 @@ MEMORY_FILE_DESCRIPTORS = [
 EXCLUDED_FROM_APPROVAL_MODE = {"vision.md"}
 
 
+# Files that are always auto regardless of approval_mode config.
+# Candidates are staging areas — the human gate is at promotion, not append.
+ALWAYS_AUTO = {
+    "memory/working.md",
+    "dev/[task]/context.md",
+    "memory/candidates.md",
+    "memory/candidates.rejected.md",
+}
+
+
 def mode_for(path: str, config: dict) -> str:
     """Return 'review' or 'auto' for a memory file path based on config."""
+    if path in ALWAYS_AUTO:
+        return "auto"
     approval = config.get("memory", {}).get("approval_mode", {})
     default_mode = approval.get("default", "review")
     review_list = approval.get("review", [])
@@ -236,7 +256,13 @@ def build_memory_discipline(config: dict, arch_file: str) -> str:
 - `DECISIONS.md` = immutable log — "we chose X on date Y because Z" — never edited, only superseded by appending
 - `{arch_file}` Assumptions = live load-bearing premises — mutable; when invalidated, append a supersession to `DECISIONS.md` first, then update the assumption
 
-**On PR merge:** check `{arch_file}` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption."""
+**On PR merge:** check `{arch_file}` — move shipped capabilities to `memory/semantic.md` and remove them from the Vision section; append a supersession to `DECISIONS.md` then update or remove any invalidated Assumption.
+
+**Stage → Graduate promotion (#11):**
+- `memory/candidates.md` — append-only staging queue. Each entry is a `###` heading claim with a `- Staged: YYYY-MM-DD` date and a `- Sources:` bullet list (commit hashes, session refs, or file:line pointers). Before appending, grep candidates.md for matching claims — if found, append a source bullet to the existing heading instead of creating a duplicate. One heading per claim.
+- `memory/semantic.md` — on promotion, move the entire heading block from candidates.md into semantic.md with a one-line `**Why accepted:**` rationale appended. The candidate entry disappears from candidates.md.
+- `memory/candidates.rejected.md` — on rejection, move the heading block here with a one-line `**Why rejected:**` reason. Preserves the churn history to prevent re-litigation.
+- All promotions and rejections are committed separately with `promote:` or `reject:` commit message prefixes. The diff *is* the audit trail."""
 
 
 def build_approval_gate(config: dict) -> str:
@@ -297,8 +323,7 @@ def validate_approval_mode(config: dict, referenced_files: set[str]) -> list[str
 
     # 3. Compat-default scope notice
     if approval is None:
-        always_auto_compat = {"memory/working.md", "dev/[task]/context.md"}
-        unknown_to_compat = checkable - COMPAT_REVIEW_DEFAULTS - always_auto_compat
+        unknown_to_compat = checkable - COMPAT_REVIEW_DEFAULTS - ALWAYS_AUTO
         if unknown_to_compat:
             msgs.append(
                 f"INFO compat: approval_mode unset; these files default to 'auto' under compat "
