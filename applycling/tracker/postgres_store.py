@@ -21,15 +21,21 @@ from applycling.statuses import migrate_old_status
 
 
 class PostgresStore(TrackerStore):
-    def __init__(self, database_url: str | None = None) -> None:
+    def __init__(self, database_url: str | None = None,
+                 user_id: str | None = None) -> None:
         self._database_url = database_url or os.environ.get("DATABASE_URL")
         if not self._database_url:
             raise TrackerError(
                 "DATABASE_URL must be set when APPLYCLING_DB_BACKEND=postgres. "
                 "Set it to your Postgres connection string, e.g. "
-                "postgresql://applycling:password@localhost:5432/applycling"
+                "postgresql://applycling:***@localhost:5432/applycling"
             )
-        self._user_uuid = get_local_user_id()
+        if user_id is None and os.environ.get("APPLYCLING_DB_BACKEND") == "postgres":
+            raise TrackerError(
+                "user_id is required for Postgres backend in hosted mode. "
+                "Pass an explicit user_id to PostgresStore(user_id=...)."
+            )
+        self._user_uuid = uuid.UUID(user_id) if user_id else get_local_user_id()
         self._user_id = str(self._user_uuid)
         # Ensure the local default user exists (idempotent — ON CONFLICT DO NOTHING).
         seed_local_user(self._database_url)
@@ -382,3 +388,62 @@ class PostgresStore(TrackerStore):
                 (self._user_uuid, cutoff),
             )
         return cur.rowcount
+
+    # ── User profile storage (multi-tenant) ──────────────────────────
+
+    def save_user_profile(self, user_id: str, *,
+                          profile: dict | None = None,
+                          resume: str | None = None,
+                          stories: str | None = None,
+                          linkedin_profile: str | None = None,
+                          config: dict | None = None,
+                          chat_id: int | None = None) -> None:
+        """Save user profile fields. Only updates non-None values."""
+        import json
+        sets = []
+        params = []
+        if profile is not None:
+            sets.append("profile = %s")
+            params.append(json.dumps(profile))
+        if resume is not None:
+            sets.append("resume = %s")
+            params.append(resume)
+        if stories is not None:
+            sets.append("stories = %s")
+            params.append(stories)
+        if linkedin_profile is not None:
+            sets.append("linkedin_profile = %s")
+            params.append(linkedin_profile)
+        if config is not None:
+            sets.append("config = %s")
+            params.append(json.dumps(config))
+        if chat_id is not None:
+            sets.append("chat_id = %s")
+            params.append(chat_id)
+        if not sets:
+            return
+        params.append(user_id)
+        with self._conn() as conn:
+            conn.execute(
+                f"UPDATE users SET {', '.join(sets)}, updated_at = NOW() WHERE id = %s",
+                params,
+            )
+
+    def load_user_profile(self, user_id: str) -> dict:
+        """Return {profile, resume, stories, linkedin_profile, config, chat_id}."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT profile, resume, stories, linkedin_profile, config, chat_id "
+                "FROM users WHERE id = %s",
+                (user_id,),
+            ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "profile": row[0] or {},
+            "resume": row[1] or "",
+            "stories": row[2] or "",
+            "linkedin_profile": row[3] or "",
+            "config": row[4] or {},
+            "chat_id": row[5],
+        }
