@@ -77,6 +77,9 @@ class PipelineContext:
     # Optional pre-existing job id (used when persist_job=False)
     job_id: str = ""
 
+    # Multi-tenant: the user this pipeline runs for (empty = single-user local mode)
+    user_id: str = ""
+
     # applicant_profile is now a @property extracted from the unified profile.
     # See the @property below — do not declare it as a dataclass field.
 
@@ -136,6 +139,42 @@ class PipelineContext:
             model=final_model,
             provider=final_provider,
             tracker_store=store,
+        )
+
+    @classmethod
+    def from_user_id(cls, user_id: str, job_url: str) -> "PipelineContext":
+        """Build context for a specific user in hosted multi-tenant mode.
+
+        Loads profile, resume, config from the users table instead of the
+        local filesystem. Output artifacts are namespaced per user under
+        output/<user_id>/... to avoid cross-user disk collisions.
+        """
+        store = tracker.get_store(user_id=user_id)
+        user_data = store.load_user_profile(user_id)
+
+        cfg = user_data.get("config", {})
+        provider = cfg.get("provider", "anthropic")
+        model = cfg.get("model", "claude-sonnet-4-6")
+
+        # Namespace output per user
+        import os
+        base_output = os.environ.get("APPLYCLING_OUTPUT_DIR", "./output")
+        user_output = Path(base_output) / user_id
+        user_output.mkdir(parents=True, exist_ok=True)
+
+        return cls(
+            data_dir=Path(os.environ.get("APPLYCLING_DATA_DIR", "./data")),
+            output_dir=user_output,
+            profile=user_data.get("profile", {}),
+            resume=user_data.get("resume", ""),
+            stories=user_data.get("stories", ""),
+            linkedin_profile=user_data.get("linkedin_profile", ""),
+            config=cfg,
+            model=model,
+            provider=provider,
+            tracker_store=store,
+            user_id=user_id,
+            persist_job=True,
         )
 
     @property
