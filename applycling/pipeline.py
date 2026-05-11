@@ -1253,13 +1253,3 @@ def run_add_notify(
 
     _safe("\n".join(lines))
     return folder
-
-
-def run_from_context(ctx: PipelineContext) -> Path:
-    """Run the full add pipeline from a pre-built PipelineContext.
-
-    This is the hosted multi-tenant entry point. Unlike run_add_notify(),
-    it does NOT load profile/config from disk — it uses the context as-is.
-    The context is typically built by PipelineContext.from_user_id().
-    """
-    return run_add(ctx)

@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
-from applycling.pipeline import PipelineContext, run_from_context
+from applycling.pipeline import PipelineContext, run_add
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
 from applycling.telegram_notify import notify_error_to_user
 from applycling.tracker import check_active_run
@@ -344,6 +344,14 @@ async def intake(
     if body.chat_id:
         _update_chat_id(db_user_id, body.chat_id)
 
+    # Active-run guard — clean 409 before we start a new generation
+    if check_active_run():
+        return JSONResponse(
+            {"error": "Another generation is already running. "
+                       "Please wait for it to complete."},
+            status_code=409,
+        )
+
     # Atomic daily cap — checked BEFORE pipeline starts
     if not _try_increment_daily_generation(db_user_id):
         raise HTTPException(status_code=429, detail="Daily generation limit reached")
@@ -361,7 +369,7 @@ async def intake(
 def _run_scoped_pipeline(ctx: PipelineContext, token: str) -> None:
     """Background task: run the pipeline for a scoped user with error surfacing."""
     try:
-        run_from_context(ctx)
+        run_add(ctx)
     except Exception as e:
         import sys
         print(
