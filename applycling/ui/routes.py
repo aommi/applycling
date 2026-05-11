@@ -236,57 +236,120 @@ async def healthz() -> JSONResponse:
 # ── Hermes intake endpoint ─────────────────────────────────────────────
 
 class IntakeBody(BaseModel):
-    """Request body for the Hermes intake endpoint."""
+    """Request body for the Hermes intake endpoint (multi-tenant)."""
 
     job_url: HttpUrl
+    telegram_id: int | None = None
+    chat_id: int | None = None
+    first_name: str | None = None
 
+
+# ── Intake helpers ────────────────────────────────────────────────────
+
+def _resolve_user_by_intake_secret(secret: str):
+    """Return (user_id, telegram_id) for a valid intake secret, or None."""
+    import hashlib
+
+    if not secret:
+        return None
+    secret_hash = hashlib.sha256(secret.encode()).hexdigest()
+    from applycling.tracker.postgres_store import PostgresStore
+    store = PostgresStore(
+        user_id="00000000-0000-0000-0000-000000000001",
+        database_url=os.environ.get("DATABASE_URL"),
+    )
+    with store._conn() as conn:
+        row = conn.execute(
+            "SELECT id, telegram_id FROM users "
+            "WHERE intake_secret_hash = %s AND deleted_at IS NULL",
+            (secret_hash,),
+        ).fetchone()
+    return (str(row[0]), row[1]) if row else None
+
+
+def _update_chat_id(user_id: str, chat_id: int) -> None:
+    """Store a user's chat_id for outbound delivery if not already set."""
+    from applycling.tracker.postgres_store import PostgresStore
+    store = PostgresStore(
+        user_id=user_id,
+        database_url=os.environ.get("DATABASE_URL"),
+    )
+    with store._conn() as conn:
+        conn.execute(
+            "UPDATE users SET chat_id = %s WHERE id = %s AND chat_id IS NULL",
+            (chat_id, user_id),
+        )
+
+
+def _try_increment_daily_generation(user_id: str) -> bool:
+    """Atomically check and increment daily generation count. Returns True if allowed."""
+    from datetime import datetime, timezone
+
+    today = datetime.now(timezone.utc).date()
+    from applycling.tracker.postgres_store import PostgresStore
+    store = PostgresStore(
+        user_id=user_id,
+        database_url=os.environ.get("DATABASE_URL"),
+    )
+    with store._conn() as conn:
+        result = conn.execute(
+            """UPDATE users
+               SET generation_count = CASE
+                   WHEN generation_date IS NULL OR generation_date != %s THEN 1
+                   ELSE generation_count + 1
+               END,
+               generation_date = %s
+               WHERE id = %s
+                 AND (generation_date IS NULL OR generation_date != %s
+                      OR generation_count < daily_generation_limit)
+               RETURNING generation_count""",
+            (today, today, user_id, today),
+        )
+        return result.fetchone() is not None
+
+
+# ── Intake route ──────────────────────────────────────────────────────
 
 @router.post("/api/intake")
 async def intake(
     request: Request, body: IntakeBody
 ) -> dict[str, Any]:
-    """Protected endpoint for Hermes to submit job URLs to hosted applycling.
+    """Protected endpoint for Hermes to submit job URLs (multi-tenant).
 
-    Requires ``X-Intake-Secret`` header matching ``APPLYCLING_INTAKE_SECRET``.
-    Protected by auth middleware exemption in ``ui/__init__.py``.
-
-    Request body: ``{"job_url": "https://..."}``
-    Response (success): ``{"job_id": "...", "status": "generating"}``
-    Response (conflict): ``{"error": "Another generation is already running"}`` → 409
+    Resolves the user by their intake secret hash (bound to users row),
+    then verifies the body telegram_id matches. Pre-seeded users only —
+    unknown telegram_ids are rejected.
     """
-    # Validate intake secret — constant-time, read per-request (not module-level).
-    expected_secret = os.environ.get("APPLYCLING_INTAKE_SECRET", "")
-    provided_secret = request.headers.get("X-Intake-Secret", "")
-    if not expected_secret or not hmac.compare_digest(
-        provided_secret, expected_secret
-    ):
-        if not expected_secret:
-            import sys
+    # Resolve user by secret hash — do NOT trust body telegram_id
+    secret = request.headers.get("X-Intake-Secret", "")
+    user_row = _resolve_user_by_intake_secret(secret)
+    if not user_row:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
-            print(
-                "[intake] WARNING: APPLYCLING_INTAKE_SECRET not configured — "
-                "endpoint will reject all requests.",
-                file=sys.stderr, flush=True,
-            )
-        raise HTTPException(status_code=401, detail="Invalid intake secret")
+    db_user_id, db_telegram_id = user_row
+
+    # Verify body telegram_id matches the user bound to this secret
+    body_telegram_id = body.telegram_id
+    if body_telegram_id is None or str(body_telegram_id) != str(db_telegram_id):
+        raise HTTPException(status_code=403, detail="telegram_id mismatch")
 
     url = str(body.job_url)
 
-    # Sync pre-check BEFORE creating any job — no dead "new" jobs.
-    if check_active_run():
-        return JSONResponse(
-            {"error": "Another generation is already running. "
-                       "Please wait for it to complete."},
-            status_code=409,
-        )
+    # Store chat_id for outbound delivery
+    if body.chat_id:
+        _update_chat_id(db_user_id, body.chat_id)
 
-    # Create job, set generating, schedule pipeline.
+    # Atomic daily cap
+    if not _try_increment_daily_generation(db_user_id):
+        raise HTTPException(status_code=429, detail="Daily generation limit reached")
+
+    # Create job, set generating, schedule pipeline
     job = jobs_service.create_job_from_url(url)
     job_id = job["id"]
     jobs_service.set_job_status(job_id, "generating")
     schedule_pipeline_run(job_id)
 
-    return {"job_id": job_id, "status": "generating"}
+    return {"job_id": job_id, "status": "generating", "user_id": db_user_id}
 
 
 # ── Init ───────────────────────────────────────────────────────────────
