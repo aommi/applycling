@@ -150,7 +150,7 @@ class PipelineContext:
         output/<user_id>/... to avoid cross-user disk collisions.
         """
         store = tracker.get_store(user_id=user_id)
-        user_data = store.load_user_profile(user_id)
+        user_data = store.load_user_profile()
 
         cfg = user_data.get("config", {})
         provider = cfg.get("provider", "anthropic")
