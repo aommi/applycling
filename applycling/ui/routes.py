@@ -268,7 +268,7 @@ def _resolve_user_by_intake_secret(secret: str):
             "WHERE intake_secret_hash = %s AND deleted_at IS NULL",
             (secret_hash,),
         ).fetchone()
-    return (str(row[0]), row[1]) if row else None
+    return (str(row["id"]), row["telegram_id"]) if row else None
 
 
 def _update_chat_id(user_id: str, chat_id: int) -> None:
