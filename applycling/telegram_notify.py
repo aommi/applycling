@@ -80,3 +80,58 @@ class TelegramNotifier:
         if not result.get("ok"):
             raise TelegramError(f"{method} failed: {result}")
         return result
+
+
+# ── Multi-tenant helpers ─────────────────────────────────────────────
+
+def _get_chat_id_for_user(user_id: str) -> int | None:
+    """Look up a user's Telegram chat_id from the database."""
+    import os
+    import psycopg
+
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        return None
+
+    with psycopg.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT chat_id FROM users WHERE id = %s AND deleted_at IS NULL",
+                (user_id,),
+            )
+            row = cur.fetchone()
+    return row[0] if row and row[0] else None
+
+
+def notify_to_user(token: str, user_id: str, text: str) -> bool:
+    """Send a Telegram message to a specific user via their stored chat_id."""
+    chat_id = _get_chat_id_for_user(user_id)
+    if not chat_id:
+        import sys
+        print(
+            f"[telegram] No chat_id for user {user_id}, cannot notify.",
+            file=sys.stderr, flush=True,
+        )
+        return False
+    notifier = TelegramNotifier(token, str(chat_id))
+    try:
+        notifier.notify(text)
+        return True
+    except TelegramError as e:
+        import sys
+        print(
+            f"[telegram] Failed to notify user {user_id}: {e}",
+            file=sys.stderr, flush=True,
+        )
+        return False
+
+
+def notify_error_to_user(token: str, user_id: str, job_url: str, error: str) -> bool:
+    """Send a user-friendly error message for a failed pipeline generation."""
+    msg = (
+        "Sorry, I couldn't generate an application package for that job.\n\n"
+        f"URL: {job_url}\n"
+        f"Error: {str(error)[:200]}\n\n"
+        "Try a different job URL or contact Amirali for help."
+    )
+    return notify_to_user(token, user_id, msg)

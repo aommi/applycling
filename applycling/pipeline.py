@@ -80,6 +80,9 @@ class PipelineContext:
     # Multi-tenant: the user this pipeline runs for (empty = single-user local mode)
     user_id: str = ""
 
+    # The job URL being processed (set by from_user_id for error surfacing)
+    job_url: str = ""
+
     # applicant_profile is now a @property extracted from the unified profile.
     # See the @property below — do not declare it as a dataclass field.
 
@@ -150,7 +153,7 @@ class PipelineContext:
         output/<user_id>/... to avoid cross-user disk collisions.
         """
         store = tracker.get_store(user_id=user_id)
-        user_data = store.load_user_profile()
+        user_data = store.load_user_profile()  # uses store's scoped user_id
 
         cfg = user_data.get("config", {})
         provider = cfg.get("provider", "anthropic")
@@ -174,6 +177,7 @@ class PipelineContext:
             provider=provider,
             tracker_store=store,
             user_id=user_id,
+            job_url=job_url,
             persist_job=True,
         )
 

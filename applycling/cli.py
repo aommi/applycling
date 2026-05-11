@@ -2195,5 +2195,75 @@ def mcp_config() -> None:
     print(_json.dumps(config, indent=2))  # print() is fine — this is a CLI command
 
 
+# ── Users admin CLI (hosted multi-tenant) ──────────────────────────
+
+@main.group("users")
+def users_group():
+    """Manage applycling users (hosted mode only)."""
+
+
+@users_group.command("add")
+@click.option("--telegram-id", type=int, required=True, help="Telegram user ID")
+@click.option("--chat-id", type=int, default=None, help="Telegram chat ID for outbound delivery")
+@click.option("--name", required=True, help="User's display name")
+@click.option("--email", default=None, help="User's email (auto-generated if omitted)")
+@click.option("--daily-limit", type=int, default=10, help="Max generations per day")
+def users_add(telegram_id, chat_id, name, email, daily_limit):
+    """Create a new user. Prints the intake secret once — copy it."""
+    import secrets
+    import hashlib
+    from applycling.db_seed import seed_user_by_telegram
+
+    raw_secret = secrets.token_urlsafe(32)
+    secret_hash = hashlib.sha256(raw_secret.encode()).hexdigest()
+
+    try:
+        user_id = seed_user_by_telegram(
+            telegram_id, chat_id, name, email,
+            intake_secret_hash=secret_hash,
+            daily_limit=daily_limit,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"User created: {user_id}")
+    click.echo(f"Intake secret (copy now — won't be shown again):")
+    click.echo(f"  {raw_secret}")
+
+
+@users_group.command("list")
+def users_list():
+    """List all users."""
+    import os
+    import psycopg
+
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise click.ClickException("DATABASE_URL must be set")
+
+    with psycopg.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, telegram_id, chat_id, profile->>'name' as name, "
+                "generation_count, generation_date, daily_generation_limit, "
+                "created_at "
+                "FROM users WHERE deleted_at IS NULL ORDER BY created_at"
+            )
+            rows = cur.fetchall()
+
+    if not rows:
+        click.echo("No users found.")
+        return
+
+    for row in rows:
+        gen_info = f"{row[4]}/{row[6]}"
+        if row[5]:
+            gen_info += f" (since {row[5]})"
+        click.echo(
+            f"  {row[0][:8]}... | tg:{row[1]} | chat:{row[2]} | "
+            f"{row[3]} | {gen_info} gens | {str(row[7])[:10]}"
+        )
+
+
 if __name__ == "__main__":
     main()

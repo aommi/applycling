@@ -310,3 +310,74 @@ Telegram → Hermes (deepseek-v4-pro) → terminal → applycling pipeline (clau
 **Supersedes:** 2026-05 sprint README sequencing that placed MCP-T4 before MCP-T3 and deferred action/refinement tools until after non-author validation.
 
 **Affects:** `applycling/mcp_server.py`, `applycling/package_actions.py`, `applycling/cli.py`, `architecture/MCP.md`, `memory/semantic.md`, `docs/planning/sprints/2026-05-mcp-alpha/README.md`, `vision.md`
+
+---
+
+## 2026-05-11 — Multi-Tenant Phase 1 Trade-offs
+
+These four decisions are documented trade-offs from the multi-tenant Phase 1
+implementation. None are bugs — each was a conscious choice for the 2-user alpha
+scope. Revisit before scaling past 5 users.
+
+### Decision 1 — Hardcoded admin UUID for unscoped secret lookups
+
+**Decision:** `_resolve_user_by_intake_secret()` in `applycling/ui/routes.py`
+instantiates `PostgresStore(user_id="0000...0001")` to borrow `_conn()` for an
+unscoped secret-hash lookup against the users table. This intentionally
+bypasses the scoping invariant `PostgresStore` enforces elsewhere.
+
+**Reasoning:** The intake auth layer needs to look up *any* user by secret
+hash before the user is authenticated. Using the scoped store would require
+a user_id that doesn't exist yet (circular). The admin UUID is a bootstrap
+sentinel — it has no profile, no jobs, no Telegram identity.
+
+**When to revisit:** Extract a module-level `get_unscoped_conn()` helper
+that doesn't require a user context, or allow `PostgresStore(user_id=None)`
+for read-only unscoped queries. File as follow-up ticket.
+
+### Decision 2 — Daily cap charges on pipeline start (not completion)
+
+**Decision:** `_try_increment_daily_generation()` runs before the background
+pipeline task is scheduled. A failed pipeline still consumes one daily
+generation. The user can hit 429 from failed attempts.
+
+**Reasoning:** Simpler implementation — one atomic SQL call before the
+async boundary. Tracking completion would require a separate accounting
+step after pipeline success/failure, which adds complexity for a 2-user
+alpha where failed pipelines are rare.
+
+**When to revisit:** If a user hits their daily cap from failed generations
+(mom retries a bad URL 10 times), add `_decrement_daily_generation()` called
+from the pipeline error handler, or move accounting to pipeline completion.
+
+### Decision 3 — Raw error strings in user-facing Telegram messages
+
+**Decision:** `notify_error_to_user()` sends `str(e)[:200]` to the user
+without sanitization. Internal state (DB connection strings, file paths,
+stack traces) could leak.
+
+**Reasoning:** For a 2-user trusted alpha, the error detail is more useful
+for debugging than sanitized categories. The 200-char truncation limits
+exposure. No real users yet to observe error patterns — sanitize when
+we know what the common categories are.
+
+**When to revisit:** Before onboarding a third non-trusted user. Map
+exceptions to categories: `scraping_failed`, `generation_failed`,
+`configuration_error`, `unknown_error`. Strip all arguments.
+
+### Decision 4 — chat_id only writes when NULL
+
+**Decision:** `_update_chat_id()` in `applycling/ui/routes.py` uses
+`WHERE chat_id IS NULL` — a user's chat_id is set once on first contact
+and never updated.
+
+**Reasoning:** Telegram chat_ids are stable; users rarely change them.
+A write-on-first-contact pattern avoids unnecessary updates on every
+intake request. If a user moves to a new chat, manual DB update or
+re-seeding handles it.
+
+**When to revisit:** If a "re-link Telegram" feature is needed, or if
+chat_id changes are observed in practice. Add `applycling users update-chat-id`
+command.**
+
+**Affects:** `applycling/ui/routes.py`, `applycling/telegram_notify.py`
