@@ -30,11 +30,6 @@ class PostgresStore(TrackerStore):
                 "Set it to your Postgres connection string, e.g. "
                 "postgresql://applycling:***@localhost:5432/applycling"
             )
-        if user_id is None and os.environ.get("APPLYCLING_DB_BACKEND") == "postgres":
-            raise TrackerError(
-                "user_id is required for Postgres backend in hosted mode. "
-                "Pass an explicit user_id to PostgresStore(user_id=...)."
-            )
         self._user_uuid = uuid.UUID(user_id) if user_id else get_local_user_id()
         self._user_id = str(self._user_uuid)
         # Ensure the local default user exists (idempotent — ON CONFLICT DO NOTHING).
@@ -391,14 +386,14 @@ class PostgresStore(TrackerStore):
 
     # ── User profile storage (multi-tenant) ──────────────────────────
 
-    def save_user_profile(self, user_id: str, *,
+    def save_user_profile(self, *,
                           profile: dict | None = None,
                           resume: str | None = None,
                           stories: str | None = None,
                           linkedin_profile: str | None = None,
                           config: dict | None = None,
                           chat_id: int | None = None) -> None:
-        """Save user profile fields. Only updates non-None values."""
+        """Save profile fields for the store's scoped user. Only updates non-None values."""
         import json
         sets = []
         params = []
@@ -422,28 +417,29 @@ class PostgresStore(TrackerStore):
             params.append(chat_id)
         if not sets:
             return
-        params.append(user_id)
+        params.append(self._user_id)
         with self._conn() as conn:
             conn.execute(
                 f"UPDATE users SET {', '.join(sets)}, updated_at = NOW() WHERE id = %s",
                 params,
             )
 
-    def load_user_profile(self, user_id: str) -> dict:
-        """Return {profile, resume, stories, linkedin_profile, config, chat_id}."""
+    def load_user_profile(self) -> dict:
+        """Return {profile, resume, stories, linkedin_profile, config, chat_id}
+        for the store's scoped user."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT profile, resume, stories, linkedin_profile, config, chat_id "
                 "FROM users WHERE id = %s",
-                (user_id,),
+                (self._user_id,),
             ).fetchone()
         if row is None:
             return {}
         return {
-            "profile": row[0] or {},
-            "resume": row[1] or "",
-            "stories": row[2] or "",
-            "linkedin_profile": row[3] or "",
-            "config": row[4] or {},
-            "chat_id": row[5],
+            "profile": row["profile"] or {},
+            "resume": row["resume"] or "",
+            "stories": row["stories"] or "",
+            "linkedin_profile": row["linkedin_profile"] or "",
+            "config": row["config"] or {},
+            "chat_id": row["chat_id"],
         }
