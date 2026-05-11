@@ -111,12 +111,15 @@ class TrackerStore(ABC):
         return ""
 
 
-def get_store() -> TrackerStore:
+def get_store(user_id: str | None = None) -> TrackerStore:
     """Return the configured tracker store.
+
+    In hosted mode (APPLYCLING_DB_BACKEND=postgres), user_id is required.
+    In local mode (sqlite or default), user_id is ignored (single-user).
 
     Resolution order:
     1. If APPLYCLING_DB_BACKEND=postgres, require DATABASE_URL, return
-       PostgresStore. The Notion probe is skipped.
+       PostgresStore scoped to user_id. The Notion probe is skipped.
     2. If APPLYCLING_DB_BACKEND=sqlite, return SQLiteStore (existing behavior
        with Notion probe).
     3. If unset, fall back to legacy resolution (Notion probe → SQLite).
@@ -129,7 +132,7 @@ def get_store() -> TrackerStore:
     if db_backend == "postgres":
         from . import postgres_store
 
-        return postgres_store.PostgresStore()
+        return postgres_store.PostgresStore(user_id=user_id)
 
     # ── SQLite path (Notion probe still runs for backward compat) ──────
     # Lazy imports to avoid pulling in optional deps until they're needed.
