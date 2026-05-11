@@ -89,6 +89,8 @@ def _on_pipeline_done(task: asyncio.Task) -> None:
 @router.get("/", response_class=HTMLResponse)
 async def job_board(request: Request, status: str | None = None) -> HTMLResponse:
     """Show all jobs, optionally filtered by status."""
+    if os.environ.get("APPLYCLING_WEB_READONLY", "").lower() == "true":
+        raise HTTPException(status_code=503, detail="Web UI disabled in this mode")
     jobs = jobs_service.list_jobs(status=status)
     return templates.TemplateResponse(request, "jobs.html", {
         "jobs": jobs,
