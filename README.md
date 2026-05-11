@@ -418,6 +418,11 @@ When structured data is available (LinkedIn, sites with JSON-LD), the job scrapi
 - **`playwright install` fails** — run `.venv/bin/playwright install chromium` manually.
 - **JD paste hangs** — type `---` on a new line and press Enter to submit.
 - **Notion unreachable warning** — check that the integration has access to the page (··· → Connections → add integration).
+- **`ModuleNotFoundError: No module named 'applycling'` after `pip install -e .`** — the editable install's path finder can fail. Workaround: add the project root to the venv's site-packages:
+  ```bash
+  echo "$(pwd)" > .venv/lib/python3.12/site-packages/applycling_dev.pth
+  ```
+  Verify with `.venv/bin/python -c "import applycling"`.
 
 ---
 
@@ -556,6 +561,10 @@ Complete the standard install first (see [Install](#install) above):
    ```bash
    pip install -e ".[mcp]"
    ```
+   If you get `ModuleNotFoundError: No module named 'applycling'` after
+   this step, the editable install's path finder may have failed. Apply
+   the one-line workaround in the [Troubleshooting](#troubleshooting)
+   section, then continue.
 
 2. Complete the standard setup (if not already done):
    ```bash
