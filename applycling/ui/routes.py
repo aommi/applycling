@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
-from applycling.pipeline import PipelineContext, run_add_notify
+from applycling.pipeline import PipelineContext, run_from_context
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
 from applycling.telegram_notify import notify_error_to_user
 from applycling.tracker import check_active_run
@@ -359,7 +359,7 @@ async def intake(
 def _run_scoped_pipeline(ctx: PipelineContext, token: str) -> None:
     """Background task: run the pipeline for a scoped user with error surfacing."""
     try:
-        run_add_notify(ctx)
+        run_from_context(ctx)
     except Exception as e:
         import sys
         print(
