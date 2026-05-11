@@ -10,13 +10,15 @@ import hmac
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Body, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
+from applycling.pipeline import PipelineContext, run_add_notify
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
+from applycling.telegram_notify import notify_error_to_user
 from applycling.tracker import check_active_run
 
 router = APIRouter()
@@ -314,7 +316,8 @@ def _try_increment_daily_generation(user_id: str) -> bool:
 
 @router.post("/api/intake")
 async def intake(
-    request: Request, body: IntakeBody
+    request: Request, body: IntakeBody,
+    background_tasks: BackgroundTasks,
 ) -> dict[str, Any]:
     """Protected endpoint for Hermes to submit job URLs (multi-tenant).
 
@@ -341,17 +344,32 @@ async def intake(
     if body.chat_id:
         _update_chat_id(db_user_id, body.chat_id)
 
-    # Atomic daily cap
+    # Atomic daily cap — checked BEFORE pipeline starts
     if not _try_increment_daily_generation(db_user_id):
         raise HTTPException(status_code=429, detail="Daily generation limit reached")
 
-    # Create job, set generating, schedule pipeline
-    job = jobs_service.create_job_from_url(url)
-    job_id = job["id"]
-    jobs_service.set_job_status(job_id, "generating")
-    schedule_pipeline_run(job_id)
+    # Build scoped pipeline context for this user
+    ctx = PipelineContext.from_user_id(db_user_id, url)
 
-    return {"job_id": job_id, "status": "generating", "user_id": db_user_id}
+    # Run pipeline in background — pipeline handles job creation, status, notifications
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    background_tasks.add_task(_run_scoped_pipeline, ctx, token)
+
+    return {"status": "generating", "user_id": db_user_id}
+
+
+def _run_scoped_pipeline(ctx: PipelineContext, token: str) -> None:
+    """Background task: run the pipeline for a scoped user with error surfacing."""
+    try:
+        run_add_notify(ctx)
+    except Exception as e:
+        import sys
+        print(
+            f"[intake] Pipeline failed for user {ctx.user_id}: {e}",
+            file=sys.stderr, flush=True,
+        )
+        if token and ctx.user_id:
+            notify_error_to_user(token, ctx.user_id, ctx.job_url, str(e))
 
 
 # ── Init ───────────────────────────────────────────────────────────────
