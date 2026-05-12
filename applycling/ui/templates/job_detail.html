@@ -40,20 +40,24 @@
     <dd>{{ job.package_folder or "Not generated" }}</dd>
   </dl>
 
-  <!-- Status actions — data-driven from canonical state machine -->
-  <div class="status-actions">
-    {% for action in job_actions(job.status) %}
-      <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
-        <input type="hidden" name="status" value="{{ action.target }}">
-        <button class="btn {{ action.css_class }}">{{ action.label }}</button>
-      </form>
-    {% endfor %}
-    {% if job.status in ("new", "reviewing", "failed") %}
-      <form method="post" action="/jobs/{{ job.id }}/regenerate" class="inline-form">
-        <button class="btn btn-start">Regenerate</button>
-      </form>
-    {% endif %}
-  </div>
+  {% if readonly %}
+    <p class="muted-text">Read-only mode</p>
+  {% else %}
+    <!-- Status actions — data-driven from canonical state machine -->
+    <div class="status-actions">
+      {% for action in job_actions(job.status) %}
+        <form method="post" action="/jobs/{{ job.id }}/status" class="inline-form">
+          <input type="hidden" name="status" value="{{ action.target }}">
+          <button class="btn {{ action.css_class }}">{{ action.label }}</button>
+        </form>
+      {% endfor %}
+      {% if job.status in ("new", "reviewing", "failed") %}
+        <form method="post" action="/jobs/{{ job.id }}/regenerate" class="inline-form">
+          <button class="btn btn-start">Regenerate</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
   {% if error %}
     <div class="error-message">{{ error }}</div>
   {% endif %}

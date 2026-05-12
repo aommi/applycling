@@ -27,10 +27,26 @@ def test_root_returns_200_and_contains_applycling(client):
     assert "applycling" in response.text.lower()
 
 
+def test_root_still_renders_in_readonly_mode(monkeypatch, client):
+    """GET / remains usable when write actions are disabled."""
+    monkeypatch.setenv("APPLYCLING_WEB_READONLY", "true")
+    with patch("applycling.ui.routes.jobs_service.list_jobs", return_value=[]):
+        response = client.get("/")
+    assert response.status_code == 200
+    assert "submit url" not in response.text.lower()
+
+
 def test_submit_form_returns_200(client):
     """GET /submit renders the URL submission form."""
     response = client.get("/submit")
     assert response.status_code == 200
+
+
+def test_submit_form_rejected_in_readonly_mode(monkeypatch, client):
+    """GET /submit is blocked when write actions are disabled."""
+    monkeypatch.setenv("APPLYCLING_WEB_READONLY", "true")
+    response = client.get("/submit")
+    assert response.status_code == 403
 
 
 def test_job_detail_nonexistent_returns_404(client):

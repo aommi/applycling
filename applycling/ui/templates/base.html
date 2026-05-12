@@ -21,9 +21,11 @@
     </a></li>
     {% endfor %}
   </ul>
-  <div class="sidebar-footer">
-    <a href="/submit" class="nav-item">+ Submit URL</a>
-  </div>
+  {% if not readonly %}
+    <div class="sidebar-footer">
+      <a href="/submit" class="nav-item">+ Submit URL</a>
+    </div>
+  {% endif %}
 </nav>
 <main class="content">
 {% block content %}{% endblock %}

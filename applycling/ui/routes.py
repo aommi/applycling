@@ -52,6 +52,11 @@ templates.env.globals["job_actions"] = job_actions
 _background_tasks: set[asyncio.Task] = set()
 
 
+def _web_readonly() -> bool:
+    """Return whether the browser workbench should block write actions."""
+    return os.environ.get("APPLYCLING_WEB_READONLY", "").lower() == "true"
+
+
 def schedule_pipeline_run(job_id: str) -> None:
     """Schedule pipeline execution as a fire-and-forget background task.
 
@@ -106,12 +111,11 @@ def _on_pipeline_done(task: asyncio.Task) -> None:
 @router.get("/", response_class=HTMLResponse)
 async def job_board(request: Request, status: str | None = None) -> HTMLResponse:
     """Show all jobs, optionally filtered by status."""
-    if os.environ.get("APPLYCLING_WEB_READONLY", "").lower() == "true":
-        raise HTTPException(status_code=503, detail="Web UI disabled in this mode")
     jobs = jobs_service.list_jobs(status=status)
     return templates.TemplateResponse(request, "jobs.html", {
         "jobs": jobs,
         "current_status": status,
+        "readonly": _web_readonly(),
     })
 
 
@@ -130,6 +134,7 @@ async def job_detail(request: Request, job_id: str, error: str = "") -> HTMLResp
         "job": job,
         "artifacts": artifacts,
         "error": error_msg,
+        "readonly": _web_readonly(),
     })
 
 
@@ -142,6 +147,8 @@ async def update_job_status(
     status: str = Form(...),
 ) -> RedirectResponse:
     """Update a job's workbench status."""
+    if _web_readonly():
+        raise HTTPException(status_code=403, detail="Web UI is read-only")
     try:
         jobs_service.set_job_status(job_id, status)
     except ValueError as e:
@@ -169,6 +176,8 @@ async def serve_artifact(job_id: str, filename: str) -> FileResponse:
 @router.get("/submit", response_class=HTMLResponse)
 async def submit_form(request: Request) -> HTMLResponse:
     """Show the URL submission form."""
+    if _web_readonly():
+        raise HTTPException(status_code=403, detail="Web UI is read-only")
     return templates.TemplateResponse(request, "submit.html", {})
 
 
@@ -182,6 +191,9 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
       race — the detail page always sees the correct status.
     - Pipeline runs as a fire-and-forget background task.
     """
+    if _web_readonly():
+        raise HTTPException(status_code=403, detail="Web UI is read-only")
+
     # Sync pre-check — reject BEFORE creating any job.
     if check_active_run():
         return templates.TemplateResponse(
@@ -210,6 +222,9 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
 @router.post("/jobs/{job_id}/regenerate")
 async def regenerate_job(request: Request, job_id: str) -> RedirectResponse:  # noqa: ARG001
     """Run the pipeline on an existing job — fire-and-forget."""
+    if _web_readonly():
+        raise HTTPException(status_code=403, detail="Web UI is read-only")
+
     # Sync pre-check — reject BEFORE changing any status.
     if check_active_run():
         # Highlight the error on the detail page.

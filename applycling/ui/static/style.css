@@ -133,6 +133,11 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
 }
 
+.muted-text {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 /* ── Buttons ──────────────────────────────────────────────────────── */
 .btn {
   display: inline-block;
