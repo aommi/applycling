@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -58,7 +59,17 @@ def _web_readonly() -> bool:
     return os.environ.get("APPLYCLING_WEB_READONLY", "").lower() == "true"
 
 
-def schedule_pipeline_run(job_id: str) -> None:
+def _safe_next_url(next_url: str | None) -> str:
+    """Return a local redirect target, rejecting absolute/protocol-relative URLs."""
+    if not next_url:
+        return "/"
+    parsed = urlparse(next_url)
+    if parsed.scheme or parsed.netloc or not next_url.startswith("/"):
+        return "/"
+    return next_url
+
+
+def schedule_pipeline_run(job_id: str, user_id: str | None = None) -> None:
     """Schedule pipeline execution as a fire-and-forget background task.
 
     Contract: caller has already set the job status to ``'generating'``.
@@ -72,7 +83,7 @@ def schedule_pipeline_run(job_id: str) -> None:
 
     async def _run_and_surface_errors() -> None:
         try:
-            await asyncio.to_thread(jobs_service.run_pipeline, job_id)
+            await asyncio.to_thread(jobs_service.run_pipeline, job_id, user_id=user_id)
         except Exception as exc:
             # Belt: catch any unhandled exception in the background task path
             # (asyncio.to_thread failure, cancellation, etc.).
@@ -81,7 +92,10 @@ def schedule_pipeline_run(job_id: str) -> None:
             # in "generating" forever.
             try:
                 jobs_service.set_job_status(
-                    job_id, "failed", reason=f"Unexpected error: {exc}"
+                    job_id,
+                    "failed",
+                    reason=f"Unexpected error: {exc}",
+                    user_id=user_id,
                 )
             except Exception:
                 pass
@@ -153,7 +167,7 @@ async def login_submit(
         )
 
     token = create_session_token(str(row["id"]))
-    next_url = request.query_params.get("next", "/")
+    next_url = _safe_next_url(request.query_params.get("next", "/"))
 
     response = RedirectResponse(next_url, status_code=303)
     response.set_cookie(
@@ -269,7 +283,8 @@ async def job_detail(request: Request, job_id: str, error: str = "") -> HTMLResp
         job = jobs_service.get_job(job_id, user_id=_current_user_id(request))
     except Exception:
         raise HTTPException(status_code=404, detail="Job not found")
-    artifacts = jobs_service.list_artifacts(job_id)
+    user_id = _current_user_id(request)
+    artifacts = jobs_service.list_artifacts(job_id, user_id=user_id)
     error_msg = "Another generation is already running." if error == "already_running" else ""
     return templates.TemplateResponse(request, "job_detail.html", {
         "job": job,
@@ -291,7 +306,7 @@ async def update_job_status(
     if _web_readonly():
         raise HTTPException(status_code=403, detail="Web UI is read-only")
     try:
-        jobs_service.set_job_status(job_id, status)
+        jobs_service.set_job_status(job_id, status, user_id=_current_user_id(request))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
@@ -300,9 +315,9 @@ async def update_job_status(
 # ── Artifact serving ───────────────────────────────────────────────────
 
 @router.get("/artifacts/{job_id}/{filename}")
-async def serve_artifact(job_id: str, filename: str) -> FileResponse:
+async def serve_artifact(request: Request, job_id: str, filename: str) -> FileResponse:
     """Serve a generated artifact file for download/view."""
-    job = jobs_service.get_job(job_id)
+    job = jobs_service.get_job(job_id, user_id=_current_user_id(request))
     package_folder = job.get("package_folder", "")
     if package_folder:
         pkg = Path(package_folder).resolve()
@@ -336,7 +351,8 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
         raise HTTPException(status_code=403, detail="Web UI is read-only")
 
     # Sync pre-check — reject BEFORE creating any job.
-    if check_active_run():
+    user_id = _current_user_id(request)
+    if check_active_run(user_id=user_id):
         return templates.TemplateResponse(
             request,
             "submit.html",
@@ -346,14 +362,14 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
         )
 
     # Create job (status defaults to "new").
-    job = jobs_service.create_job_from_url(url, user_id=_current_user_id(request))
+    job = jobs_service.create_job_from_url(url, user_id=user_id)
     job_id = job["id"]
 
     # Set generating synchronously — eliminates redirect race.
-    jobs_service.set_job_status(job_id, "generating")
+    jobs_service.set_job_status(job_id, "generating", user_id=user_id)
 
     # Fire and forget.
-    schedule_pipeline_run(job_id)
+    schedule_pipeline_run(job_id, user_id=user_id)
 
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
@@ -367,17 +383,18 @@ async def regenerate_job(request: Request, job_id: str) -> RedirectResponse:  # 
         raise HTTPException(status_code=403, detail="Web UI is read-only")
 
     # Sync pre-check — reject BEFORE changing any status.
-    if check_active_run():
+    user_id = _current_user_id(request)
+    if check_active_run(user_id=user_id):
         # Highlight the error on the detail page.
         return RedirectResponse(
             f"/jobs/{job_id}?error=already_running", status_code=303
         )
 
     # Set generating synchronously.
-    jobs_service.set_job_status(job_id, "generating")
+    jobs_service.set_job_status(job_id, "generating", user_id=user_id)
 
     # Fire and forget.
-    schedule_pipeline_run(job_id)
+    schedule_pipeline_run(job_id, user_id=user_id)
 
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
@@ -499,7 +516,7 @@ def _onboarding_token_secret() -> str:
     """Return the server-only secret used to sign web onboarding tokens."""
     secret = (
         os.environ.get("APPLYCLING_ONBOARDING_TOKEN_SECRET")
-        or os.environ.get("APPLYCLING_UI_AUTH_PASSWORD")
+        or os.environ.get("APPLYCLING_SESSION_SECRET")
         or os.environ.get("APPLYCLING_INTAKE_SECRET")
     )
     if not secret:
@@ -573,7 +590,7 @@ async def intake(
         _update_chat_id(db_user_id, body.chat_id)
 
     # Active-run guard — clean 409 before we start a new generation
-    if check_active_run():
+    if check_active_run(user_id=db_user_id):
         return JSONResponse(
             {"error": "Another generation is already running. "
                        "Please wait for it to complete."},
@@ -661,7 +678,7 @@ async def forward(
     if current_state == "active":
         if is_url:
             _update_chat_id(user_id, chat_id)
-            if check_active_run():
+            if check_active_run(user_id=user_id):
                 return JSONResponse(
                     {"relay_message": "A generation is already running. Please wait."},
                     status_code=409,
@@ -695,7 +712,7 @@ async def forward(
 
     elif current_state == "new":
         if is_url:
-            if check_active_run():
+            if check_active_run(user_id=user_id):
                 return JSONResponse(
                     {"relay_message": "A generation is already running."},
                     status_code=409,

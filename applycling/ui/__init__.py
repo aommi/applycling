@@ -20,7 +20,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # ── Auth middleware ─────────────────────────────────────────────────────
 
 _UNAUTH_ROUTES: frozenset[str] = frozenset(
-    {"/healthz", "/api/intake", "/api/forward", "/login", "/onboarding/submit-resume"}
+    {"/healthz", "/api/intake", "/api/forward", "/login"}
 )
 
 
@@ -31,8 +31,8 @@ class SessionMiddleware(BaseHTTPMiddleware):
     - Local dev bypass via ``APPLYCLING_NO_AUTH`` env var.
     - Sessions are HMAC-signed cookies (``applycling_session``).
     - Unauthenticated requests redirect to ``/login``.
-    - ``/healthz``, ``/api/intake``, ``/api/forward``, ``/login``, and
-      ``/onboarding/submit-resume`` are exempted from auth.
+    - ``/healthz``, ``/api/intake``, ``/api/forward``, and ``/login`` are
+      exempted from auth.
     """
 
     def __init__(self, app: ASGIApp) -> None:

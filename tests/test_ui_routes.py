@@ -140,6 +140,104 @@ def test_regenerate_does_not_change_status_when_guard_blocks(client):
             "/jobs/some-id/regenerate", follow_redirects=False
         )
     mock_set.assert_not_called()
+
+
+def test_submit_scopes_status_and_pipeline_to_session_user(client):
+    """POST /submit keeps all follow-up work scoped to the authenticated user."""
+    client.app.dependency_overrides = {}
+
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes.check_active_run", return_value=False) as mock_active,
+        patch(
+            "applycling.ui.routes.jobs_service.create_job_from_url",
+            return_value={"id": "job-1"},
+        ) as mock_create,
+        patch("applycling.ui.routes.jobs_service.set_job_status") as mock_status,
+        patch("applycling.ui.routes.schedule_pipeline_run") as mock_schedule,
+    ):
+        response = client.post(
+            "/submit",
+            data={"url": "https://example.com/jobs/test"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    mock_active.assert_called_once_with(user_id=_USER_ID)
+    mock_create.assert_called_once_with("https://example.com/jobs/test", user_id=_USER_ID)
+    mock_status.assert_called_once_with("job-1", "generating", user_id=_USER_ID)
+    mock_schedule.assert_called_once_with("job-1", user_id=_USER_ID)
+
+
+def test_regenerate_scopes_status_and_pipeline_to_session_user(client):
+    """POST /jobs/{id}/regenerate uses the session user for guards and updates."""
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes.check_active_run", return_value=False) as mock_active,
+        patch("applycling.ui.routes.jobs_service.set_job_status") as mock_status,
+        patch("applycling.ui.routes.schedule_pipeline_run") as mock_schedule,
+    ):
+        response = client.post(
+            "/jobs/job-1/regenerate",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    mock_active.assert_called_once_with(user_id=_USER_ID)
+    mock_status.assert_called_once_with("job-1", "generating", user_id=_USER_ID)
+    mock_schedule.assert_called_once_with("job-1", user_id=_USER_ID)
+
+
+def test_status_update_scopes_to_session_user(client):
+    """POST /jobs/{id}/status updates only the authenticated user's job."""
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes.jobs_service.set_job_status") as mock_status,
+    ):
+        response = client.post(
+            "/jobs/job-1/status",
+            data={"status": "reviewed"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    mock_status.assert_called_once_with("job-1", "reviewed", user_id=_USER_ID)
+
+
+def test_artifact_route_scopes_job_lookup_to_session_user(client, tmp_path):
+    """Artifact serving first verifies the job belongs to the current user."""
+    package = tmp_path / "pkg"
+    package.mkdir()
+    artifact = package / "resume.pdf"
+    artifact.write_bytes(b"%PDF")
+
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch(
+            "applycling.ui.routes.jobs_service.get_job",
+            return_value={"id": "job-1", "package_folder": str(package)},
+        ) as mock_get,
+    ):
+        response = client.get("/artifacts/job-1/resume.pdf")
+
+    assert response.status_code == 200
+    mock_get.assert_called_once_with("job-1", user_id=_USER_ID)
+
+
+def test_schedule_pipeline_run_passes_user_id_to_jobs_service(client):
+    """Background work must run against the same user that created the job."""
+    async def _exercise() -> None:
+        ui_routes.schedule_pipeline_run("job-1", user_id=_USER_ID)
+        tasks = list(ui_routes._background_tasks)
+        assert len(tasks) == 1
+        await tasks[0]
+
+    with patch("applycling.ui.routes.jobs_service.run_pipeline") as mock_run:
+        import anyio
+
+        anyio.run(_exercise)
+
+    mock_run.assert_called_once_with("job-1", user_id=_USER_ID)
 # ── Auth middleware ─────────────────────────────────────────────────────
 
 def test_session_redirects_to_login_without_cookie():
@@ -191,6 +289,27 @@ def test_session_rejects_tampered_cookie(monkeypatch):
     tc.cookies["applycling_session"] = "tampered.payload"
     response = tc.get("/", follow_redirects=False)
     assert response.status_code == 303
+
+
+def test_login_next_rejects_external_redirects(client):
+    """Login never redirects to an attacker-controlled absolute URL."""
+    with (
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://test"}, clear=False),
+        patch("applycling.ui.routes.PostgresStore") as mock_store,
+        patch("applycling.ui.routes.verify_password", return_value=True),
+    ):
+        mock_store.return_value._conn.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = {
+            "id": _USER_ID,
+            "password_hash": "hash",
+        }
+        response = client.post(
+            "/login?next=https://evil.example/phish",
+            data={"email": "jane@example.com", "password": "secret"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
 
 
 def test_no_auth_env_bypasses_session(monkeypatch):
@@ -693,10 +812,10 @@ def test_forward_soft_deleted_user_returns_bounded_error(
 # ── Web onboarding auth/token safety ───────────────────────────────────
 
 def test_onboarding_routes_auth_exemptions() -> None:
-    """Submit-resume is unauthenticated (new users); confirm stays behind auth."""
+    """Web onboarding stays behind session auth; only API relays are public-ish."""
     from applycling.ui import _UNAUTH_ROUTES
 
-    assert "/onboarding/submit-resume" in _UNAUTH_ROUTES
+    assert "/onboarding/submit-resume" not in _UNAUTH_ROUTES
     assert "/onboarding" not in _UNAUTH_ROUTES
     assert "/onboarding/confirm" not in _UNAUTH_ROUTES
 
@@ -714,6 +833,18 @@ def test_onboarding_token_rejects_tampering(monkeypatch):
 
     with pytest.raises(Exception):
         ui_routes._verify_onboarding_token(token + "tampered")
+
+
+def test_onboarding_token_falls_back_to_session_secret(monkeypatch):
+    """New session-auth deployments do not need the removed UI password env var."""
+    monkeypatch.delenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", raising=False)
+    monkeypatch.delenv("APPLYCLING_UI_AUTH_PASSWORD", raising=False)
+    monkeypatch.delenv("APPLYCLING_INTAKE_SECRET", raising=False)
+    monkeypatch.setenv("APPLYCLING_SESSION_SECRET", "session-secret")
+
+    token = ui_routes._sign_onboarding_user_id(_USER_ID)
+
+    assert ui_routes._verify_onboarding_token(token) == _USER_ID
 
 
 def test_onboarding_confirm_rejects_missing_or_invalid_token(client, monkeypatch):

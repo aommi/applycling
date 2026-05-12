@@ -174,7 +174,7 @@ def _is_postgres() -> bool:
     return os.environ.get("APPLYCLING_DB_BACKEND", "").strip().lower() == "postgres"
 
 
-def check_active_run() -> bool:
+def check_active_run(user_id: str | None = None) -> bool:
     """UX pre-check: return True if a pipeline run is currently active.
 
     This is a simple SELECT — it CAN race with another request that starts
@@ -188,7 +188,7 @@ def check_active_run() -> bool:
     """
     if not _is_postgres():
         return False
-    store = get_store()
+    store = get_store(user_id=user_id) if user_id else get_store()
     return store.get_active_run() is not None
 
 

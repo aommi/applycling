@@ -98,14 +98,14 @@ def _job_to_dict(job: Job) -> dict[str, Any]:
     return job.to_dict()
 
 
-def _artifacts_path_for_job(job_id: str) -> Path:
+def _artifacts_path_for_job(job_id: str, user_id: str | None = None) -> Path:
     """Resolve the artifacts JSON path for a job.
 
     Prefers ``<package_folder>/artifacts.json`` when the job already has a
     package folder, otherwise falls back to ``data/artifacts/<id>.json``.
     """
     try:
-        store = get_store()
+        store = get_store(user_id=user_id) if user_id else get_store()
         job = store.load_job(job_id)
         if job.package_folder:
             return Path(job.package_folder) / "artifacts.json"
@@ -117,8 +117,12 @@ def _artifacts_path_for_job(job_id: str) -> Path:
     return fallback / f"{job_id}_artifacts.json"
 
 
-def _read_artifacts_json(job_id: str) -> dict[str, Any]:
-    path = _artifacts_path_for_job(job_id)
+def _read_artifacts_json(job_id: str, user_id: str | None = None) -> dict[str, Any]:
+    path = (
+        _artifacts_path_for_job(job_id, user_id=user_id)
+        if user_id
+        else _artifacts_path_for_job(job_id)
+    )
     if not path.exists():
         return {"artifacts": [], "status_reasons": []}
     try:
@@ -127,19 +131,32 @@ def _read_artifacts_json(job_id: str) -> dict[str, Any]:
         return {"artifacts": [], "status_reasons": []}
 
 
-def _write_artifacts_json(job_id: str, data: dict[str, Any]) -> None:
-    path = _artifacts_path_for_job(job_id)
+def _write_artifacts_json(
+    job_id: str,
+    data: dict[str, Any],
+    user_id: str | None = None,
+) -> None:
+    path = (
+        _artifacts_path_for_job(job_id, user_id=user_id)
+        if user_id
+        else _artifacts_path_for_job(job_id)
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
 
 
-def _record_status_reason(job_id: str, status: str, reason: str) -> None:
+def _record_status_reason(
+    job_id: str,
+    status: str,
+    reason: str,
+    user_id: str | None = None,
+) -> None:
     """Append a status-change reason to the job's artifacts JSON."""
-    data = _read_artifacts_json(job_id)
+    data = _read_artifacts_json(job_id, user_id=user_id)
     data.setdefault("status_reasons", []).append(
         {"status": status, "reason": reason}
     )
-    _write_artifacts_json(job_id, data)
+    _write_artifacts_json(job_id, data, user_id=user_id)
 
 
 # ── Public API ────────────────────────────────────────────────────────
@@ -197,6 +214,7 @@ def set_job_status(
     job_id: str,
     status: str,
     reason: str | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Update a job's status with transition validation via canonical state machine.
 
@@ -206,7 +224,7 @@ def set_job_status(
     """
     assert_valid_status(status)
 
-    store = get_store()
+    store = get_store(user_id=user_id) if user_id else get_store()
     job = store.load_job(job_id)
     current = job.status
 
@@ -225,12 +243,17 @@ def set_job_status(
     updated = store.update_job(job_id, status=status)
 
     if reason:
-        _record_status_reason(job_id, status, reason)
+        _record_status_reason(job_id, status, reason, user_id=user_id)
 
     return _job_to_dict(updated)
 
 
-def attach_artifact(job_id: str, kind: str, path: str) -> dict[str, Any]:
+def attach_artifact(
+    job_id: str,
+    kind: str,
+    path: str,
+    user_id: str | None = None,
+) -> dict[str, Any]:
     """Record an artifact for a job.
 
     *kind* must be one of the recognised artifact kinds (e.g.
@@ -244,25 +267,25 @@ def attach_artifact(job_id: str, kind: str, path: str) -> dict[str, Any]:
             f"Must be one of: {_ARTIFACT_KINDS}"
         )
 
-    data = _read_artifacts_json(job_id)
+    data = _read_artifacts_json(job_id, user_id=user_id)
     artifact: dict[str, Any] = {"kind": kind, "path": str(path)}
     data.setdefault("artifacts", []).append(artifact)
-    _write_artifacts_json(job_id, data)
+    _write_artifacts_json(job_id, data, user_id=user_id)
     return artifact
 
 
-def list_artifacts(job_id: str) -> list[dict[str, Any]]:
+def list_artifacts(job_id: str, user_id: str | None = None) -> list[dict[str, Any]]:
     """Return all recorded artifacts for a job.
     
     Falls back to scanning the package folder for known files if no
     artifacts JSON exists (e.g. jobs created via Telegram / CLI).
     """
-    recorded = _read_artifacts_json(job_id).get("artifacts", [])
+    recorded = _read_artifacts_json(job_id, user_id=user_id).get("artifacts", [])
     if recorded:
         return recorded
 
     # Fallback: scan the actual package folder
-    store = get_store()
+    store = get_store(user_id=user_id) if user_id else get_store()
     try:
         job = store.load_job(job_id)
     except TrackerError:
@@ -286,7 +309,7 @@ def list_artifacts(job_id: str) -> list[dict[str, Any]]:
     return scanned
 
 
-def run_pipeline(job_id: str) -> dict[str, Any]:
+def run_pipeline(job_id: str, user_id: str | None = None) -> dict[str, Any]:
     """Run the applycling pipeline for a job.
 
     Workflow:
@@ -298,7 +321,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
 
     Returns the updated job dict (or an error dict on failure).
     """
-    store = get_store()
+    store = get_store(user_id=user_id) if user_id else get_store()
     run_id: str | None = None
 
     # ── Active-run guard (Postgres only) ────────────────────────────────
@@ -319,6 +342,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             _record_status_reason(
                 job_id, "failed",
                 "Another generation is already running.",
+                user_id=user_id,
             )
             return {
                 "error": "Another generation is already running. "
@@ -387,7 +411,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
             store.update_job(job_id, status="failed")
         except TrackerError:
             pass
-        _record_status_reason(job_id, "failed", reason)
+        _record_status_reason(job_id, "failed", reason, user_id=user_id)
         return _finish_run(store, run_id, {"error": reason, "job_id": job_id},
                            status="failed", reason=reason)
 
@@ -436,7 +460,7 @@ def run_pipeline(job_id: str) -> dict[str, Any]:
         file_path = folder / filename
         if file_path.exists():
             try:
-                attach_artifact(job_id, kind, str(file_path))
+                attach_artifact(job_id, kind, str(file_path), user_id=user_id)
             except Exception:
                 pass  # Non-critical — pipeline already succeeded
 

@@ -471,3 +471,37 @@ For GA, drop the secret fallback chain and require a dedicated env var.
 
 **Affects:** `applycling/ui/routes.py`, `applycling/ui/templates/confirm.html`,
 `tests/test_ui_routes.py`
+
+---
+
+## 2026-05-12 — Session-Cookie Web Auth For Hosted Workbench
+
+**Decision:** Replace hosted workbench Basic Auth with HMAC-signed session
+cookies and per-user login. Password hashes live on `users.password_hash`
+(`006_add_password_hash`). `SessionMiddleware` redirects browser requests to
+`/login`; `/healthz`, `/api/intake`, and localhost-only `/api/forward` remain
+auth-exempt. `/admin` is gated by `APPLYCLING_ADMIN_USER_ID` and can create
+invited users with generated passwords.
+
+**Reasoning:** Basic Auth was enough for one dogfood user, but it could not
+support per-user workbench state. Session auth lets browser actions carry the
+authenticated `user_id`, which is required for Postgres-scoped job lists,
+status changes, artifacts, active-run checks, and background pipeline runs.
+
+**Security constraints:**
+- `APPLYCLING_SESSION_SECRET` is required in hosted Postgres mode.
+- `APPLYCLING_NO_AUTH` is refused in hosted Postgres mode.
+- Login redirects must stay same-origin; external `next=` URLs are rejected.
+- Web onboarding is session-gated; unauthenticated `/onboarding/submit-resume`
+  is not exposed.
+- Workbench job operations must pass the session `user_id` through service
+  calls; falling back to the default Postgres user breaks hosted jobs and can
+  weaken isolation.
+
+**When to revisit:** Add timestamped session tokens/rotation, password reset,
+CSRF protection for browser forms, and a better admin invite flow before
+untrusted public launch.
+
+**Affects:** `applycling/auth.py`, `applycling/ui/__init__.py`,
+`applycling/ui/routes.py`, `applycling/jobs_service.py`,
+`migrations/versions/006_add_password_hash.py`, `docs/deploy/DEPLOY.md`

@@ -59,8 +59,8 @@ ls -la /opt/applycling/output/
 docker compose -f docker-compose.prod.yml restart applycling
 
 # 3. Confirm artifacts are still visible through the workbench UI
-# Replace credentials with your APPLYCLING_UI_AUTH_USER:PASSWORD values.
-curl -u user:pass https://your-domain.com/jobs/<id>
+# Log in through /login first, then open the job detail page in your browser.
+open https://your-domain.com/jobs/<id>
 ```
 
 ## Future (Closed Beta / SaaS)

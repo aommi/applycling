@@ -2,7 +2,7 @@
 
 **Target:** Kamatera VPS (1 vCPU, 2 GB RAM, 20 GB SSD, Ubuntu 24.04)
 **Cost:** $6/month flat — no metering, no surprises
-**Scope:** Single-user dogfood deployment behind app-level Basic Auth
+**Scope:** Private dogfood deployment behind app-level session auth
 
 ---
 
@@ -126,7 +126,7 @@ DEEPSEEK_API_KEY=<deepseek api key for routing LLM>
 
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`, and `DEEPSEEK_API_KEY` are copied
 into the VPS host Hermes profile by `scripts/setup_hosted_hermes.sh`. Do not copy
-`DATABASE_URL`, provider API keys, `APPLYCLING_UI_AUTH_PASSWORD`, or
+`DATABASE_URL`, provider API keys, `APPLYCLING_SESSION_SECRET`, or
 `APPLYCLING_INTAKE_SECRET` into `~/.hermes/profiles/applycling/.env`.
 
 `APPLYCLING_FORWARD_ALLOWED_SOURCES` is read by the applycling container, not
@@ -140,7 +140,8 @@ Each secret must be independently generated. Do **not** reuse or derive one from
 
 | Secret | Purpose | Rotation Impact |
 |---|---|---|
-| `APPLYCLING_UI_AUTH_PASSWORD` | Workbench web UI access | Restart applycling container |
+| `APPLYCLING_SESSION_SECRET` | HMAC signing key for web session cookies | Restart applycling container; existing sessions become invalid |
+| `APPLYCLING_ADMIN_USER_ID` | User UUID allowed to access `/admin` | Restart applycling container |
 | `APPLYCLING_INTAKE_SECRET` | Legacy `/api/intake` compatibility auth, not used by Hermes forwarding | Restart applycling container |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot identity | Regenerate via BotFather, update env, restart Hermes |
 | `DEEPSEEK_API_KEY` | Hermes routing LLM (DeepSeek) | Rotate on DeepSeek dashboard, update env, restart Hermes |
