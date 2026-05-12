@@ -203,6 +203,58 @@
       border-color: var(--ink);
     }
     .lane .lane-link svg { display: block; }
+    .lane form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+    .lane .email-input {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 10px 14px;
+      border: 2px solid var(--ink);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--ink);
+      outline: none;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+    .lane .email-input:focus {
+      box-shadow: 3px 3px 0 var(--accent);
+      border-color: var(--accent);
+    }
+    .lane .submit-btn {
+      font-family: 'Caveat', cursive;
+      font-size: 22px;
+      padding: 10px 0 12px;
+      background: var(--ink);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 3px 3px 0 var(--highlight);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .lane .submit-btn:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 var(--highlight);
+    }
+    .lane .submit-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 var(--highlight);
+    }
+    .lane .submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .lane .form-msg {
+      font-family: 'Gloria Hallelujah', cursive;
+      font-size: 13px;
+      line-height: 1.5;
+      margin: 0;
+      min-height: 20px;
+      opacity: 0.8;
+    }
+    .lane .form-msg.success { color: var(--green); }
+    .lane .form-msg.error { color: #c62828; }
     .sub-note {
       margin-top: 36px;
       font-family: 'JetBrains Mono', monospace;
@@ -304,13 +356,60 @@ pip install -e . &amp;&amp; applycling setup</div>
           </svg>
         </a>
       </div>
+
+      <div class="lane" id="waitlist-lane">
+        <div class="lane-badge">early access</div>
+        <h2>Web + Telegram</h2>
+        <p>Hosted workbench, one-click Telegram intake, and pipeline that runs on our servers — not your laptop. Drop your email and we'll invite you when it's ready.</p>
+        <form id="waitlist-form">
+          <input class="email-input" type="email" name="email" placeholder="you@email.com" required autocomplete="email" />
+          <button class="submit-btn" type="submit">get on the list</button>
+        </form>
+        <p class="form-msg" id="waitlist-msg" aria-live="polite"></p>
+      </div>
     </div>
 
-    <p class="more-coming">more clingy things coming soon — web workbench, messaging agent, and more ways to cling.</p>
+    <p class="more-coming">already available: Claude Desktop MCP, open source CLI. web + Telegram alpha invites shipping soon.</p>
 
     <div class="sub-note">BYOK — bring your own keys. applycling never sees your tokens or data.</div>
   </main>
 
   <footer>&copy; applycling · 2026</footer>
+
+  <script>
+    const WAITLIST_URL = 'https://script.google.com/macros/s/AKfycbybDU-Jxsl3zqnOatw3ystcdbF3II93KfEfu9dHNFyQ7mbZpVIvEITOVQof4GAb_3MN-g/exec';
+    const form = document.getElementById('waitlist-form');
+    const msg = document.getElementById('waitlist-msg');
+    const btn = form.querySelector('.submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = form.email.value.trim();
+      if (!email) return;
+
+      btn.disabled = true;
+      btn.textContent = '...';
+      msg.className = 'form-msg';
+      msg.textContent = '';
+
+      try {
+        const res = await fetch(WAITLIST_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, source: 'landing' }),
+        });
+        if (!res.ok) throw new Error(res.status);
+        msg.className = 'form-msg success';
+        msg.textContent = "You're on the list! We'll be in touch.";
+        form.reset();
+      } catch (err) {
+        msg.className = 'form-msg error';
+        msg.textContent = 'Something went wrong. Try again or DM us.';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'get on the list';
+      }
+    });
+  </script>
 </body>
 </html>
