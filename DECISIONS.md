@@ -381,3 +381,39 @@ chat_id changes are observed in practice. Add `applycling users update-chat-id`
 command.**
 
 **Affects:** `applycling/ui/routes.py`, `applycling/telegram_notify.py`
+
+---
+
+## 2026-05-12 — Single Hermes Bot With Endpoint-Owned Isolation
+
+**Decision:** The onboarding sprint uses the existing hosted Hermes Telegram
+gateway/profile on the VPS and one bot token for all allowlisted users. Hermes
+runs on the VPS host outside Docker and is a dumb relay only: it forwards
+Telegram metadata plus the current message to the Dockerized applycling app at
+host-local `http://127.0.0.1:8080/api/forward` and relays the returned
+`relay_message`. The applycling endpoint owns user resolution, onboarding state,
+profile writes, quota checks, and pipeline dispatch.
+
+**Reasoning:** Per-user bot/profile setup was the major alpha onboarding
+friction. A single bot is operationally simpler, but it is only acceptable if
+Hermes has no secrets and cannot read server state directly. User isolation is
+therefore enforced by per-chat Hermes session state, per-request `telegram_id`,
+and DB rows keyed by `telegram_id`, not by separate bots.
+
+**Security constraints:**
+- Hermes profile `.env` must not contain `APPLYCLING_INTAKE_SECRET`,
+  `DATABASE_URL`, provider API keys, or server credentials.
+- SOUL.md must not mention credential names or call any endpoint except
+  `http://127.0.0.1:8080/api/forward`.
+- Hermes profile tools remain terminal-only for the forwarding curl; no DB,
+  file, browser, or vision tools.
+- `/api/forward` is Basic Auth exempt but localhost-only.
+
+**When to revisit:** Before public or untrusted multi-user launch, verify Hermes
+session isolation under load and consider replacing the personal Hermes gateway
+with a dedicated webhook service.
+
+**Affects:** `docs/deploy/hermes_forwarding_template.md`,
+`scripts/setup_hermes_telegram.sh`, `applycling/ui/routes.py`,
+`applycling/ui/__init__.py`, `memory/semantic.md`,
+`docs/deploy/HOSTED_HERMES.md`

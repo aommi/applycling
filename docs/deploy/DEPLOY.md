@@ -23,9 +23,10 @@
 │     /opt/applycling/   │   /opt/applycling/                  │
 │        data/ (read)    │      output/ (write)                │
 │                        │                                     │
+│  host systemd                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Hermes (Phase 2 — not yet deployed)                 │   │
-│  │  separate container, forwards to applycling intake    │   │
+│  │  Hermes gateway: ~/.hermes/profiles/applycling/      │   │
+│  │  outside Docker → http://127.0.0.1:8080/api/forward  │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -106,17 +107,22 @@ GOOGLE_API_KEY=***
 APPLYCLING_UI_AUTH_USER=<your-username>
 APPLYCLING_UI_AUTH_PASSWORD=<generated-password>
 
-# ── Intake (PR6) ───────────────────────────────────────
+# ── Legacy intake compatibility (/api/intake) ───────────
 APPLYCLING_INTAKE_SECRET=<generated-secret>
 
 # ── Active-run guard ───────────────────────────────────
 APPLYCLING_STALE_RUN_TIMEOUT_MINUTES=120
 
-# ── Hermes Telegram gateway ────────────────────────────
+# ── Hosted Hermes Telegram gateway ──────────────────────
 TELEGRAM_BOT_TOKEN=<from BotFather>
 TELEGRAM_ALLOWED_USERS=26605267
 DEEPSEEK_API_KEY=<deepseek api key for routing LLM>
 ```
+
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`, and `DEEPSEEK_API_KEY` are copied
+into the VPS host Hermes profile by `scripts/setup_hosted_hermes.sh`. Do not copy
+`DATABASE_URL`, provider API keys, `APPLYCLING_UI_AUTH_PASSWORD`, or
+`APPLYCLING_INTAKE_SECRET` into `~/.hermes/profiles/applycling/.env`.
 
 ### Secret Independence
 
@@ -125,7 +131,7 @@ Each secret must be independently generated. Do **not** reuse or derive one from
 | Secret | Purpose | Rotation Impact |
 |---|---|---|
 | `APPLYCLING_UI_AUTH_PASSWORD` | Workbench web UI access | Restart applycling container |
-| `APPLYCLING_INTAKE_SECRET` | Hermes → workbench API auth | Update Hermes config + restart both containers |
+| `APPLYCLING_INTAKE_SECRET` | Legacy `/api/intake` compatibility auth, not used by Hermes forwarding | Restart applycling container |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot identity | Regenerate via BotFather, update env, restart Hermes |
 | `DEEPSEEK_API_KEY` | Hermes routing LLM (DeepSeek) | Rotate on DeepSeek dashboard, update env, restart Hermes |
 | `ANTHROPIC_API_KEY` | Pipeline generation | Rotate on Anthropic console, update env, restart applycling |
