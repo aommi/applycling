@@ -1,5 +1,11 @@
 # Hermes Forwarding — Phase 1 Bridge
 
+> Historical local-dev bridge. The current hosted deployment runs Hermes on the
+> VPS host outside Docker and forwards to
+> `http://127.0.0.1:8080/api/forward`. Use `docs/deploy/HOSTED_HERMES.md` and
+> `scripts/setup_hosted_hermes.sh` for the active production path. Do not put
+> `APPLYCLING_INTAKE_SECRET` in the hosted Hermes profile.
+
 ## Overview
 
 Phase 1 keeps the local Hermes Telegram gateway but forwards job URLs to the

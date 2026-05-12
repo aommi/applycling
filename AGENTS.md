@@ -65,7 +65,7 @@ These skill files follow the agentskills.io frontmatter standard — Hermes's `/
 - Skill templates use `str.format` — escape braces with `{{` and `}}`
 - Conditional logic stays in Python, not skill templates
 - When a new top-level pipeline capability ships, the corresponding MCP tool ships in the same PR; internal steps inside existing capabilities flow through MCP by continuing to call the pipeline library API
-- applycling pipeline API keys live in .env at repo root (gitignored). Hermes gateway keys live in ~/.hermes/profiles/applycling/.env, provisioned by scripts/setup_hermes_telegram.sh
+- applycling pipeline API keys live in .env at repo root (gitignored). Hosted Hermes gateway keys live in the VPS host's `~/.hermes/profiles/applycling/.env`, provisioned/updated by `scripts/setup_hosted_hermes.sh`. Do not put applycling DB/provider secrets in the Hermes profile env.
 - vision.md holds vision + assumptions only — on merge, move shipped capabilities to memory/semantic.md and remove from the Vision section; update Assumptions if a premise is invalidated
 
 ---
@@ -97,16 +97,16 @@ The project's `memory/semantic.md` remains the single source of truth.
 
 ## Hermes Profile (Telegram Gateway)
 
-The project ships a dedicated Hermes profile for Telegram intake: `~/.hermes/profiles/applycling/`.
+The project ships a dedicated hosted Hermes profile for Telegram intake on the VPS host: `~/.hermes/profiles/applycling/`.
 
-- **Provision:** `./scripts/setup_hermes_telegram.sh` (idempotent)
-- **Start/install:** `applycling-hermes gateway install`
-- **Status:** `applycling-hermes gateway status`
-- **Logs:** `~/.hermes/profiles/applycling/logs/gateway.log`
-- **SOUL.md:** Located at `~/.hermes/profiles/applycling/SOUL.md` — single-purpose: receives URL, runs `.venv/bin/python -m applycling.cli telegram _run <url>`
+- **Deployment model:** applycling/Postgres/Caddy run in Docker Compose under `/opt/applycling/app`; Hermes runs outside Docker on the VPS host and calls `http://127.0.0.1:8080/api/forward`.
+- **Provision/update:** `./scripts/setup_hosted_hermes.sh` on the VPS (idempotent). `scripts/setup_hermes_telegram.sh` is local/dev-only.
+- **Start/status:** `systemctl status hermes-gateway-applycling` on the VPS, or `hermes -p applycling gateway status` if using the Hermes wrapper.
+- **Logs:** `~/.hermes/profiles/applycling/logs/gateway.log` on the VPS.
+- **SOUL.md:** Located at `~/.hermes/profiles/applycling/SOUL.md` — single-purpose dumb relay: receives Telegram metadata/message, POSTs to `/api/forward`, relays `relay_message`.
 - **Toolsets:** Terminal only. All other tools (browser, vision, file, etc.) are disabled.
 - **Model:** deepseek-v4-pro (routing only — pipeline uses its own config)
-- **Naming caution:** `hermes profile create applycling` may also create a bare `applycling` wrapper in `~/.local/bin`. Use `applycling-hermes` for Hermes commands and `python3 -m applycling.cli ...` for the project CLI.
+- **Cutover order:** deploy Docker app and run Alembic migration first, then update SOUL/profile env, then restart hosted Hermes only when no pipeline is active.
 - **Canonical state machine:** `applycling/statuses.py` — 11 states, 25 transitions. Single source of truth for all paths (CLI, UI, Telegram).
 - **Two-layer LLM architecture:** Hermes (DeepSeek) routes Telegram messages; applycling pipeline (Anthropic Claude) generates packages. See `DECISIONS.md` §2026-04-27.
 

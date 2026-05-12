@@ -152,15 +152,17 @@ clarified when resolvers make skills directly discoverable.
 
 ### Hermes Telegram validation
 
-For Phase 1 local Telegram validation, inbound Telegram intake is delegated to a
-Hermes profile/gateway. Hermes receives the job URL from Telegram and invokes
-applycling's terminal entry point. applycling remains responsible for pipeline
-execution, outbound progress messages, PDF delivery, local output artifacts, and
-worker logs.
+For hosted dogfood, inbound Telegram intake is delegated to the existing Hermes
+profile/gateway running on the VPS host. applycling/Postgres/Caddy run in Docker
+Compose; Hermes runs outside Docker and forwards Telegram metadata plus message
+text to the host-local applycling endpoint (`http://127.0.0.1:8080/api/forward`).
+applycling owns user resolution, onboarding state, pipeline execution, outbound
+progress messages, PDF delivery, durable output artifacts, and worker logs.
 
-This keeps the initial validation focused on the product loop while avoiding a
-throwaway Telegram listener in applycling. Hosted SaaS intake should use dedicated
-gateway/webhook infrastructure, not the Hermes personal-profile path.
+This keeps validation focused on the product loop while avoiding a throwaway
+Telegram listener in applycling. Before public or untrusted multi-user launch,
+revisit whether Hermes should remain the gateway or be replaced by dedicated
+webhook infrastructure.
 
 ---
 
