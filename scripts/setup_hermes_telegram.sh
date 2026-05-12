@@ -59,9 +59,9 @@ echo "Using: $HERMES_WRAPPER"
 echo "Configuring Telegram platform..."
 "$HERMES_WRAPPER" config set gateway.platforms.telegram.enabled true
 
-# Write .env with Telegram secrets. Always update the managed keys
-# (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS) while preserving any other
-# keys that may have been added (provider API keys from parent merge, etc.).
+# Write .env with Telegram secrets. Always update the managed keys while
+# preserving existing profile-local keys. Parent env merging below is allowlisted
+# so app/database/provider-generation secrets cannot silently enter this profile.
 ENV_FILE="$HOME/.hermes/profiles/$PROFILE/.env"
 if [ ! -f "$ENV_FILE" ]; then
   echo "Creating $ENV_FILE..."
@@ -103,14 +103,15 @@ echo "Configuring model..."
 "$HERMES_WRAPPER" config set model.default deepseek-v4-pro
 "$HERMES_WRAPPER" config set model.provider deepseek
 
-# ── Copy parent env keys (API keys, etc.) ────────────────────────────
+# ── Copy allowlisted parent env keys ─────────────────────────────────
 PARENT_ENV="$HOME/.hermes/.env"
 if [ -f "$PARENT_ENV" ] && [ -f "$ENV_FILE" ]; then
-  echo "Merging missing keys from parent .env..."
+  echo "Merging allowlisted missing keys from parent .env..."
   python3 -c "
 import os
 env_file = os.path.expanduser('$ENV_FILE')
 parent = os.path.expanduser('$PARENT_ENV')
+allowed_parent_keys = {'DEEPSEEK_API_KEY'}
 target = {}
 with open(env_file) as f:
     for line in f:
@@ -123,7 +124,7 @@ with open(parent) as f:
         line = line.strip()
         if line and '=' in line:
             k, v = line.split('=', 1)
-            if k not in target:
+            if k in allowed_parent_keys and k not in target:
                 target[k] = v
                 print(f'  + {k}')
 with open(env_file, 'w') as f:
