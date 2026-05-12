@@ -736,3 +736,20 @@ def test_onboarding_post_rejects_invalid_token(client, monkeypatch):
         data={"token": "not-valid", "display_name": "Jane Doe"},
     )
     assert response.status_code == 403
+
+
+def test_onboarding_confirm_rejects_empty_token(client, monkeypatch):
+    monkeypatch.setenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", "test-secret")
+
+    response = client.get("/onboarding/confirm")
+    assert response.status_code == 403
+
+
+def test_onboarding_post_rejects_empty_token(client, monkeypatch):
+    monkeypatch.setenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", "test-secret")
+
+    response = client.post(
+        "/onboarding/confirm",
+        data={"token": "", "display_name": "Jane Doe"},
+    )
+    assert response.status_code == 403

@@ -644,7 +644,9 @@ async def onboarding_submit_resume(
 async def onboarding_confirm(request: Request) -> HTMLResponse:
     """Show the consolidated profile confirmation screen."""
     token = request.query_params.get("token", "")
-    user_id = _verify_onboarding_token(token) if token else ""
+    if not token:
+        raise HTTPException(status_code=403, detail="Invalid onboarding token")
+    user_id = _verify_onboarding_token(token)
     db_url = os.environ.get("DATABASE_URL")
     resume_text = ""
 
@@ -685,8 +687,10 @@ async def onboarding_save_profile(
     portfolio: str = Form(""),
 ) -> RedirectResponse:
     """Save confirmed profile fields and mark onboarding active."""
+    if not token:
+        raise HTTPException(status_code=403, detail="Invalid onboarding token")
+    user_id = _verify_onboarding_token(token)
     db_url = os.environ.get("DATABASE_URL")
-    user_id = _verify_onboarding_token(token) if token else ""
     if user_id and db_url:
         store = PostgresStore(user_id=user_id, database_url=db_url)
         store.save_user_profile(
