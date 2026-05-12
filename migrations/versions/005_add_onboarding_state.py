@@ -27,9 +27,15 @@ def upgrade() -> None:
             server_default="new",
         ),
     )
+    op.create_check_constraint(
+        "ck_users_onboarding_state",
+        "users",
+        "onboarding_state IN ('new', 'confirming', 'active')",
+    )
     op.add_column("users", sa.Column("display_name", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
     op.drop_column("users", "display_name")
+    op.drop_constraint("ck_users_onboarding_state", "users", type_="check")
     op.drop_column("users", "onboarding_state")

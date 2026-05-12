@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
+from applycling.db_seed import get_or_create_user_by_telegram
 from applycling.forward_endpoint import (
     handle_active_user_non_url,
     handle_active_user_url,
@@ -416,8 +417,6 @@ async def forward(
     The endpoint owns onboarding state. Hermes forwards one Telegram message
     plus metadata and relays only ``relay_message`` back to the user.
     """
-    from applycling.db_seed import get_or_create_user_by_telegram
-
     telegram_id = body.telegram_id
     chat_id = body.chat_id
     first_name = body.first_name
@@ -508,23 +507,20 @@ async def forward(
             response = handle_new_user_resume(user_id, message_text, first_name)
 
     else:
-        if is_url:
-            if check_active_run():
-                return JSONResponse(
-                    {"relay_message": "A generation is already running."},
-                    status_code=409,
-                )
-            ctx = PipelineContext.from_user_id(user_id, message_text)
-            if not _try_increment_daily_generation(user_id):
-                return JSONResponse(
-                    {"relay_message": "Daily generation limit reached."},
-                    status_code=429,
-                )
-            response = handle_active_user_url(user_id, message_text)
-            token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-            background_tasks.add_task(_run_scoped_pipeline, ctx, token)
-        else:
-            response = handle_active_user_non_url(user_id)
+        return JSONResponse(
+            {
+                "relay_message": (
+                    "I need to reset your onboarding state. "
+                    "Please send your resume again to restart."
+                ),
+                "onboarding_state": "new",
+                "user_id": user_id,
+                "trigger_pipeline": False,
+                "profile_preview": None,
+                "actions": ["restart_onboarding"],
+            },
+            status_code=409,
+        )
 
     return JSONResponse(
         {
@@ -578,8 +574,8 @@ async def onboarding_submit_resume(
     with psycopg.connect(db_url) as conn:
         conn.execute(
             "INSERT INTO users (id, email, onboarding_state, display_name, "
-            "resume, created_at, updated_at) "
-            "VALUES (%s, %s, 'confirming', %s, %s, NOW(), NOW())",
+            "resume, daily_generation_limit, created_at, updated_at) "
+            "VALUES (%s, %s, 'confirming', %s, %s, 10, NOW(), NOW())",
             (user_id, f"web_{user_id}@applycling.local", display_name, resume_text),
         )
         conn.commit()

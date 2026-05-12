@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_address, ip_network
 
 from fastapi import HTTPException, Request
 
@@ -27,7 +28,14 @@ def is_url_like(text: str) -> bool:
 def verify_localhost(request: Request) -> None:
     """Allow forwarding only from the local Hermes gateway."""
     client_host = request.client.host if request.client else ""
-    if client_host not in ("127.0.0.1", "::1"):
+    try:
+        host_ip = ip_address(client_host)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not (
+        host_ip.is_loopback
+        or host_ip in ip_network("::ffff:127.0.0.0/104")
+    ):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 

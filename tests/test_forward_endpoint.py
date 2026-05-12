@@ -64,6 +64,13 @@ def test_verify_localhost_allows_loopback() -> None:
     assert verify_localhost(request) is None
 
 
+def test_verify_localhost_allows_ipv6_mapped_loopback() -> None:
+    request = MagicMock()
+    request.client.host = "::ffff:127.0.0.1"
+
+    assert verify_localhost(request) is None
+
+
 def test_verify_localhost_rejects_non_loopback() -> None:
     request = MagicMock()
     request.client.host = "192.168.1.100"

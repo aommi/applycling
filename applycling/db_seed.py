@@ -138,6 +138,15 @@ def get_or_create_user_by_telegram(
     import psycopg
     import psycopg.rows
 
+    def _as_user_data(row: dict) -> dict:
+        return {
+            "user_id": str(row["id"]),
+            "telegram_id": row["telegram_id"],
+            "chat_id": row["chat_id"],
+            "onboarding_state": row["onboarding_state"] or "new",
+            "display_name": row["display_name"],
+        }
+
     with psycopg.connect(url, row_factory=psycopg.rows.dict_row) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -162,13 +171,8 @@ def get_or_create_user_by_telegram(
                         (chat_id, row["id"]),
                     )
                     resolved_chat_id = chat_id
-                return {
-                    "user_id": str(row["id"]),
-                    "telegram_id": row["telegram_id"],
-                    "chat_id": resolved_chat_id,
-                    "onboarding_state": row["onboarding_state"] or "new",
-                    "display_name": row["display_name"],
-                }
+                row["chat_id"] = resolved_chat_id
+                return _as_user_data(row)
 
             user_id = str(uuid.uuid4())
             cur.execute(
@@ -178,6 +182,12 @@ def get_or_create_user_by_telegram(
                     daily_generation_limit, email, created_at, updated_at
                 )
                 VALUES (%s, %s, %s, %s, 'new', %s, %s, NOW(), NOW())
+                ON CONFLICT (telegram_id) DO UPDATE
+                SET chat_id = COALESCE(users.chat_id, EXCLUDED.chat_id),
+                    display_name = COALESCE(users.display_name, EXCLUDED.display_name),
+                    updated_at = NOW()
+                WHERE users.deleted_at IS NULL
+                RETURNING id, telegram_id, chat_id, onboarding_state, display_name
                 """,
                 (
                     user_id,
@@ -188,10 +198,9 @@ def get_or_create_user_by_telegram(
                     f"tg_{telegram_id}@applycling.local",
                 ),
             )
-            return {
-                "user_id": user_id,
-                "telegram_id": telegram_id,
-                "chat_id": chat_id,
-                "onboarding_state": "new",
-                "display_name": first_name,
-            }
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(
+                    f"User with telegram_id {telegram_id} exists but is deleted"
+                )
+            return _as_user_data(row)

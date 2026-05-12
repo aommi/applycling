@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from applycling.ui import app
+from applycling.ui import routes as ui_routes
 
 
 @pytest.fixture
@@ -224,6 +225,45 @@ _VALID_INTAKE_BODY = {
 _INTAKE_SECRET = "test-secret-123"
 _USER_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
+_VALID_FORWARD_BODY = {
+    "telegram_id": 123456,
+    "chat_id": 789012,
+    "first_name": "Jane",
+    "message_text": "https://example.com/jobs/software-engineer",
+}
+
+
+@pytest.fixture
+def allow_forward_localhost():
+    """Bypass the localhost dependency for route-level forward tests."""
+    app.dependency_overrides[ui_routes._verify_localhost] = lambda: None
+    yield
+    app.dependency_overrides.pop(ui_routes._verify_localhost, None)
+
+
+class _FakePostgresStore:
+    instances: list["_FakePostgresStore"] = []
+
+    def __init__(self, *args, **kwargs):
+        self.saved: list[dict] = []
+        self.profile = {"profile": {}, "resume": "Jane Doe\nEngineer"}
+        self.__class__.instances.append(self)
+
+    def save_user_profile(self, **kwargs) -> None:
+        self.saved.append(kwargs)
+        if "profile" in kwargs:
+            self.profile["profile"] = kwargs["profile"]
+
+    def load_user_profile(self) -> dict:
+        return dict(self.profile)
+
+
+@pytest.fixture
+def fake_postgres_store():
+    _FakePostgresStore.instances = []
+    with patch("applycling.ui.routes.PostgresStore", _FakePostgresStore):
+        yield _FakePostgresStore
+
 
 # ── Secret-bound auth tests ──────────────────────────────────────────
 
@@ -391,3 +431,215 @@ def test_intake_exempted_from_basic_auth(client, monkeypatch):
             headers={"X-Intake-Secret": _INTAKE_SECRET},
         )
     assert response.status_code == 200
+
+
+# ── Forward endpoint (localhost-only Hermes relay) ─────────────────────
+
+def test_forward_rejects_non_localhost(client):
+    """TestClient is not loopback by default, so /api/forward rejects it."""
+    response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+    assert response.status_code == 403
+
+
+def test_forward_422_on_invalid_body(client, allow_forward_localhost):
+    """POST /api/forward validates required Telegram metadata."""
+    response = client.post(
+        "/api/forward",
+        json={"telegram_id": 123456, "message_text": "hello"},
+    )
+    assert response.status_code == 422
+
+
+def test_forward_new_user_resume_moves_to_confirming(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """A new user's non-URL message is stored as resume text."""
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        return_value={
+            "user_id": _USER_ID,
+            "telegram_id": 123456,
+            "chat_id": 789012,
+            "onboarding_state": "new",
+            "display_name": "Jane",
+        },
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "Jane Doe\nEngineer"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["onboarding_state"] == "confirming"
+    assert payload["trigger_pipeline"] is False
+    assert fake_postgres_store.instances[-1].saved[-1]["resume"] == "Jane Doe\nEngineer"
+    assert fake_postgres_store.instances[-1].saved[-1]["onboarding_state"] == "confirming"
+
+
+def test_forward_new_user_url_marks_active_and_dispatches(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """A new user can send a URL first and skip resume onboarding."""
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "new",
+                "display_name": "Jane",
+            },
+        ),
+        patch("applycling.ui.routes.check_active_run", return_value=False),
+        patch("applycling.ui.routes._try_increment_daily_generation", return_value=True),
+        patch("applycling.ui.routes.PipelineContext.from_user_id", return_value="ctx") as mock_ctx,
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["onboarding_state"] == "active"
+    assert payload["trigger_pipeline"] is True
+    assert fake_postgres_store.instances[-1].saved[-1]["onboarding_state"] == "active"
+    mock_ctx.assert_called_once_with(_USER_ID, _VALID_FORWARD_BODY["message_text"])
+    mock_run.assert_called_once()
+
+
+def test_forward_confirming_approval_marks_active(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """Approval text activates a confirming user."""
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        return_value={
+            "user_id": _USER_ID,
+            "telegram_id": 123456,
+            "chat_id": 789012,
+            "onboarding_state": "confirming",
+            "display_name": "Jane",
+        },
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "looks good"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["onboarding_state"] == "active"
+    assert fake_postgres_store.instances[-1].saved[-1] == {"onboarding_state": "active"}
+
+
+def test_forward_confirming_correction_is_preserved(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """Corrections are appended to profile.pending_corrections."""
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        return_value={
+            "user_id": _USER_ID,
+            "telegram_id": 123456,
+            "chat_id": 789012,
+            "onboarding_state": "confirming",
+            "display_name": "Jane",
+        },
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "I am in Vancouver"},
+        )
+
+    assert response.status_code == 200
+    saved_profile = fake_postgres_store.instances[-1].saved[-1]["profile"]
+    assert saved_profile["pending_corrections"] == ["I am in Vancouver"]
+
+
+def test_forward_active_user_url_enforces_active_run_guard(
+    client,
+    allow_forward_localhost,
+):
+    """Active users get a 409 before context creation when a run is active."""
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "active",
+                "display_name": "Jane",
+            },
+        ),
+        patch("applycling.ui.routes._update_chat_id"),
+        patch("applycling.ui.routes.check_active_run", return_value=True),
+        patch("applycling.ui.routes.PipelineContext.from_user_id") as mock_ctx,
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 409
+    assert "already running" in response.json()["relay_message"].lower()
+    mock_ctx.assert_not_called()
+
+
+def test_forward_active_user_url_enforces_daily_cap(
+    client,
+    allow_forward_localhost,
+):
+    """Active users get a 429 after context validation but before dispatch."""
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "active",
+                "display_name": "Jane",
+            },
+        ),
+        patch("applycling.ui.routes._update_chat_id"),
+        patch("applycling.ui.routes.check_active_run", return_value=False),
+        patch("applycling.ui.routes.PipelineContext.from_user_id", return_value="ctx"),
+        patch("applycling.ui.routes._try_increment_daily_generation", return_value=False),
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 429
+    assert "daily generation limit" in response.json()["relay_message"].lower()
+    mock_run.assert_not_called()
+
+
+def test_forward_unknown_onboarding_state_is_safe(
+    client,
+    allow_forward_localhost,
+):
+    """Unexpected states do not fall through to active pipeline behavior."""
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "migrating",
+                "display_name": "Jane",
+            },
+        ),
+        patch("applycling.ui.routes.PipelineContext.from_user_id") as mock_ctx,
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 409
+    assert response.json()["actions"] == ["restart_onboarding"]
+    mock_ctx.assert_not_called()
