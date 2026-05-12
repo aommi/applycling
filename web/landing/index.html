@@ -357,15 +357,26 @@ pip install -e . &amp;&amp; applycling setup</div>
         </a>
       </div>
 
-      <div class="lane" id="waitlist-lane">
+      <div class="lane">
         <div class="lane-badge">early access</div>
-        <h2>Web + Telegram</h2>
-        <p>Hosted workbench, one-click Telegram intake, and pipeline that runs on our servers — not your laptop. Drop your email and we'll invite you when it's ready.</p>
-        <form id="waitlist-form">
+        <h2>Web Workbench</h2>
+        <p>Hosted dashboard, one-click generation, and artifact history — all in your browser. Drop your email and we'll invite you when it's ready.</p>
+        <form class="waitlist-form" data-source="web">
           <input class="email-input" type="email" name="email" placeholder="you@email.com" required autocomplete="email" />
           <button class="submit-btn" type="submit">get on the list</button>
         </form>
-        <p class="form-msg" id="waitlist-msg" aria-live="polite"></p>
+        <p class="form-msg" aria-live="polite"></p>
+      </div>
+
+      <div class="lane">
+        <div class="lane-badge">early access</div>
+        <h2>Telegram Bot</h2>
+        <p>Forward a job link from your phone, get a package back. No laptop, no terminal. Drop your email and we'll DM you when your spot opens.</p>
+        <form class="waitlist-form" data-source="telegram">
+          <input class="email-input" type="email" name="email" placeholder="you@email.com" required autocomplete="email" />
+          <button class="submit-btn" type="submit">get on the list</button>
+        </form>
+        <p class="form-msg" aria-live="polite"></p>
       </div>
     </div>
 
@@ -378,37 +389,40 @@ pip install -e . &amp;&amp; applycling setup</div>
 
   <script>
     const WAITLIST_URL = 'https://script.google.com/macros/s/AKfycbybDU-Jxsl3zqnOatw3ystcdbF3II93KfEfu9dHNFyQ7mbZpVIvEITOVQof4GAb_3MN-g/exec';
-    const form = document.getElementById('waitlist-form');
-    const msg = document.getElementById('waitlist-msg');
-    const btn = form.querySelector('.submit-btn');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = form.email.value.trim();
-      if (!email) return;
+    document.querySelectorAll('.waitlist-form').forEach(form => {
+      const msg = form.nextElementSibling;
+      const btn = form.querySelector('.submit-btn');
+      const source = form.dataset.source;
 
-      btn.disabled = true;
-      btn.textContent = '...';
-      msg.className = 'form-msg';
-      msg.textContent = '';
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = form.email.value.trim();
+        if (!email) return;
 
-      try {
-        const res = await fetch(WAITLIST_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, source: 'landing' }),
-        });
-        if (!res.ok) throw new Error(res.status);
-        msg.className = 'form-msg success';
-        msg.textContent = "You're on the list! We'll be in touch.";
-        form.reset();
-      } catch (err) {
-        msg.className = 'form-msg error';
-        msg.textContent = 'Something went wrong. Try again or DM us.';
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'get on the list';
-      }
+        btn.disabled = true;
+        btn.textContent = '...';
+        msg.className = 'form-msg';
+        msg.textContent = '';
+
+        try {
+          const res = await fetch(WAITLIST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, source }),
+          });
+          if (!res.ok) throw new Error(res.status);
+          msg.className = 'form-msg success';
+          msg.textContent = "You're on the list! We'll be in touch.";
+          form.reset();
+        } catch (err) {
+          msg.className = 'form-msg error';
+          msg.textContent = 'Something went wrong. Try again or DM us.';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'get on the list';
+        }
+      });
     });
   </script>
 </body>
