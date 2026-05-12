@@ -414,6 +414,6 @@ session isolation under load and consider replacing the personal Hermes gateway
 with a dedicated webhook service.
 
 **Affects:** `docs/deploy/hermes_forwarding_template.md`,
-`scripts/setup_hermes_telegram.sh`, `applycling/ui/routes.py`,
-`applycling/ui/__init__.py`, `memory/semantic.md`,
+`scripts/setup_hermes_telegram.sh`, `scripts/setup_hosted_hermes.sh`,
+`applycling/ui/routes.py`, `applycling/ui/__init__.py`, `memory/semantic.md`,
 `docs/deploy/HOSTED_HERMES.md`

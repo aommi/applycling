@@ -15,11 +15,11 @@ Use the terminal tool to POST to the forwarding endpoint:
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/forward \
   -H "Content-Type: application/json" \
-  -d '{"telegram_id": USER_TELEGRAM_ID, "chat_id": USER_CHAT_ID, "first_name": "USER_FIRST_NAME", "message_text": "MESSAGE_HERE"}'
+  -d '{"telegram_id": 123456789, "chat_id": 123456789, "first_name": "Jane", "message_text": "MESSAGE_HERE"}'
 ```
 
-The USER_TELEGRAM_ID, USER_CHAT_ID, and USER_FIRST_NAME values come from the
-Telegram message you received. Extract them from the message metadata.
+Replace the sample `telegram_id`, `chat_id`, `first_name`, and `message_text`
+values with the current Telegram message metadata and text.
 
 ## Response handling
 
