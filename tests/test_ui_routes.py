@@ -564,6 +564,41 @@ def test_forward_confirming_correction_is_preserved(
     assert saved_profile["pending_corrections"] == ["I am in Vancouver"]
 
 
+def test_forward_confirming_corrections_are_capped(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """Only the most recent pending corrections are retained."""
+    existing = [f"old {idx}" for idx in range(10)]
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        return_value={
+            "user_id": _USER_ID,
+            "telegram_id": 123456,
+            "chat_id": 789012,
+            "onboarding_state": "confirming",
+            "display_name": "Jane",
+        },
+    ):
+        store = fake_postgres_store
+        original_init = store.__init__
+
+        def _init_with_existing(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            self.profile = {"profile": {"pending_corrections": existing}}
+
+        with patch.object(store, "__init__", _init_with_existing):
+            response = client.post(
+                "/api/forward",
+                json={**_VALID_FORWARD_BODY, "message_text": "new correction"},
+            )
+
+    assert response.status_code == 200
+    saved_profile = fake_postgres_store.instances[-1].saved[-1]["profile"]
+    assert saved_profile["pending_corrections"] == existing[1:] + ["new correction"]
+
+
 def test_forward_active_user_url_enforces_active_run_guard(
     client,
     allow_forward_localhost,
@@ -643,3 +678,61 @@ def test_forward_unknown_onboarding_state_is_safe(
     assert response.status_code == 409
     assert response.json()["actions"] == ["restart_onboarding"]
     mock_ctx.assert_not_called()
+
+
+def test_forward_soft_deleted_user_returns_bounded_error(
+    client,
+    allow_forward_localhost,
+):
+    """Soft-deleted Telegram rows do not surface raw exceptions to Hermes."""
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        side_effect=ValueError("User with telegram_id 123456 exists but is deleted"),
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 409
+    assert "previously removed" in response.json()["relay_message"]
+
+
+# ── Web onboarding auth/token safety ───────────────────────────────────
+
+def test_onboarding_routes_are_not_basic_auth_exempt():
+    """Web onboarding stays behind Basic Auth in hosted mode."""
+    from applycling.ui import _UNAUTH_ROUTES
+
+    assert "/onboarding" not in _UNAUTH_ROUTES
+    assert "/onboarding/submit-resume" not in _UNAUTH_ROUTES
+    assert "/onboarding/confirm" not in _UNAUTH_ROUTES
+
+
+def test_onboarding_token_round_trip(monkeypatch):
+    monkeypatch.setenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", "test-secret")
+    token = ui_routes._sign_onboarding_user_id(_USER_ID)
+
+    assert ui_routes._verify_onboarding_token(token) == _USER_ID
+
+
+def test_onboarding_token_rejects_tampering(monkeypatch):
+    monkeypatch.setenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", "test-secret")
+    token = ui_routes._sign_onboarding_user_id(_USER_ID)
+
+    with pytest.raises(Exception):
+        ui_routes._verify_onboarding_token(token + "tampered")
+
+
+def test_onboarding_confirm_rejects_missing_or_invalid_token(client, monkeypatch):
+    monkeypatch.setenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", "test-secret")
+
+    response = client.get("/onboarding/confirm?token=not-valid")
+    assert response.status_code == 403
+
+
+def test_onboarding_post_rejects_invalid_token(client, monkeypatch):
+    monkeypatch.setenv("APPLYCLING_ONBOARDING_TOKEN_SECRET", "test-secret")
+
+    response = client.post(
+        "/onboarding/confirm",
+        data={"token": "not-valid", "display_name": "Jane Doe"},
+    )
+    assert response.status_code == 403

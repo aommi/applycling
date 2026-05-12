@@ -6,6 +6,8 @@ All routes call applycling.jobs_service functions — never raw DB.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import hmac
 import os
 from pathlib import Path
@@ -18,6 +20,7 @@ from pydantic import BaseModel, HttpUrl
 from applycling import jobs_service
 from applycling.db_seed import get_or_create_user_by_telegram
 from applycling.forward_endpoint import (
+    APPROVAL_KEYWORDS,
     handle_active_user_non_url,
     handle_active_user_url,
     handle_confirming_approval,
@@ -336,6 +339,51 @@ def _try_increment_daily_generation(user_id: str) -> bool:
 _verify_localhost = verify_localhost
 
 
+def _onboarding_token_secret() -> str:
+    """Return the server-only secret used to sign web onboarding tokens."""
+    secret = (
+        os.environ.get("APPLYCLING_ONBOARDING_TOKEN_SECRET")
+        or os.environ.get("APPLYCLING_UI_AUTH_PASSWORD")
+        or os.environ.get("APPLYCLING_INTAKE_SECRET")
+    )
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Onboarding token secret is not configured",
+        )
+    return secret
+
+
+def _sign_onboarding_user_id(user_id: str) -> str:
+    """Create a tamper-resistant token for the web onboarding confirmation step."""
+    encoded = base64.urlsafe_b64encode(user_id.encode()).decode().rstrip("=")
+    sig = hmac.new(
+        _onboarding_token_secret().encode(),
+        user_id.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{encoded}.{sig}"
+
+
+def _verify_onboarding_token(token: str) -> str:
+    """Return the signed user_id or reject tampered web onboarding tokens."""
+    try:
+        encoded, sig = token.split(".", 1)
+        padded = encoded + "=" * (-len(encoded) % 4)
+        user_id = base64.urlsafe_b64decode(padded.encode()).decode()
+    except Exception:
+        raise HTTPException(status_code=403, detail="Invalid onboarding token")
+
+    expected = hmac.new(
+        _onboarding_token_secret().encode(),
+        user_id.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise HTTPException(status_code=403, detail="Invalid onboarding token")
+    return user_id
+
+
 # ── Intake route ──────────────────────────────────────────────────────
 
 @router.post("/api/intake")
@@ -423,13 +471,36 @@ async def forward(
     message_text = body.message_text
     is_url = is_url_like(message_text)
 
-    user_data = get_or_create_user_by_telegram(
-        telegram_id=telegram_id,
-        chat_id=chat_id,
-        first_name=first_name,
-    )
+    try:
+        user_data = get_or_create_user_by_telegram(
+            telegram_id=telegram_id,
+            chat_id=chat_id,
+            first_name=first_name,
+        )
+    except ValueError as exc:
+        if "exists but is deleted" in str(exc):
+            return JSONResponse(
+                {
+                    "relay_message": (
+                        "This Telegram account was previously removed. "
+                        "Ask the applycling admin to restore access."
+                    )
+                },
+                status_code=409,
+            )
+        raise HTTPException(status_code=503, detail="Forwarding is not configured")
     user_id = user_data["user_id"]
     current_state = user_data["onboarding_state"]
+    store: PostgresStore | None = None
+
+    def _store() -> PostgresStore:
+        nonlocal store
+        if store is None:
+            store = PostgresStore(
+                user_id=user_id,
+                database_url=os.environ.get("DATABASE_URL"),
+            )
+        return store
 
     if current_state == "active":
         if is_url:
@@ -453,25 +524,18 @@ async def forward(
 
     elif current_state == "confirming":
         msg = message_text.strip().lower()
-        if msg in ("looks good", "approved", "looks right", "done", "yes", "confirm"):
+        if msg in APPROVAL_KEYWORDS:
             response = handle_confirming_approval(user_id)
-            store = PostgresStore(
-                user_id=user_id,
-                database_url=os.environ.get("DATABASE_URL"),
-            )
-            store.save_user_profile(onboarding_state="active")
+            _store().save_user_profile(onboarding_state="active")
         else:
             response = handle_confirming_correction(user_id, message_text)
-            store = PostgresStore(
-                user_id=user_id,
-                database_url=os.environ.get("DATABASE_URL"),
-            )
-            current = store.load_user_profile()
+            current = _store().load_user_profile()
             profile = current.get("profile") or {}
             pending = list(profile.get("pending_corrections") or [])
             pending.append(message_text)
+            pending = pending[-10:]
             profile["pending_corrections"] = pending
-            store.save_user_profile(profile=profile)
+            _store().save_user_profile(profile=profile)
 
     elif current_state == "new":
         if is_url:
@@ -487,19 +551,11 @@ async def forward(
                     status_code=429,
                 )
             response = handle_new_user_url(user_id, message_text, first_name)
-            store = PostgresStore(
-                user_id=user_id,
-                database_url=os.environ.get("DATABASE_URL"),
-            )
-            store.save_user_profile(onboarding_state="active")
+            _store().save_user_profile(onboarding_state="active")
             token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
             background_tasks.add_task(_run_scoped_pipeline, ctx, token)
         else:
-            store = PostgresStore(
-                user_id=user_id,
-                database_url=os.environ.get("DATABASE_URL"),
-            )
-            store.save_user_profile(
+            _store().save_user_profile(
                 resume=message_text,
                 display_name=first_name,
                 onboarding_state="confirming",
@@ -567,8 +623,6 @@ async def onboarding_submit_resume(
             detail="Postgres DATABASE_URL is required for onboarding",
         )
 
-    lines = resume_text.strip().splitlines()
-    display_name = lines[0].strip() if lines else ""
     user_id = str(uuid.uuid4())
 
     with psycopg.connect(db_url) as conn:
@@ -576,12 +630,12 @@ async def onboarding_submit_resume(
             "INSERT INTO users (id, email, onboarding_state, display_name, "
             "resume, daily_generation_limit, created_at, updated_at) "
             "VALUES (%s, %s, 'confirming', %s, %s, 10, NOW(), NOW())",
-            (user_id, f"web_{user_id}@applycling.local", display_name, resume_text),
+            (user_id, f"web_{user_id}@applycling.local", "", resume_text),
         )
         conn.commit()
 
     return RedirectResponse(
-        f"/onboarding/confirm?user_id={user_id}",
+        f"/onboarding/confirm?token={_sign_onboarding_user_id(user_id)}",
         status_code=303,
     )
 
@@ -589,7 +643,8 @@ async def onboarding_submit_resume(
 @router.get("/onboarding/confirm", response_class=HTMLResponse)
 async def onboarding_confirm(request: Request) -> HTMLResponse:
     """Show the consolidated profile confirmation screen."""
-    user_id = request.query_params.get("user_id", "")
+    token = request.query_params.get("token", "")
+    user_id = _verify_onboarding_token(token) if token else ""
     db_url = os.environ.get("DATABASE_URL")
     resume_text = ""
 
@@ -598,10 +653,9 @@ async def onboarding_confirm(request: Request) -> HTMLResponse:
         stored = store.load_user_profile()
         resume_text = stored.get("resume", "")
 
-    lines = resume_text.strip().splitlines() if resume_text else []
     profile = {
-        "user_id": user_id,
-        "display_name": lines[0].strip() if lines else "",
+        "token": token,
+        "display_name": "",
         "email": "",
         "phone": "",
         "location": "",
@@ -622,7 +676,7 @@ async def onboarding_confirm(request: Request) -> HTMLResponse:
 @router.post("/onboarding/confirm")
 async def onboarding_save_profile(
     request: Request,  # noqa: ARG001
-    user_id: str = Form(""),
+    token: str = Form(""),
     display_name: str = Form(...),
     email: str = Form(""),
     phone: str = Form(""),
@@ -632,6 +686,7 @@ async def onboarding_save_profile(
 ) -> RedirectResponse:
     """Save confirmed profile fields and mark onboarding active."""
     db_url = os.environ.get("DATABASE_URL")
+    user_id = _verify_onboarding_token(token) if token else ""
     if user_id and db_url:
         store = PostgresStore(user_id=user_id, database_url=db_url)
         store.save_user_profile(

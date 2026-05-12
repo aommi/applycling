@@ -71,6 +71,14 @@ def test_verify_localhost_allows_ipv6_mapped_loopback() -> None:
     assert verify_localhost(request) is None
 
 
+def test_verify_localhost_allows_configured_docker_gateway(monkeypatch) -> None:
+    monkeypatch.setenv("APPLYCLING_FORWARD_ALLOWED_SOURCES", "172.30.0.1")
+    request = MagicMock()
+    request.client.host = "172.30.0.1"
+
+    assert verify_localhost(request) is None
+
+
 def test_verify_localhost_rejects_non_loopback() -> None:
     request = MagicMock()
     request.client.host = "192.168.1.100"

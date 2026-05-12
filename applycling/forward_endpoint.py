@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from ipaddress import ip_address, ip_network
 
 from fastapi import HTTPException, Request
+
+APPROVAL_KEYWORDS = frozenset(
+    {"looks good", "approved", "looks right", "done", "yes", "confirm"}
+)
+_DEFAULT_ALLOWED_FORWARD_SOURCES = ("127.0.0.1", "::1", "::ffff:127.0.0.0/104")
+_CORRECTION_ECHO_LIMIT = 240
 
 
 @dataclass
@@ -26,17 +33,26 @@ def is_url_like(text: str) -> bool:
 
 
 def verify_localhost(request: Request) -> None:
-    """Allow forwarding only from the local Hermes gateway."""
+    """Allow forwarding only from loopback or explicitly trusted host sources."""
     client_host = request.client.host if request.client else ""
     try:
         host_ip = ip_address(client_host)
     except ValueError:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if not (
-        host_ip.is_loopback
-        or host_ip in ip_network("::ffff:127.0.0.0/104")
-    ):
-        raise HTTPException(status_code=403, detail="Forbidden")
+
+    raw_extra = os.environ.get("APPLYCLING_FORWARD_ALLOWED_SOURCES", "")
+    allowed = list(_DEFAULT_ALLOWED_FORWARD_SOURCES)
+    allowed.extend(part.strip() for part in raw_extra.split(",") if part.strip())
+
+    for entry in allowed:
+        try:
+            network = ip_network(entry, strict=False)
+        except ValueError:
+            continue
+        if host_ip in network:
+            return
+
+    raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def handle_new_user_resume(
@@ -92,9 +108,12 @@ def handle_confirming_correction(
     correction: str,
 ) -> ForwardResponse:
     """Handle a raw correction from a confirming user."""
+    echo = correction.strip()
+    if len(echo) > _CORRECTION_ECHO_LIMIT:
+        echo = echo[:_CORRECTION_ECHO_LIMIT].rstrip() + "..."
     return ForwardResponse(
         relay_message=(
-            f"Got it - noted: {correction}. "
+            f"Got it - noted: {echo}. "
             "I've saved that correction. Anything else to fix, or say 'looks good'?"
         ),
         onboarding_state="confirming",
@@ -116,7 +135,7 @@ def handle_active_user_url(
     )
 
 
-def handle_active_user_non_url(user_id: str = "") -> ForwardResponse:
+def handle_active_user_non_url(user_id: str) -> ForwardResponse:
     """Handle non-URL text from an active user."""
     return ForwardResponse(
         relay_message="Send me a job URL and I'll get to work!",
