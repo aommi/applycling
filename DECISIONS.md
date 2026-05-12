@@ -417,3 +417,57 @@ with a dedicated webhook service.
 `scripts/setup_hermes_telegram.sh`, `scripts/setup_hosted_hermes.sh`,
 `applycling/ui/routes.py`, `applycling/ui/__init__.py`, `memory/semantic.md`,
 `docs/deploy/HOSTED_HERMES.md`
+
+---
+
+## 2026-05-12 — Docker Bridge Gateway Allowlist For Host Hermes
+
+**Decision:** `/api/forward` accepts loopback **plus** any source listed in
+`APPLYCLING_FORWARD_ALLOWED_SOURCES`. `docker-compose.prod.yml` pins the bridge
+subnet `172.30.0.0/24`, gateway `172.30.0.1`, and defaults the env var to that
+gateway IP.
+
+**Reasoning:** The original `verify_localhost()` rejected anything except
+`127.0.0.1`/`::1`. In production the app runs in a Docker container behind
+userland-proxy, so host-installed Hermes hitting `127.0.0.1:8080` arrives in
+the container with the Docker bridge gateway as `request.client.host`, not
+loopback — every real Hermes call would have 403'd. Pinning the subnet/gateway
+in compose gives a stable, narrow allowlist that doesn't depend on Docker's
+auto-assigned IPs. The env var keeps the allowlist editable without rebuilding.
+
+**When to revisit:** If we move to `network_mode: host`, switch to a
+shared-secret header, or front Hermes with a reverse proxy that injects
+trusted headers. Also revisit if compose's IPAM block becomes brittle across
+Docker versions.
+
+**Affects:** `applycling/forward_endpoint.py`, `docker-compose.prod.yml`,
+`docs/deploy/DEPLOY.md`, `docs/deploy/hermes_forwarding_template.md`
+
+---
+
+## 2026-05-12 — Signed HMAC Tokens For Web Onboarding (No User Auth)
+
+**Decision:** Web onboarding (`/onboarding/submit-resume` →
+`/onboarding/confirm`) uses server-side HMAC-SHA256 tokens to bind a session
+to a `users.id` rather than passing raw `user_id` in URL/form fields. Tokens
+are signed with a server-only secret resolved from
+`APPLYCLING_ONBOARDING_TOKEN_SECRET` (or fallbacks). Empty or invalid tokens
+return 403 on both GET and POST.
+
+**Reasoning:** During web onboarding the user has no account yet, so we can't
+require session auth. Raw `user_id` in `?user_id=` URLs (the first cut) was an
+IDOR — anyone could read or overwrite any user's onboarding profile. Signed
+tokens close that gap without introducing pre-account login. The whole
+`/onboarding/*` surface still sits behind `BasicAuthMiddleware` for hosted
+mode, which is why a single shared signing secret is acceptable in alpha.
+
+**Trade-offs:**
+- Token never expires (acceptable: flow takes minutes, sits behind BasicAuth).
+- Secret may fall back to UI auth password (low entropy) — flagged in
+  `memory/working.md` Deferred.
+
+**When to revisit:** When web auth (Phase 2) ships, replace token with session.
+For GA, drop the secret fallback chain and require a dedicated env var.
+
+**Affects:** `applycling/ui/routes.py`, `applycling/ui/templates/confirm.html`,
+`tests/test_ui_routes.py`
