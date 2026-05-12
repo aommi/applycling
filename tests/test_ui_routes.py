@@ -12,8 +12,14 @@ from applycling.ui import routes as ui_routes
 
 
 @pytest.fixture
-def client():
-    """Return a TestClient for the applycling workbench app."""
+def client(monkeypatch):
+    """Return a TestClient for the applycling workbench app.
+    
+    Auth is disabled by default for route-level testing.  Auth-specific tests
+    build their own app instances with session middleware enabled.
+    """
+    monkeypatch.setenv("APPLYCLING_NO_AUTH", "true")
+    monkeypatch.setenv("APPLYCLING_SESSION_SECRET", "test-secret")
     return TestClient(app)
 
 
@@ -136,99 +142,74 @@ def test_regenerate_does_not_change_status_when_guard_blocks(client):
     mock_set.assert_not_called()
 # ── Auth middleware ─────────────────────────────────────────────────────
 
-
-def test_auth_401_without_credentials(monkeypatch, client):
-    """Workbench returns 401 when auth is configured and no credentials sent."""
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
-    # Force middleware re-init by creating a fresh app.
-    from applycling.ui import BasicAuthMiddleware
+def test_session_redirects_to_login_without_cookie():
+    """Unauthenticated requests redirect to /login."""
+    from applycling.ui import SessionMiddleware
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    # Build a test app with auth enabled.
     test_app = FastAPI()
-    test_app.add_middleware(
-        BasicAuthMiddleware,
-    )
+    test_app.add_middleware(SessionMiddleware)
 
     @test_app.get("/")
     def _root() -> dict:
         return {"ok": True}
 
     tc = TestClient(test_app)
-    response = tc.get("/")
-    assert response.status_code == 401
-    assert "WWW-Authenticate" in response.headers
+    response = tc.get("/", follow_redirects=False)
+    assert response.status_code == 303
+    assert "/login" in response.headers["location"]
 
 
-def test_auth_200_with_valid_credentials(monkeypatch):
-    """Workbench returns 200 when valid Basic Auth credentials are sent."""
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+def test_session_allows_with_valid_cookie(monkeypatch):
+    """Requests with a valid session cookie pass through."""
+    monkeypatch.setenv("APPLYCLING_SESSION_SECRET", "test-secret")
 
-    from applycling.ui import BasicAuthMiddleware
+    from applycling.auth import create_session_token, verify_session_token
+
+    token = create_session_token("test-user-id")
+    assert verify_session_token(token) == "test-user-id"
+    assert verify_session_token("tampered.payload") is None
+
+
+def test_session_rejects_tampered_cookie(monkeypatch):
+    """Tampered session cookies redirect to /login."""
+    monkeypatch.setenv("APPLYCLING_SESSION_SECRET", "test-secret")
+
+    from applycling.ui import SessionMiddleware
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     test_app = FastAPI()
-    test_app.add_middleware(BasicAuthMiddleware)
+    test_app.add_middleware(SessionMiddleware)
 
     @test_app.get("/")
     def _root() -> dict:
         return {"ok": True}
 
     tc = TestClient(test_app)
-    import base64
-
-    creds = base64.b64encode(b"admin:secret").decode()
-    response = tc.get("/", headers={"Authorization": f"Basic {creds}"})
-    assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    tc.cookies["applycling_session"] = "tampered.payload"
+    response = tc.get("/", follow_redirects=False)
+    assert response.status_code == 303
 
 
-def test_healthz_exempted_from_auth(monkeypatch):
-    """GET /healthz returns 200 without auth even when credentials are set."""
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+def test_no_auth_env_bypasses_session(monkeypatch):
+    """APPLYCLING_NO_AUTH=true disables session checks."""
+    monkeypatch.setenv("APPLYCLING_NO_AUTH", "true")
 
-    from applycling.ui import BasicAuthMiddleware
+    from applycling.ui import SessionMiddleware
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     test_app = FastAPI()
-    test_app.add_middleware(BasicAuthMiddleware)
-
-    @test_app.get("/healthz")
-    def _healthz() -> dict:
-        return {"status": "ok"}
-
-    tc = TestClient(test_app)
-    response = tc.get("/healthz")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-
-
-def test_no_auth_env_bypasses_auth(monkeypatch):
-    """APPLYCLING_NO_AUTH=1 disables auth even when credentials are configured."""
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
-    monkeypatch.setenv("APPLYCLING_NO_AUTH", "1")
-
-    from applycling.ui import BasicAuthMiddleware
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    test_app = FastAPI()
-    test_app.add_middleware(BasicAuthMiddleware)
+    test_app.add_middleware(SessionMiddleware)
 
     @test_app.get("/")
     def _root() -> dict:
         return {"ok": True}
 
     tc = TestClient(test_app)
-    # No auth header — should pass because NO_AUTH is set.
-    response = tc.get("/")
+    response = tc.get("/")  # no cookie, no redirect
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 # ── Intake endpoint (multi-tenant, secret-bound) ─────────────────────────
@@ -420,10 +401,8 @@ def test_intake_422_on_invalid_url(client):
 
 # ── Auth exemption test ──────────────────────────────────────────────
 
-def test_intake_exempted_from_basic_auth(client, monkeypatch):
-    """POST /api/intake succeeds without Basic Auth headers."""
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_USER", "admin")
-    monkeypatch.setenv("APPLYCLING_UI_AUTH_PASSWORD", "secret")
+def test_intake_exempted_from_auth(client):
+    """POST /api/intake succeeds without auth headers (in _UNAUTH_ROUTES)."""
 
     with (
         patch(
@@ -713,12 +692,12 @@ def test_forward_soft_deleted_user_returns_bounded_error(
 
 # ── Web onboarding auth/token safety ───────────────────────────────────
 
-def test_onboarding_routes_are_not_basic_auth_exempt():
-    """Web onboarding stays behind Basic Auth in hosted mode."""
+def test_onboarding_routes_auth_exemptions() -> None:
+    """Submit-resume is unauthenticated (new users); confirm stays behind auth."""
     from applycling.ui import _UNAUTH_ROUTES
 
+    assert "/onboarding/submit-resume" in _UNAUTH_ROUTES
     assert "/onboarding" not in _UNAUTH_ROUTES
-    assert "/onboarding/submit-resume" not in _UNAUTH_ROUTES
     assert "/onboarding/confirm" not in _UNAUTH_ROUTES
 
 

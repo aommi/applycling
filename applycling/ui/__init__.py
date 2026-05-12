@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import base64
 import os
-import secrets
 
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -22,17 +20,19 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # ── Auth middleware ─────────────────────────────────────────────────────
 
 _UNAUTH_ROUTES: frozenset[str] = frozenset(
-    {"/healthz", "/api/intake", "/api/forward"}
+    {"/healthz", "/api/intake", "/api/forward", "/login", "/onboarding/submit-resume"}
 )
 
 
-class BasicAuthMiddleware(BaseHTTPMiddleware):
-    """Simple personal auth gate for the hosted workbench.
+class SessionMiddleware(BaseHTTPMiddleware):
+    """Per-user session auth for the hosted workbench.
 
     - Auth is ON by default in hosted mode (fail closed).
-    - Local dev bypass via ``APPLYCLING_NO_AUTH`` env var (NOT IP-based).
-    - Credentials from ``APPLYCLING_UI_AUTH_USER`` / ``APPLYCLING_UI_AUTH_PASSWORD``.
-    - ``/healthz``, ``/api/intake``, and ``/api/forward`` are exempted from auth.
+    - Local dev bypass via ``APPLYCLING_NO_AUTH`` env var.
+    - Sessions are HMAC-signed cookies (``applycling_session``).
+    - Unauthenticated requests redirect to ``/login``.
+    - ``/healthz``, ``/api/intake``, ``/api/forward``, ``/login``, and
+      ``/onboarding/submit-resume`` are exempted from auth.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -40,13 +40,12 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         self._is_auth_disabled = bool(
             os.environ.get("APPLYCLING_NO_AUTH", "").strip()
         )
-        self._expected_user = os.environ.get("APPLYCLING_UI_AUTH_USER", "")
-        self._expected_password = os.environ.get(
-            "APPLYCLING_UI_AUTH_PASSWORD", ""
-        )
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Static files and templates don't go through the middleware.
+        from applycling.auth import verify_session_token
+        from urllib.parse import quote
+
+        # Static files don't go through the middleware.
         if request.url.path.startswith("/static/"):
             return await call_next(request)
 
@@ -54,43 +53,30 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if self._is_auth_disabled:
             return await call_next(request)
 
-        # Exempt liveness and intake endpoints.
+        # Exempt liveness, intake, forwarding, login, and onboarding submit.
         if request.url.path in _UNAUTH_ROUTES:
             return await call_next(request)
 
-        # Require credentials in hosted mode.
-        if not self._expected_user or not self._expected_password:
-            # No credentials configured — allow unauthenticated access
-            # (local dev, tests, or misconfigured hosted).
-            return await call_next(request)
+        # Check session cookie.
+        session = request.cookies.get("applycling_session", "")
+        if session:
+            user_id = verify_session_token(session)
+            if user_id:
+                request.state.user_id = user_id
+                return await call_next(request)
 
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Basic "):
-            return self._auth_required_response()
+        # Not authenticated — redirect to login.
+        from fastapi.responses import RedirectResponse
 
-        try:
-            decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-            user, _, password = decoded.partition(":")
-        except Exception:
-            return self._auth_required_response()
-
-        if not secrets.compare_digest(user, self._expected_user):
-            return self._auth_required_response()
-        if not secrets.compare_digest(password, self._expected_password):
-            return self._auth_required_response()
-
-        return await call_next(request)
-
-    @staticmethod
-    def _auth_required_response() -> Response:
-        return Response(
-            content="Authentication required",
-            status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="applycling"'},
+        next_url = quote(str(request.url.path), safe="")
+        if request.url.query:
+            next_url += "?" + request.url.query
+        return RedirectResponse(
+            f"/login?next={next_url}", status_code=303,
         )
 
 
-app.add_middleware(BasicAuthMiddleware)
+app.add_middleware(SessionMiddleware)
 
 
 # ── Startup validation ──────────────────────────────────────────────────
@@ -100,7 +86,7 @@ def _validate_hosted_secrets() -> None:
     missing or misconfigured.
 
     Checks:
-    - Both UI auth credentials must be set (not just one).
+    - APPLYCLING_SESSION_SECRET must be set.
     - APPLYCLING_NO_AUTH must not be set in Postgres mode (prod bypass).
     - APPLYCLING_INTAKE_SECRET must be set.
 
@@ -114,17 +100,8 @@ def _validate_hosted_secrets() -> None:
 
     missing: list[str] = []
 
-    user = os.environ.get("APPLYCLING_UI_AUTH_USER", "").strip()
-    password = os.environ.get("APPLYCLING_UI_AUTH_PASSWORD", "").strip()
-
-    # Both must be set — partial config is a misconfiguration.
-    if not user and not password:
-        missing.append("APPLYCLING_UI_AUTH_USER")
-        missing.append("APPLYCLING_UI_AUTH_PASSWORD")
-    elif not user:
-        missing.append("APPLYCLING_UI_AUTH_USER")
-    elif not password:
-        missing.append("APPLYCLING_UI_AUTH_PASSWORD")
+    if not os.environ.get("APPLYCLING_SESSION_SECRET", "").strip():
+        missing.append("APPLYCLING_SESSION_SECRET")
 
     # NO_AUTH is a dev convenience — refuse it in production.
     no_auth = os.environ.get("APPLYCLING_NO_AUTH", "").strip()

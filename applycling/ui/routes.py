@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
@@ -35,6 +35,7 @@ from applycling.statuses import STATUS_VALUES, status_color, status_label, job_a
 from applycling.telegram_notify import notify_error_to_user
 from applycling.tracker import check_active_run
 from applycling.tracker.postgres_store import PostgresStore
+from applycling.auth import create_session_token, verify_password
 
 router = APIRouter()
 
@@ -106,12 +107,152 @@ def _on_pipeline_done(task: asyncio.Task) -> None:
         )
 
 
+# ── Login ───────────────────────────────────────────────────────────────
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request) -> HTMLResponse:
+    """Show the login form."""
+    return templates.TemplateResponse(request, "login.html", {})
+
+
+@router.post("/login", response_model=None)
+async def login_submit(
+    request: Request,
+    email: str = Form(""),
+    password: str = Form(""),
+) -> Response:
+    """Validate credentials and set a signed session cookie."""
+    error = "Invalid email or password."
+
+    if not email or not password:
+        return templates.TemplateResponse(
+            request, "login.html", {"error": error, "email": email}, status_code=401,
+        )
+
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return templates.TemplateResponse(
+            request, "login.html", {"error": error, "email": email}, status_code=401,
+        )
+
+    store = PostgresStore(user_id="00000000-0000-0000-0000-000000000001", database_url=db_url)
+    with store._conn() as conn:
+        row = conn.execute(
+            "SELECT id, password_hash FROM users WHERE email = %s AND deleted_at IS NULL",
+            (email,),
+        ).fetchone()
+
+    if row is None or row["password_hash"] is None:
+        return templates.TemplateResponse(
+            request, "login.html", {"error": error, "email": email}, status_code=401,
+        )
+
+    if not verify_password(password, row["password_hash"]):
+        return templates.TemplateResponse(
+            request, "login.html", {"error": error, "email": email}, status_code=401,
+        )
+
+    token = create_session_token(str(row["id"]))
+    next_url = request.query_params.get("next", "/")
+
+    response = RedirectResponse(next_url, status_code=303)
+    response.set_cookie(
+        "applycling_session",
+        token,
+        httponly=True,
+        secure=os.environ.get("APPLYCLING_SECURE_COOKIES", "true").lower() != "false",
+        samesite="lax",
+        path="/",
+        max_age=86400 * 30,  # 30 days
+    )
+    return response
+
+
+# ── Admin ────────────────────────────────────────────────────────────────
+
+def _is_admin(request: Request) -> bool:
+    """Return True if the current user is the configured admin."""
+    admin_id = os.environ.get("APPLYCLING_ADMIN_USER_ID", "").strip()
+    user_id = _current_user_id(request)
+    return bool(admin_id and user_id and user_id == admin_id)
+
+
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request) -> HTMLResponse:
+    """Admin: invite alpha users."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return templates.TemplateResponse(request, "admin.html", {
+        "admin_id": _current_user_id(request),
+    })
+
+
+class InviteBody(BaseModel):
+    email: str
+    display_name: str | None = None
+
+
+@router.post("/admin/invite")
+async def admin_invite(
+    request: Request,
+    body: InviteBody,
+) -> JSONResponse:
+    """Create a new user with a password. Admin-only."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    import uuid
+    import secrets as _secrets
+    import psycopg
+
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise HTTPException(status_code=503, detail="DATABASE_URL not configured")
+
+    from applycling.auth import hash_password
+
+    user_id = str(uuid.uuid4())
+    password = _secrets.token_urlsafe(12)
+    password_hash = hash_password(password)
+
+    email_addr = body.email.strip().lower()
+    display_name = (body.display_name or "").strip() or email_addr.split("@")[0]
+
+    with psycopg.connect(db_url) as conn:
+        conn.execute(
+            "INSERT INTO users (id, email, display_name, password_hash, onboarding_state, "
+            "daily_generation_limit, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, 'active', 10, NOW(), NOW())",
+            (user_id, email_addr, display_name, password_hash),
+        )
+
+    return JSONResponse({
+        "user_id": user_id,
+        "email": email_addr,
+        "password": password,
+        "login_url": f"https://app.applycling.com/login",
+    })
+
+
+# ── Current user helper ────────────────────────────────────────────────
+
+def _current_user_id(request: Request) -> str | None:
+    """Return the authenticated user_id from the session, or None.
+
+    In local dev (APPLYCLING_NO_AUTH), the session middleware is disabled
+    and request.state.user_id is not set — returns None so routes fall back
+    to the shared default store.
+    """
+    return getattr(request.state, "user_id", None)
+
+
 # ── Job board ──────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
 async def job_board(request: Request, status: str | None = None) -> HTMLResponse:
     """Show all jobs, optionally filtered by status."""
-    jobs = jobs_service.list_jobs(status=status)
+    user_id = _current_user_id(request)
+    jobs = jobs_service.list_jobs(status=status, user_id=user_id)
     return templates.TemplateResponse(request, "jobs.html", {
         "jobs": jobs,
         "current_status": status,
@@ -125,7 +266,7 @@ async def job_board(request: Request, status: str | None = None) -> HTMLResponse
 async def job_detail(request: Request, job_id: str, error: str = "") -> HTMLResponse:
     """Show a single job with its artifacts and status actions."""
     try:
-        job = jobs_service.get_job(job_id)
+        job = jobs_service.get_job(job_id, user_id=_current_user_id(request))
     except Exception:
         raise HTTPException(status_code=404, detail="Job not found")
     artifacts = jobs_service.list_artifacts(job_id)
@@ -205,7 +346,7 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
         )
 
     # Create job (status defaults to "new").
-    job = jobs_service.create_job_from_url(url)
+    job = jobs_service.create_job_from_url(url, user_id=_current_user_id(request))
     job_id = job["id"]
 
     # Set generating synchronously — eliminates redirect race.

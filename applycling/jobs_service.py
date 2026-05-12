@@ -144,12 +144,13 @@ def _record_status_reason(job_id: str, status: str, reason: str) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────
 
-def create_job_from_url(url: str) -> dict[str, Any]:
+def create_job_from_url(url: str, user_id: str | None = None) -> dict[str, Any]:
     """Create a new job with canonical initial status and ``source_url`` set.
 
     Returns the job as a dict (including the store-assigned id).
+    If *user_id* is provided and Postgres is active, the job is scoped.
     """
-    store = get_store()
+    store = get_store(user_id=user_id) if user_id else get_store()
     job = Job(
         id="",
         title="",
@@ -163,18 +164,18 @@ def create_job_from_url(url: str) -> dict[str, Any]:
     return _job_to_dict(saved)
 
 
-def list_jobs(status: str | None = None) -> list[dict[str, Any]]:
-    """Return all jobs, optionally filtered by *status*."""
-    store = get_store()
+def list_jobs(status: str | None = None, user_id: str | None = None) -> list[dict[str, Any]]:
+    """Return all jobs, optionally filtered by *status* and scoped to *user_id*."""
+    store = get_store(user_id=user_id) if user_id else get_store()
     jobs = store.load_jobs()
     if status is not None:
         jobs = [j for j in jobs if j.status == status]
     return [_job_to_dict(j) for j in jobs]
 
 
-def get_job(job_id: str) -> dict[str, Any]:
-    """Return a single job by id as a dict."""
-    store = get_store()
+def get_job(job_id: str, user_id: str | None = None) -> dict[str, Any]:
+    """Return a single job by id as a dict. Scoped to *user_id* if provided."""
+    store = get_store(user_id=user_id) if user_id else get_store()
     return _job_to_dict(store.load_job(job_id))
 
 

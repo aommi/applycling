@@ -103,9 +103,11 @@ ANTHROPIC_API_KEY=***
 OPENAI_API_KEY=***
 GOOGLE_API_KEY=***
 
-# ── UI Auth (PR3) ──────────────────────────────────────
-APPLYCLING_UI_AUTH_USER=<your-username>
-APPLYCLING_UI_AUTH_PASSWORD=<generated-password>
+# ── UI Auth (PR3) → replaced by session auth (PR multi-tenant) ──
+# APPLYCLING_UI_AUTH_USER and APPLYCLING_UI_AUTH_PASSWORD are removed.
+# Use session-based auth instead:
+APPLYCLING_SESSION_SECRET=<openssl rand -hex 32>
+APPLYCLING_ADMIN_USER_ID=<your-user-uuid-from-db>
 
 # ── Legacy intake compatibility (/api/intake) ───────────
 APPLYCLING_INTAKE_SECRET=<generated-secret>

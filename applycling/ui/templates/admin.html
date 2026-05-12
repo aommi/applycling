@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <h1>Admin</h1>
+</div>
+
+<div class="onboarding-shell">
+  <section class="submit-card onboarding-card">
+    <h2>Invite alpha users</h2>
+    <p class="submit-intro">
+      Creates a user account with a random password. Share the password securely.
+    </p>
+
+    <form id="invite-form">
+      <div class="profile-grid">
+        <label for="email">Email</label>
+        <input id="email" type="email" name="email" required autocomplete="off" />
+
+        <label for="display_name">Name (optional)</label>
+        <input id="display_name" type="text" name="display_name" />
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Invite</button>
+      </div>
+    </form>
+
+    <pre id="invite-result" style="margin-top:16px;display:none;white-space:pre-wrap;font-family:monospace;font-size:12px;"></pre>
+  </section>
+</div>
+
+<script>
+  document.getElementById('invite-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const result = document.getElementById('invite-result');
+    result.style.display = 'block';
+    result.textContent = '...';
+
+    try {
+      const res = await fetch('/admin/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value,
+          display_name: document.getElementById('display_name').value || null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        result.textContent = 'Created!\n\nEmail: ' + data.email + '\nPassword: ' + data.password + '\nLogin: ' + data.login_url;
+      } else {
+        result.textContent = 'Error: ' + (data.detail || res.status);
+      }
+    } catch (err) {
+      result.textContent = 'Error: ' + err.message;
+    }
+  });
+</script>
+{% endblock %}
