@@ -277,6 +277,7 @@ def test_intake_409_when_active_run_exists(client):
         patch(
             "applycling.ui.routes.check_active_run", return_value=True
         ),
+        patch("applycling.ui.routes._update_chat_id"),
     ):
         response = client.post(
             "/api/intake",
@@ -303,6 +304,7 @@ def test_intake_429_daily_cap_exceeded(client):
             "applycling.ui.routes._try_increment_daily_generation",
             return_value=False,  # cap hit
         ),
+        patch("applycling.ui.routes._update_chat_id"),
     ):
         response = client.post(
             "/api/intake",
@@ -332,6 +334,7 @@ def test_intake_daily_cap_not_hit_first_call(client):
         patch(
             "applycling.ui.routes._run_scoped_pipeline",
         ),
+        patch("applycling.ui.routes._update_chat_id"),
     ):
         response = client.post(
             "/api/intake",
@@ -380,6 +383,7 @@ def test_intake_exempted_from_basic_auth(client, monkeypatch):
         ),
         patch("applycling.ui.routes.PipelineContext.from_user_id"),
         patch("applycling.ui.routes._run_scoped_pipeline"),
+        patch("applycling.ui.routes._update_chat_id"),
     ):
         response = client.post(
             "/api/intake",

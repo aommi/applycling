@@ -10,16 +10,27 @@ import hmac
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Body, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
+from applycling.forward_endpoint import (
+    handle_active_user_non_url,
+    handle_active_user_url,
+    handle_confirming_approval,
+    handle_confirming_correction,
+    handle_new_user_resume,
+    handle_new_user_url,
+    is_url_like,
+    verify_localhost,
+)
 from applycling.pipeline import PipelineContext, run_add
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
 from applycling.telegram_notify import notify_error_to_user
 from applycling.tracker import check_active_run
+from applycling.tracker.postgres_store import PostgresStore
 
 router = APIRouter()
 
@@ -248,6 +259,15 @@ class IntakeBody(BaseModel):
     first_name: str | None = None
 
 
+class ForwardBody(BaseModel):
+    """Request body for the Hermes forwarding endpoint."""
+
+    telegram_id: int
+    chat_id: int
+    first_name: str | None = None
+    message_text: str
+
+
 # ── Intake helpers ────────────────────────────────────────────────────
 
 def _resolve_user_by_intake_secret(secret: str):
@@ -310,6 +330,9 @@ def _try_increment_daily_generation(user_id: str) -> bool:
             (today, today, user_id, today),
         )
         return result.fetchone() is not None
+
+
+_verify_localhost = verify_localhost
 
 
 # ── Intake route ──────────────────────────────────────────────────────
@@ -378,6 +401,258 @@ def _run_scoped_pipeline(ctx: PipelineContext, token: str) -> None:
         )
         if token and ctx.user_id:
             notify_error_to_user(token, ctx.user_id, ctx.job_url, str(e))
+
+
+# ── Forwarding route (Hermes dumb relay) ───────────────────────────────
+
+@router.post("/api/forward")
+async def forward(
+    body: ForwardBody,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(_verify_localhost),
+) -> JSONResponse:
+    """Relay endpoint for Hermes Telegram messages.
+
+    The endpoint owns onboarding state. Hermes forwards one Telegram message
+    plus metadata and relays only ``relay_message`` back to the user.
+    """
+    from applycling.db_seed import get_or_create_user_by_telegram
+
+    telegram_id = body.telegram_id
+    chat_id = body.chat_id
+    first_name = body.first_name
+    message_text = body.message_text
+    is_url = is_url_like(message_text)
+
+    user_data = get_or_create_user_by_telegram(
+        telegram_id=telegram_id,
+        chat_id=chat_id,
+        first_name=first_name,
+    )
+    user_id = user_data["user_id"]
+    current_state = user_data["onboarding_state"]
+
+    if current_state == "active":
+        if is_url:
+            _update_chat_id(user_id, chat_id)
+            if check_active_run():
+                return JSONResponse(
+                    {"relay_message": "A generation is already running. Please wait."},
+                    status_code=409,
+                )
+            ctx = PipelineContext.from_user_id(user_id, message_text)
+            if not _try_increment_daily_generation(user_id):
+                return JSONResponse(
+                    {"relay_message": "Daily generation limit reached. Try again tomorrow."},
+                    status_code=429,
+                )
+            response = handle_active_user_url(user_id, message_text)
+            token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+            background_tasks.add_task(_run_scoped_pipeline, ctx, token)
+        else:
+            response = handle_active_user_non_url(user_id)
+
+    elif current_state == "confirming":
+        msg = message_text.strip().lower()
+        if msg in ("looks good", "approved", "looks right", "done", "yes", "confirm"):
+            response = handle_confirming_approval(user_id)
+            store = PostgresStore(
+                user_id=user_id,
+                database_url=os.environ.get("DATABASE_URL"),
+            )
+            store.save_user_profile(onboarding_state="active")
+        else:
+            response = handle_confirming_correction(user_id, message_text)
+            store = PostgresStore(
+                user_id=user_id,
+                database_url=os.environ.get("DATABASE_URL"),
+            )
+            current = store.load_user_profile()
+            profile = current.get("profile") or {}
+            pending = list(profile.get("pending_corrections") or [])
+            pending.append(message_text)
+            profile["pending_corrections"] = pending
+            store.save_user_profile(profile=profile)
+
+    elif current_state == "new":
+        if is_url:
+            if check_active_run():
+                return JSONResponse(
+                    {"relay_message": "A generation is already running."},
+                    status_code=409,
+                )
+            ctx = PipelineContext.from_user_id(user_id, message_text)
+            if not _try_increment_daily_generation(user_id):
+                return JSONResponse(
+                    {"relay_message": "Daily generation limit reached."},
+                    status_code=429,
+                )
+            response = handle_new_user_url(user_id, message_text, first_name)
+            store = PostgresStore(
+                user_id=user_id,
+                database_url=os.environ.get("DATABASE_URL"),
+            )
+            store.save_user_profile(onboarding_state="active")
+            token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+            background_tasks.add_task(_run_scoped_pipeline, ctx, token)
+        else:
+            store = PostgresStore(
+                user_id=user_id,
+                database_url=os.environ.get("DATABASE_URL"),
+            )
+            store.save_user_profile(
+                resume=message_text,
+                display_name=first_name,
+                onboarding_state="confirming",
+            )
+            response = handle_new_user_resume(user_id, message_text, first_name)
+
+    else:
+        if is_url:
+            if check_active_run():
+                return JSONResponse(
+                    {"relay_message": "A generation is already running."},
+                    status_code=409,
+                )
+            ctx = PipelineContext.from_user_id(user_id, message_text)
+            if not _try_increment_daily_generation(user_id):
+                return JSONResponse(
+                    {"relay_message": "Daily generation limit reached."},
+                    status_code=429,
+                )
+            response = handle_active_user_url(user_id, message_text)
+            token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+            background_tasks.add_task(_run_scoped_pipeline, ctx, token)
+        else:
+            response = handle_active_user_non_url(user_id)
+
+    return JSONResponse(
+        {
+            "relay_message": response.relay_message,
+            "onboarding_state": response.onboarding_state,
+            "user_id": response.user_id,
+            "trigger_pipeline": response.trigger_pipeline,
+            "profile_preview": response.profile_preview,
+            "actions": response.actions,
+        }
+    )
+
+
+# ── Web onboarding flow ───────────────────────────────────────────────
+
+@router.get("/onboarding", response_class=HTMLResponse)
+async def onboarding_landing(request: Request) -> HTMLResponse:
+    """Show the web onboarding resume-paste screen."""
+    telegram_enabled = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
+    return templates.TemplateResponse(
+        request,
+        "onboarding.html",
+        {
+            "telegram_enabled": telegram_enabled,
+            "telegram_link": os.environ.get("APPLYCLING_TELEGRAM_LINK", ""),
+        },
+    )
+
+
+@router.post("/onboarding/submit-resume")
+async def onboarding_submit_resume(
+    request: Request,  # noqa: ARG001
+    resume_text: str = Form(...),
+) -> RedirectResponse:
+    """Create a web-only user row and store resume text server-side."""
+    import uuid
+
+    import psycopg
+
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Postgres DATABASE_URL is required for onboarding",
+        )
+
+    lines = resume_text.strip().splitlines()
+    display_name = lines[0].strip() if lines else ""
+    user_id = str(uuid.uuid4())
+
+    with psycopg.connect(db_url) as conn:
+        conn.execute(
+            "INSERT INTO users (id, email, onboarding_state, display_name, "
+            "resume, created_at, updated_at) "
+            "VALUES (%s, %s, 'confirming', %s, %s, NOW(), NOW())",
+            (user_id, f"web_{user_id}@applycling.local", display_name, resume_text),
+        )
+        conn.commit()
+
+    return RedirectResponse(
+        f"/onboarding/confirm?user_id={user_id}",
+        status_code=303,
+    )
+
+
+@router.get("/onboarding/confirm", response_class=HTMLResponse)
+async def onboarding_confirm(request: Request) -> HTMLResponse:
+    """Show the consolidated profile confirmation screen."""
+    user_id = request.query_params.get("user_id", "")
+    db_url = os.environ.get("DATABASE_URL")
+    resume_text = ""
+
+    if user_id and db_url:
+        store = PostgresStore(user_id=user_id, database_url=db_url)
+        stored = store.load_user_profile()
+        resume_text = stored.get("resume", "")
+
+    lines = resume_text.strip().splitlines() if resume_text else []
+    profile = {
+        "user_id": user_id,
+        "display_name": lines[0].strip() if lines else "",
+        "email": "",
+        "phone": "",
+        "location": "",
+        "linkedin": "",
+        "portfolio": "",
+    }
+
+    return templates.TemplateResponse(
+        request,
+        "confirm.html",
+        {
+            "profile": profile,
+            "resume_text": resume_text,
+        },
+    )
+
+
+@router.post("/onboarding/confirm")
+async def onboarding_save_profile(
+    request: Request,  # noqa: ARG001
+    user_id: str = Form(""),
+    display_name: str = Form(...),
+    email: str = Form(""),
+    phone: str = Form(""),
+    location: str = Form(""),
+    linkedin: str = Form(""),
+    portfolio: str = Form(""),
+) -> RedirectResponse:
+    """Save confirmed profile fields and mark onboarding active."""
+    db_url = os.environ.get("DATABASE_URL")
+    if user_id and db_url:
+        store = PostgresStore(user_id=user_id, database_url=db_url)
+        store.save_user_profile(
+            profile={
+                "name": display_name,
+                "email": email,
+                "phone": phone,
+                "location": location,
+                "linkedin": linkedin,
+                "portfolio": portfolio,
+                "schema_version": "1.0",
+            },
+            display_name=display_name,
+            onboarding_state="active",
+        )
+
+    return RedirectResponse("/", status_code=303)
 
 
 # ── Init ───────────────────────────────────────────────────────────────

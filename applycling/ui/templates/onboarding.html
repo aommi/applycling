@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <h1>Setup</h1>
+  <a href="/" class="back-link">Back to jobs</a>
+</div>
+
+<div class="onboarding-shell">
+  <section class="submit-card onboarding-card">
+    <h2>Paste your resume</h2>
+    <p class="submit-intro">
+      Paste your current resume. applycling will infer what it can, then show
+      one confirmation screen before you start generating packages.
+    </p>
+    <form method="post" action="/onboarding/submit-resume">
+      <textarea
+        class="resume-input"
+        name="resume_text"
+        placeholder="Paste your resume here..."
+        required
+      ></textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Continue</button>
+      </div>
+    </form>
+    <p class="submit-note">Resume text is stored server-side in your profile.</p>
+  </section>
+
+  {% if telegram_enabled %}
+  <section class="submit-card onboarding-card telegram-card">
+    <h2>Telegram</h2>
+    <p class="submit-intro">
+      Use the same profile from Telegram once setup is complete.
+    </p>
+    {% if telegram_link %}
+      <a class="btn" href="{{ telegram_link }}">Connect Telegram</a>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

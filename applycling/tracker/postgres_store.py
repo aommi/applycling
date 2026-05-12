@@ -392,7 +392,9 @@ class PostgresStore(TrackerStore):
                           stories: str | None = None,
                           linkedin_profile: str | None = None,
                           config: dict | None = None,
-                          chat_id: int | None = None) -> None:
+                          chat_id: int | None = None,
+                          onboarding_state: str | None = None,
+                          display_name: str | None = None) -> None:
         """Save profile fields for the store's scoped user. Only updates non-None values."""
         import json
         sets = []
@@ -415,6 +417,12 @@ class PostgresStore(TrackerStore):
         if chat_id is not None:
             sets.append("chat_id = %s")
             params.append(chat_id)
+        if onboarding_state is not None:
+            sets.append("onboarding_state = %s")
+            params.append(onboarding_state)
+        if display_name is not None:
+            sets.append("display_name = %s")
+            params.append(display_name)
         if not sets:
             return
         params.append(self._user_id)
@@ -425,11 +433,11 @@ class PostgresStore(TrackerStore):
             )
 
     def load_user_profile(self) -> dict:
-        """Return {profile, resume, stories, linkedin_profile, config, chat_id}
-        for the store's scoped user."""
+        """Return profile fields for the store's scoped user."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT profile, resume, stories, linkedin_profile, config, chat_id "
+                "SELECT profile, resume, stories, linkedin_profile, config, "
+                "chat_id, onboarding_state, display_name "
                 "FROM users WHERE id = %s",
                 (self._user_id,),
             ).fetchone()
@@ -442,4 +450,6 @@ class PostgresStore(TrackerStore):
             "linkedin_profile": row["linkedin_profile"] or "",
             "config": row["config"] or {},
             "chat_id": row["chat_id"],
+            "onboarding_state": row["onboarding_state"] or "new",
+            "display_name": row["display_name"],
         }

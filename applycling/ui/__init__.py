@@ -21,7 +21,9 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # ── Auth middleware ─────────────────────────────────────────────────────
 
-_UNAUTH_ROUTES: frozenset[str] = frozenset({"/healthz", "/api/intake"})
+_UNAUTH_ROUTES: frozenset[str] = frozenset(
+    {"/healthz", "/api/intake", "/api/forward"}
+)
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):

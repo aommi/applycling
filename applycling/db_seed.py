@@ -9,6 +9,8 @@ Usage:
     seed_local_user(database_url)
 """
 
+from __future__ import annotations
+
 import os
 import uuid
 
@@ -120,3 +122,76 @@ def get_user_by_telegram(telegram_id: int) -> str | None:
             )
             row = cur.fetchone()
     return str(row[0]) if row else None
+
+
+def get_or_create_user_by_telegram(
+    telegram_id: int,
+    chat_id: int | None = None,
+    first_name: str | None = None,
+    daily_limit: int = 10,
+) -> dict:
+    """Get an existing Telegram user or create one with onboarding defaults."""
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise ValueError("DATABASE_URL must be set")
+
+    import psycopg
+    import psycopg.rows
+
+    with psycopg.connect(url, row_factory=psycopg.rows.dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, telegram_id, chat_id, onboarding_state, display_name
+                FROM users
+                WHERE telegram_id = %s AND deleted_at IS NULL
+                """,
+                (telegram_id,),
+            )
+            row = cur.fetchone()
+
+            if row:
+                resolved_chat_id = row["chat_id"]
+                if chat_id is not None and resolved_chat_id is None:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET chat_id = %s, updated_at = NOW()
+                        WHERE id = %s AND chat_id IS NULL
+                        """,
+                        (chat_id, row["id"]),
+                    )
+                    resolved_chat_id = chat_id
+                return {
+                    "user_id": str(row["id"]),
+                    "telegram_id": row["telegram_id"],
+                    "chat_id": resolved_chat_id,
+                    "onboarding_state": row["onboarding_state"] or "new",
+                    "display_name": row["display_name"],
+                }
+
+            user_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO users (
+                    id, telegram_id, chat_id, display_name, onboarding_state,
+                    daily_generation_limit, email, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, 'new', %s, %s, NOW(), NOW())
+                """,
+                (
+                    user_id,
+                    telegram_id,
+                    chat_id,
+                    first_name,
+                    daily_limit,
+                    f"tg_{telegram_id}@applycling.local",
+                ),
+            )
+            return {
+                "user_id": user_id,
+                "telegram_id": telegram_id,
+                "chat_id": chat_id,
+                "onboarding_state": "new",
+                "display_name": first_name,
+            }
