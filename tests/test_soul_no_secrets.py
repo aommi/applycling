@@ -91,6 +91,14 @@ class TestHermesSetupScript:
             for token in forbidden:
                 assert token not in content, f"{script_path} must not reference {token}"
 
+    def test_local_setup_parent_env_merge_is_allowlisted(self):
+        script_path = (
+            Path(__file__).parent.parent / "scripts" / "setup_hermes_telegram.sh"
+        )
+        content = script_path.read_text()
+        assert "allowed_parent_keys = {'DEEPSEEK_API_KEY'}" in content
+        assert "k in allowed_parent_keys and k not in target" in content
+
     def test_setup_scripts_copy_forwarding_template(self, script_paths):
         for script_path in script_paths:
             content = script_path.read_text()

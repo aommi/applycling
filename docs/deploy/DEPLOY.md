@@ -113,6 +113,9 @@ APPLYCLING_INTAKE_SECRET=<generated-secret>
 # ── Active-run guard ───────────────────────────────────
 APPLYCLING_STALE_RUN_TIMEOUT_MINUTES=120
 
+# ── Host-installed Hermes → Dockerized applycling ──────
+APPLYCLING_FORWARD_ALLOWED_SOURCES=172.30.0.1
+
 # ── Hosted Hermes Telegram gateway ──────────────────────
 TELEGRAM_BOT_TOKEN=<from BotFather>
 TELEGRAM_ALLOWED_USERS=26605267
@@ -123,6 +126,11 @@ DEEPSEEK_API_KEY=<deepseek api key for routing LLM>
 into the VPS host Hermes profile by `scripts/setup_hosted_hermes.sh`. Do not copy
 `DATABASE_URL`, provider API keys, `APPLYCLING_UI_AUTH_PASSWORD`, or
 `APPLYCLING_INTAKE_SECRET` into `~/.hermes/profiles/applycling/.env`.
+
+`APPLYCLING_FORWARD_ALLOWED_SOURCES` is read by the applycling container, not
+Hermes. It allows the fixed Docker bridge gateway from `docker-compose.prod.yml`
+so the host-installed Hermes process can reach `/api/forward` through the
+localhost-only published port.
 
 ### Secret Independence
 
