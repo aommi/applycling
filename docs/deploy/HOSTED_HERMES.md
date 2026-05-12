@@ -10,18 +10,18 @@ script. It reaches applycling at `http://127.0.0.1:8080` through a localhost-onl
 port mapping in docker-compose.prod.yml.
 
 ```
-Telegram → hosted Hermes → POST http://127.0.0.1:8080/api/intake → pipeline → Postgres + artifacts
+Telegram → hosted Hermes → POST http://127.0.0.1:8080/api/forward → onboarding / pipeline → Postgres + artifacts
 ```
 
 ## Prerequisites
 
-- Phase 1 (local Hermes forwarding) is verified and working
+- Onboarding flow migration has been deployed: `alembic upgrade head`
 - VPS has Docker and git installed
 - `applycling` port 8080 is exposed on localhost (in docker-compose.prod.yml since PR #39)
 
 ## Setup
 
-### 0. One-time: add Hermes secrets to applycling env
+### 0. One-time: add Hermes runtime env
 
 On your laptop, get the values:
 
@@ -39,6 +39,8 @@ echo 'DEEPSEEK_API_KEY=<paste>' >> /opt/applycling/.env
 ```
 
 This is one-time. The setup script reads all secrets from `/opt/applycling/.env`.
+Do not put `DATABASE_URL`, provider API keys for applycling generation, or the
+old `APPLYCLING_INTAKE_SECRET` into the Hermes profile `.env`.
 
 ### 1. Install Hermes on the VPS
 
@@ -53,8 +55,10 @@ cd /opt/applycling/app && git pull
 bash scripts/setup_hosted_hermes.sh
 ```
 
-This reads shared secrets from `/opt/applycling/.env` (Telegram bot token, DeepSeek
-key, intake secret), creates the Hermes profile, and installs the gateway service.
+This reads the Telegram bot token, allowlist, and DeepSeek routing key from
+`/opt/applycling/.env`, creates or updates the Hermes profile, copies the
+forwarding SOUL.md, and installs the gateway service. The profile posts to
+`/api/forward`; no intake secret is used.
 
 ### 3. Stop local Hermes
 
@@ -66,7 +70,7 @@ launchctl bootout gui/$(id -u)/ai.hermes.gateway-applycling
 
 ### 4. Verify
 
-Send a job URL through Telegram:
+Send resume text or a job URL through Telegram:
 
 ```bash
 # Watch logs on VPS
@@ -87,9 +91,8 @@ launchctl bootstrap gui/$(id -u)/ai.hermes.gateway-applycling
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| Hermes can't reach intake | Port 8080 not exposed | Check `docker-compose.prod.yml` has `127.0.0.1:8080:8080` |
+| Hermes can't reach forward endpoint | Port 8080 not exposed | Check `docker-compose.prod.yml` has `127.0.0.1:8080:8080` |
 | Telegram not responding | Local Hermes still running | `launchctl bootout` on laptop |
-| "Invalid intake secret" (401) | Secret mismatch | Check APPLYCLING_INTAKE_SECRET matches `/opt/applycling/.env` |
 | DEEPSEEK_API_KEY missing | Profile .env incomplete | Hermes needs a routing LLM even for simple forwarding |
 
 ## Limitations
