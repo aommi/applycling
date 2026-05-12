@@ -22,8 +22,8 @@ if [ ! -f "$APPLYCLING_ENV" ]; then
     exit 1
 fi
 
-# Check required vars
-for var in TELEGRAM_BOT_TOKEN DEEPSEEK_API_KEY APPLYCLING_INTAKE_SECRET; do
+# Check required vars. Do not require or copy applycling app secrets into Hermes.
+for var in TELEGRAM_BOT_TOKEN DEEPSEEK_API_KEY; do
     if ! grep -q "^${var}=" "$APPLYCLING_ENV"; then
         echo "ERROR: ${var} not in $APPLYCLING_ENV"
         echo "Add it from your laptop:"
@@ -32,10 +32,10 @@ for var in TELEGRAM_BOT_TOKEN DEEPSEEK_API_KEY APPLYCLING_INTAKE_SECRET; do
     fi
 done
 
-echo "All required secrets found in $APPLYCLING_ENV"
+echo "All required Hermes runtime vars found in $APPLYCLING_ENV"
 
-# Source secrets
-source <(grep -E '^(APPLYCLING_INTAKE_SECRET|TELEGRAM_BOT_TOKEN|DEEPSEEK_API_KEY|TELEGRAM_ALLOWED_USERS)=' "$APPLYCLING_ENV")
+# Source Hermes runtime vars only. Do not source DB/provider/API app secrets.
+source <(grep -E '^(TELEGRAM_BOT_TOKEN|DEEPSEEK_API_KEY|TELEGRAM_ALLOWED_USERS)=' "$APPLYCLING_ENV")
 
 # Create profile
 mkdir -p "$HERMES_PROFILE/sessions"
@@ -45,15 +45,13 @@ cat > "$HERMES_PROFILE/.env" << EOF
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-26605267}
 DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-APPLYCLING_INTAKE_URL=http://127.0.0.1:8080/api/intake
-APPLYCLING_INTAKE_SECRET=${APPLYCLING_INTAKE_SECRET}
 HERMES_GATEWAY_TOKEN=$(openssl rand -hex 16)
 EOF
 
 # config.yaml
 cat > "$HERMES_PROFILE/config.yaml" << 'YAML'
 model:
-  default: deepseek-chat
+  default: deepseek-v4-pro
   provider: deepseek
 toolsets:
   - hermes-cli

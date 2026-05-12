@@ -64,14 +64,42 @@ class TestHermesSetupScript:
     """Ensure provisioning uses the safe forwarding template."""
 
     @pytest.fixture
-    def script_path(self):
-        return Path(__file__).parent.parent / "scripts" / "setup_hermes_telegram.sh"
+    def script_paths(self):
+        root = Path(__file__).parent.parent
+        return [
+            root / "scripts" / "setup_hermes_telegram.sh",
+            root / "scripts" / "setup_hosted_hermes.sh",
+        ]
 
-    def test_setup_script_does_not_write_intake_secret(self, script_path):
-        content = script_path.read_text()
-        assert "APPLYCLING_INTAKE_SECRET" not in content
-        assert "X-Intake-Secret" not in content
+    def test_setup_scripts_do_not_write_intake_secret(self, script_paths):
+        for script_path in script_paths:
+            content = script_path.read_text()
+            assert "APPLYCLING_INTAKE_SECRET" not in content, script_path
+            assert "X-Intake-Secret" not in content, script_path
 
-    def test_setup_script_copies_forwarding_template(self, script_path):
+    def test_setup_scripts_do_not_copy_app_secrets(self, script_paths):
+        forbidden = [
+            "DATABASE_URL",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_API_KEY",
+            "APPLYCLING_UI_AUTH_PASSWORD",
+            "APPLYCLING_UI_AUTH_USER",
+        ]
+        for script_path in script_paths:
+            content = script_path.read_text()
+            for token in forbidden:
+                assert token not in content, f"{script_path} must not reference {token}"
+
+    def test_setup_scripts_copy_forwarding_template(self, script_paths):
+        for script_path in script_paths:
+            content = script_path.read_text()
+            assert "hermes_forwarding_template.md" in content, script_path
+
+    def test_hosted_setup_uses_current_routing_model(self):
+        script_path = (
+            Path(__file__).parent.parent / "scripts" / "setup_hosted_hermes.sh"
+        )
         content = script_path.read_text()
-        assert 'cp "$REPO_ROOT/docs/deploy/hermes_forwarding_template.md" "$SOUL_FILE"' in content
+        assert "deepseek-v4-pro" in content
+        assert "deepseek-chat" not in content
