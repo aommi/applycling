@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <h1>Confirm Profile</h1>
+  <a href="/onboarding" class="back-link">Start over</a>
+</div>
+
+<form method="post" action="/onboarding/confirm" class="confirm-layout">
+  <input type="hidden" name="token" value="{{ profile.token }}">
+
+  <section class="submit-card confirm-card">
+    <h2>Did I get you right?</h2>
+    <p class="submit-intro">Fix anything that is off, then continue to the workbench.</p>
+
+    <div class="profile-grid">
+      <label for="display_name">Name</label>
+      <input id="display_name" type="text" name="display_name" value="{{ profile.display_name }}" required>
+
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" value="{{ profile.email }}">
+
+      <label for="phone">Phone</label>
+      <input id="phone" type="text" name="phone" value="{{ profile.phone }}">
+
+      <label for="location">Location</label>
+      <input id="location" type="text" name="location" value="{{ profile.location }}">
+
+      <label for="linkedin">LinkedIn</label>
+      <input id="linkedin" type="text" name="linkedin" value="{{ profile.linkedin }}">
+
+      <label for="portfolio">Portfolio</label>
+      <input id="portfolio" type="text" name="portfolio" value="{{ profile.portfolio }}">
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Looks Right</button>
+    </div>
+  </section>
+
+  {% if resume_text %}
+  <section class="submit-card confirm-card">
+    <h2>Resume</h2>
+    <pre class="resume-preview">{{ resume_text }}</pre>
+  </section>
+  {% endif %}
+</form>
+{% endblock %}

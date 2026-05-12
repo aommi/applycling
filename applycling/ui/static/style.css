@@ -394,6 +394,83 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
 }
 
+/* ── Onboarding ────────────────────────────────────────────────────── */
+.onboarding-shell,
+.confirm-layout {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+
+.onboarding-card,
+.confirm-card {
+  width: 100%;
+}
+
+.onboarding-card h2,
+.confirm-card h2 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.resume-input {
+  width: 100%;
+  min-height: 260px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.resume-input:focus,
+.profile-grid input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.form-actions {
+  margin-top: 16px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.profile-grid label {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.profile-grid input {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.resume-preview {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+
+@media (max-width: 700px) {
+  .profile-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
 /* ── Misc ─────────────────────────────────────────────────────────── */
 code, pre {
   font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;

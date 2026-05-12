@@ -17,6 +17,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - applycling_net
     restart: unless-stopped
 
   applycling:
@@ -26,12 +28,16 @@ services:
         condition: service_healthy
     env_file:
       - /opt/applycling/.env
+    environment:
+      APPLYCLING_FORWARD_ALLOWED_SOURCES: ${APPLYCLING_FORWARD_ALLOWED_SOURCES:-172.30.0.1}
     volumes:
       - /opt/applycling/data:/app/data
       - /opt/applycling/output:/app/output
     command: ["python", "-m", "applycling.cli", "ui", "serve", "--host", "0.0.0.0", "--port", "8080"]
     ports:
       - "127.0.0.1:8080:8080"  # localhost only — for host-installed Hermes
+    networks:
+      - applycling_net
     restart: unless-stopped
 
   caddy:
@@ -46,9 +52,18 @@ services:
       - caddy_config:/config
     depends_on:
       - applycling
+    networks:
+      - applycling_net
     restart: unless-stopped
 
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
+
+networks:
+  applycling_net:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

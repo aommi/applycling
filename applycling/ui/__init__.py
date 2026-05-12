@@ -21,7 +21,9 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # ── Auth middleware ─────────────────────────────────────────────────────
 
-_UNAUTH_ROUTES: frozenset[str] = frozenset({"/healthz", "/api/intake"})
+_UNAUTH_ROUTES: frozenset[str] = frozenset(
+    {"/healthz", "/api/intake", "/api/forward"}
+)
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -30,7 +32,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     - Auth is ON by default in hosted mode (fail closed).
     - Local dev bypass via ``APPLYCLING_NO_AUTH`` env var (NOT IP-based).
     - Credentials from ``APPLYCLING_UI_AUTH_USER`` / ``APPLYCLING_UI_AUTH_PASSWORD``.
-    - ``/healthz`` and ``/api/intake`` are exempted from auth.
+    - ``/healthz``, ``/api/intake``, and ``/api/forward`` are exempted from auth.
     """
 
     def __init__(self, app: ASGIApp) -> None:
