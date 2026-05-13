@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from applycling import pdf_import
-
 
 class ResumeImportError(ValueError):
     """Raised when an uploaded resume cannot be converted to text."""
@@ -19,6 +17,7 @@ def extract_resume_text(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         try:
+            from applycling import pdf_import
             return pdf_import.extract_text(path)
         except pdf_import.PDFImportError as exc:
             raise ResumeImportError(str(exc)) from exc

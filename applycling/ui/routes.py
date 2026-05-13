@@ -65,6 +65,7 @@ templates.env.globals["job_actions"] = job_actions
 
 # Background task tracking — prevents asyncio from GC-ing fire-and-forget tasks.
 _background_tasks: set[asyncio.Task] = set()
+_MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _web_readonly() -> bool:
@@ -899,9 +900,13 @@ def _load_current_user_profile(request: Request) -> dict:
 def _extract_uploaded_resume(resume_file: UploadFile) -> str:
     filename = Path(resume_file.filename or "resume").name
     suffix = Path(filename).suffix.lower()
+    total = 0
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = Path(tmp.name)
         while chunk := resume_file.file.read(1024 * 1024):
+            total += len(chunk)
+            if total > _MAX_RESUME_UPLOAD_BYTES:
+                raise ResumeImportError("Resume upload must be 10 MB or smaller.")
             tmp.write(chunk)
     try:
         return extract_resume_text(tmp_path)

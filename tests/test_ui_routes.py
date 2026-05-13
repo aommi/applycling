@@ -1116,3 +1116,28 @@ def test_onboarding_submit_resume_updates_current_user_from_uploaded_file(
     saved = fake_postgres_store.instances[-1].saved[-1]
     assert saved["resume"] == "Jane Doe\nExperience: Engineer"
     assert saved["onboarding_state"] == "confirming"
+
+
+def test_onboarding_submit_resume_rejects_large_upload(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Resume uploads are capped before writing unbounded temp files."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    with patch("applycling.ui.routes._current_user_id", return_value=_USER_ID):
+        response = client.post(
+            "/onboarding/submit-resume",
+            files={
+                "resume_file": (
+                    "resume.txt",
+                    b"x" * (ui_routes._MAX_RESUME_UPLOAD_BYTES + 1),
+                    "text/plain",
+                )
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 400
+    assert "10 MB" in response.text
+    assert fake_postgres_store.instances == []
