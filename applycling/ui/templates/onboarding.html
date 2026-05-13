@@ -26,12 +26,19 @@
     </p>
     <form method="post" action="/onboarding/submit-resume" enctype="multipart/form-data">
       <label class="file-label" for="resume_file">Resume file</label>
-      <input
-        id="resume_file"
-        type="file"
-        name="resume_file"
-        accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-      >
+      <div class="dropzone" data-dropzone>
+        <input
+          id="resume_file"
+          type="file"
+          name="resume_file"
+          accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+          data-dropzone-input
+        >
+        <div class="dropzone-hint" data-dropzone-hint>
+          <span class="dropzone-title">Drop your resume here</span>
+          <span class="dropzone-sub">or click to choose a file — PDF, DOCX, Markdown, or text</span>
+        </div>
+      </div>
       <textarea
         class="resume-input"
         name="resume_text"
@@ -43,6 +50,8 @@
     </form>
     <p class="submit-note">PDF, DOCX, Markdown, and text files are converted to stored resume text.</p>
   </section>
+
+  <script src="/static/dropzone.js" defer></script>
 
   <section class="submit-card onboarding-card">
     <h2>Profile</h2>
