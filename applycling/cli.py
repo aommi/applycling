@@ -2311,5 +2311,24 @@ def users_merge(source_user_id, target_user_id, dry_run, yes):
     )
 
 
+@users_group.command("link-code")
+@click.option("--user-id", required=True, help="Existing web/canonical user UUID")
+@click.option("--ttl-minutes", type=int, default=30, help="Code lifetime in minutes")
+def users_link_code(user_id, ttl_minutes):
+    """Create a one-time Telegram account link code for a user."""
+    from applycling.user_admin import TelegramLinkError, create_telegram_link_code
+
+    try:
+        result = create_telegram_link_code(user_id, ttl_minutes=ttl_minutes)
+    except TelegramLinkError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"User: {result['user_id']}")
+    click.echo(f"Telegram link code: {result['code']}")
+    click.echo("Send this in Telegram:")
+    click.echo(f"  link {result['code']}")
+    click.echo(f"Expires at: {result['expires_at'].isoformat()}")
+
+
 if __name__ == "__main__":
     main()

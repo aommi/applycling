@@ -43,6 +43,11 @@ from applycling.telegram_notify import (
 from applycling.tracker import check_active_run
 from applycling.tracker.postgres_store import PostgresStore
 from applycling.auth import create_session_token, verify_password
+from applycling.user_admin import (
+    TelegramLinkError,
+    consume_telegram_link_code,
+    parse_telegram_link_code,
+)
 
 router = APIRouter()
 
@@ -661,6 +666,39 @@ async def forward(
     first_name = body.first_name
     message_text = body.message_text
     is_url = is_url_like(message_text)
+    link_code = parse_telegram_link_code(message_text)
+
+    if link_code:
+        try:
+            linked = consume_telegram_link_code(
+                link_code,
+                telegram_id=telegram_id,
+                chat_id=chat_id,
+                first_name=first_name,
+            )
+        except TelegramLinkError as exc:
+            return JSONResponse(
+                {
+                    "relay_message": (
+                        f"I couldn't link this Telegram account: {exc}. "
+                        "Ask the applycling admin for a new link code."
+                    )
+                },
+                status_code=409,
+            )
+        return JSONResponse(
+            {
+                "relay_message": (
+                    "Telegram is linked. Send me a job URL and I'll generate "
+                    "your package."
+                ),
+                "onboarding_state": "active",
+                "user_id": linked["user_id"],
+                "trigger_pipeline": False,
+                "profile_preview": None,
+                "actions": ["linked_telegram"],
+            }
+        )
 
     try:
         user_data = get_or_create_user_by_telegram(

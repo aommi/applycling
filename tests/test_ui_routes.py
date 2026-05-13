@@ -624,6 +624,64 @@ def test_forward_422_on_invalid_body(client, allow_forward_localhost):
     assert response.status_code == 422
 
 
+def test_forward_link_code_attaches_telegram_before_user_creation(
+    client,
+    allow_forward_localhost,
+):
+    """A link code connects Telegram to an existing user without duplicate creation."""
+    with (
+        patch(
+            "applycling.ui.routes.consume_telegram_link_code",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "merged_source_user_id": None,
+                "moved": {"jobs": 0, "pipeline_runs": 0, "artifacts": 0},
+            },
+        ) as mock_consume,
+        patch("applycling.ui.routes.get_or_create_user_by_telegram") as mock_get,
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "link ABC12345"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["actions"] == ["linked_telegram"]
+    assert response.json()["user_id"] == _USER_ID
+    mock_consume.assert_called_once_with(
+        "ABC12345",
+        telegram_id=123456,
+        chat_id=789012,
+        first_name="Jane",
+    )
+    mock_get.assert_not_called()
+
+
+def test_forward_invalid_link_code_returns_bounded_error(
+    client,
+    allow_forward_localhost,
+):
+    from applycling.user_admin import TelegramLinkError
+
+    with (
+        patch(
+            "applycling.ui.routes.consume_telegram_link_code",
+            side_effect=TelegramLinkError("link code is invalid or expired"),
+        ),
+        patch("applycling.ui.routes.get_or_create_user_by_telegram") as mock_get,
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "link ABC12345"},
+        )
+
+    assert response.status_code == 409
+    assert "couldn't link" in response.json()["relay_message"].lower()
+    mock_get.assert_not_called()
+
+
 def test_forward_new_user_resume_moves_to_confirming(
     client,
     allow_forward_localhost,

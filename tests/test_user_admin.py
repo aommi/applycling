@@ -65,6 +65,13 @@ def test_merge_users_rejects_same_user():
         raise AssertionError("expected UserMergeError")
 
 
+def test_parse_telegram_link_code_accepts_link_commands():
+    assert user_admin.parse_telegram_link_code("link ABC123") == "ABC123"
+    assert user_admin.parse_telegram_link_code("connect abc123") == "ABC123"
+    assert user_admin.parse_telegram_link_code("hello ABC123") is None
+    assert user_admin.parse_telegram_link_code("link short") is None
+
+
 def test_users_merge_cli_invokes_service(monkeypatch):
     from applycling import cli
 
@@ -105,3 +112,44 @@ def test_users_merge_cli_invokes_service(monkeypatch):
     assert called == {"args": ("source-id", "target-id"), "dry_run": True}
     assert "DRY RUN" in result.output
     assert "jobs=1" in result.output
+
+
+def test_users_link_code_cli_invokes_service(monkeypatch):
+    from datetime import datetime, timezone
+
+    from applycling import cli
+
+    called = {}
+
+    def _fake_create_link_code(user_id, *, ttl_minutes=30):
+        called["args"] = (user_id, ttl_minutes)
+        return {
+            "user_id": user_id,
+            "email": "web@example.com",
+            "display_name": "Web User",
+            "telegram_id": None,
+            "code": "ABC12345",
+            "expires_at": datetime(2026, 5, 13, tzinfo=timezone.utc),
+        }
+
+    monkeypatch.setattr(
+        "applycling.user_admin.create_telegram_link_code",
+        _fake_create_link_code,
+    )
+
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "users",
+            "link-code",
+            "--user-id",
+            "target-id",
+            "--ttl-minutes",
+            "15",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called == {"args": ("target-id", 15)}
+    assert "ABC12345" in result.output
+    assert "link ABC12345" in result.output
