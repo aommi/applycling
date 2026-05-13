@@ -97,6 +97,46 @@ def _user_columns() -> str:
     )
 
 
+def reset_password(
+    user_id: str,
+    *,
+    database_url: str | None = None,
+) -> str:
+    """Generate a new random password for *user_id* and store its hash.
+
+    Returns the plaintext password so the admin can share it out-of-band.
+    """
+    from applycling.auth import hash_password
+
+    db_url = database_url or os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise ValueError("DATABASE_URL must be set")
+
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError as exc:
+        raise ValueError("user ID must be a UUID") from exc
+
+    import psycopg
+
+    password = secrets.token_urlsafe(12)
+    password_hash = hash_password(password)
+
+    with psycopg.connect(db_url) as conn:
+        cur = conn.execute(
+            """
+            UPDATE users
+            SET password_hash = %s, updated_at = NOW()
+            WHERE id = %s AND deleted_at IS NULL
+            """,
+            (password_hash, user_uuid),
+        )
+        if cur.rowcount == 0:
+            raise ValueError("user not found")
+
+    return password
+
+
 def create_telegram_link_code(
     user_id: str,
     *,

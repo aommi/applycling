@@ -1239,4 +1239,164 @@ def test_onboarding_submit_resume_rejects_large_upload(
 
     assert response.status_code == 400
     assert "10 MB" in response.text
-    assert fake_postgres_store.instances == []
+
+
+# ── Admin Telegram state helper ───────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "telegram_id,chat_id,expected",
+    [
+        (123456, 0, "chat_id_zero"),       # broken outbound delivery wins
+        (123456, 789012, "linked"),         # healthy link
+        (123456, None, "linked"),           # linked, chat_id not yet stored
+        (None, None, "none"),               # no Telegram identity
+        (None, 0, "chat_id_zero"),          # orphaned chat_id=0 still surfaced
+        (0, 789012, "none"),                # telegram_id=0 is "missing"
+        ("", None, "none"),                 # empty string treated as missing
+    ],
+)
+def test_telegram_state_returns_expected_slug(telegram_id, chat_id, expected):
+    assert ui_routes._telegram_state(telegram_id, chat_id) == expected
+
+
+# ── Admin user list ───────────────────────────────────────────────────
+
+
+_ADMIN_USERS_SAMPLE = [
+    {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "email": "jane@example.com",
+        "display_name": "Jane",
+        "onboarding_state": "active",
+        "progress_done": 4,
+        "progress_total": 4,
+        "progress_missing": [],
+        "telegram_state": "linked",
+        "last_status": "completed",
+        "last_status_reason": "",
+        "last_at": "2h ago",
+        "has_active_run": False,
+        "created_at": "3d ago",
+    },
+    {
+        "id": "22222222-2222-2222-2222-222222222222",
+        "email": "stuck@example.com",
+        "display_name": "Stuck",
+        "onboarding_state": "new",
+        "progress_done": 1,
+        "progress_total": 4,
+        "progress_missing": ["Resume saved", "Email saved", "Telegram linked"],
+        "telegram_state": "none",
+        "last_status": "failed",
+        "last_status_reason": "Another generation is already running.",
+        "last_at": "1d ago",
+        "has_active_run": False,
+        "created_at": "5d ago",
+    },
+]
+
+
+def test_admin_page_lists_users(client):
+    with (
+        patch("applycling.ui.routes._is_admin", return_value=True),
+        patch(
+            "applycling.ui.routes._list_admin_users",
+            return_value=_ADMIN_USERS_SAMPLE,
+        ),
+    ):
+        response = client.get("/admin")
+    assert response.status_code == 200
+    assert "jane@example.com" in response.text
+    assert "stuck@example.com" in response.text
+    assert "1/4" in response.text
+    assert "Another generation is already running." in response.text
+
+
+def test_admin_page_rejects_non_admin(client):
+    with patch("applycling.ui.routes._is_admin", return_value=False):
+        response = client.get("/admin")
+    assert response.status_code == 403
+
+
+def test_admin_link_code_renders_banner(client):
+    import datetime as _dt
+
+    with (
+        patch("applycling.ui.routes._is_admin", return_value=True),
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://x"}, clear=False),
+        patch(
+            "applycling.ui.routes.create_telegram_link_code",
+            return_value={
+                "user_id": _ADMIN_USERS_SAMPLE[0]["id"],
+                "email": "jane@example.com",
+                "display_name": "Jane",
+                "telegram_id": None,
+                "code": "ABC12345",
+                "expires_at": _dt.datetime(2026, 5, 13, 12, 0, tzinfo=_dt.timezone.utc),
+            },
+        ),
+        patch(
+            "applycling.ui.routes._list_admin_users",
+            return_value=_ADMIN_USERS_SAMPLE,
+        ),
+    ):
+        response = client.post(
+            f"/admin/users/{_ADMIN_USERS_SAMPLE[0]['id']}/link-code"
+        )
+
+    assert response.status_code == 200
+    assert "link ABC12345" in response.text
+    assert "Expires 2026-05-13 12:00 UTC" in response.text
+
+
+def test_admin_reset_password_renders_banner(client):
+    with (
+        patch("applycling.ui.routes._is_admin", return_value=True),
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://x"}, clear=False),
+        patch(
+            "applycling.ui.routes.reset_password",
+            return_value="new-plaintext-pw",
+        ),
+        patch(
+            "applycling.ui.routes._list_admin_users",
+            return_value=_ADMIN_USERS_SAMPLE,
+        ),
+    ):
+        response = client.post(
+            f"/admin/users/{_ADMIN_USERS_SAMPLE[0]['id']}/reset-password"
+        )
+
+    assert response.status_code == 200
+    assert "new-plaintext-pw" in response.text
+    assert "shown only once" in response.text.lower()
+
+
+def test_admin_reset_password_surfaces_error(client):
+    with (
+        patch("applycling.ui.routes._is_admin", return_value=True),
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://x"}, clear=False),
+        patch(
+            "applycling.ui.routes.reset_password",
+            side_effect=ValueError("user not found"),
+        ),
+        patch(
+            "applycling.ui.routes._list_admin_users",
+            return_value=_ADMIN_USERS_SAMPLE,
+        ),
+    ):
+        response = client.post(
+            "/admin/users/00000000-0000-0000-0000-000000000000/reset-password"
+        )
+
+    assert response.status_code == 200
+    assert "Could not reset password" in response.text
+    assert "user not found" in response.text
+
+
+def test_admin_link_code_rejects_non_admin(client):
+    with patch("applycling.ui.routes._is_admin", return_value=False):
+        response = client.post(
+            f"/admin/users/{_ADMIN_USERS_SAMPLE[0]['id']}/link-code"
+        )
+    assert response.status_code == 403

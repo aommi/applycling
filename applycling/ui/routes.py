@@ -53,6 +53,7 @@ from applycling.user_admin import (
     consume_telegram_link_code,
     create_telegram_link_code,
     parse_telegram_link_code,
+    reset_password,
 )
 
 router = APIRouter()
@@ -254,13 +255,174 @@ def _is_admin(request: Request) -> bool:
     return bool(admin_id and user_id and user_id == admin_id)
 
 
-@router.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request) -> HTMLResponse:
-    """Admin: invite alpha users."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=403, detail="Admin access required")
+def _humanize_since(value) -> str:
+    """Return a short relative-time string ('2h ago', 'never')."""
+    import datetime as _dt
+    if value is None:
+        return "never"
+    if not isinstance(value, _dt.datetime):
+        return str(value)
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=_dt.timezone.utc)
+    delta = now - value
+    seconds = int(delta.total_seconds())
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86400}d ago"
+
+
+def _telegram_state(telegram_id, chat_id) -> str:
+    """Return the admin Telegram state slug for a user row.
+
+    chat_id == 0 wins over a present telegram_id because the column exists to
+    surface broken outbound delivery (Telegram won't accept chat_id 0).
+    """
+    if chat_id == 0:
+        return "chat_id_zero"
+    if telegram_id not in (None, 0, ""):
+        return "linked"
+    return "none"
+
+
+def _list_admin_users() -> list[dict]:
+    """Return user rows with status fields for the admin table."""
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return []
+
+    import psycopg
+    import psycopg.rows
+
+    sql = """
+        SELECT
+            u.id,
+            u.email,
+            u.display_name,
+            u.telegram_id,
+            u.chat_id,
+            u.onboarding_state,
+            u.profile,
+            u.resume,
+            u.created_at,
+            last_run.status         AS last_status,
+            last_run.status_reason  AS last_status_reason,
+            last_run.finished_at    AS last_finished_at,
+            active.id IS NOT NULL   AS has_active_run
+        FROM users u
+        LEFT JOIN LATERAL (
+            SELECT status, status_reason, finished_at
+            FROM pipeline_runs
+            WHERE user_id = u.id
+            ORDER BY started_at DESC
+            LIMIT 1
+        ) last_run ON true
+        LEFT JOIN LATERAL (
+            SELECT id FROM pipeline_runs
+            WHERE user_id = u.id AND status = 'running'
+            LIMIT 1
+        ) active ON true
+        WHERE u.deleted_at IS NULL
+        ORDER BY u.created_at DESC
+    """
+
+    with psycopg.connect(db_url, row_factory=psycopg.rows.dict_row) as conn:
+        rows = conn.execute(sql).fetchall()
+
+    users: list[dict] = []
+    for row in rows:
+        progress = _profile_progress({
+            "profile": row.get("profile") or {},
+            "resume": row.get("resume") or "",
+            "display_name": row.get("display_name"),
+            "telegram_id": row.get("telegram_id"),
+        })
+        done = sum(1 for step in progress["steps"] if step["done"])
+        total = len(progress["steps"])
+        telegram_state = _telegram_state(row.get("telegram_id"), row.get("chat_id"))
+        users.append({
+            "id": str(row["id"]),
+            "email": row["email"] or "—",
+            "display_name": row["display_name"] or "",
+            "onboarding_state": row.get("onboarding_state") or "new",
+            "progress_done": done,
+            "progress_total": total,
+            "progress_missing": [s["label"] for s in progress["steps"] if not s["done"]],
+            "telegram_state": telegram_state,
+            "last_status": row.get("last_status") or "—",
+            "last_status_reason": row.get("last_status_reason") or "",
+            "last_at": _humanize_since(row.get("last_finished_at")),
+            "has_active_run": bool(row.get("has_active_run")),
+            "created_at": _humanize_since(row.get("created_at")),
+        })
+    return users
+
+
+def _render_admin(request: Request, *, banner: dict | None = None) -> HTMLResponse:
     return templates.TemplateResponse(request, "admin.html", {
         "admin_id": _current_user_id(request),
+        "users": _list_admin_users(),
+        "banner": banner,
+    })
+
+
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request) -> HTMLResponse:
+    """Admin: user roster + invite form."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return _render_admin(request)
+
+
+@router.post("/admin/users/{user_id}/link-code", response_class=HTMLResponse)
+async def admin_user_link_code(request: Request, user_id: str) -> HTMLResponse:
+    """Generate a Telegram link code for an existing user."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise HTTPException(status_code=503, detail="DATABASE_URL not configured")
+    try:
+        result = create_telegram_link_code(user_id, database_url=db_url)
+    except TelegramLinkError as exc:
+        return _render_admin(request, banner={
+            "kind": "error",
+            "title": "Could not generate link code",
+            "value": str(exc),
+        })
+    return _render_admin(request, banner={
+        "kind": "success",
+        "title": f"Telegram link code for {result.get('email') or user_id}",
+        "value": f"link {result['code']}",
+        "note": f"Expires {result['expires_at'].strftime('%Y-%m-%d %H:%M UTC')}",
+    })
+
+
+@router.post("/admin/users/{user_id}/reset-password", response_class=HTMLResponse)
+async def admin_user_reset_password(request: Request, user_id: str) -> HTMLResponse:
+    """Reset a user's password and surface the plaintext once."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise HTTPException(status_code=503, detail="DATABASE_URL not configured")
+    try:
+        password = reset_password(user_id, database_url=db_url)
+    except ValueError as exc:
+        return _render_admin(request, banner={
+            "kind": "error",
+            "title": "Could not reset password",
+            "value": str(exc),
+        })
+    return _render_admin(request, banner={
+        "kind": "success",
+        "title": f"New password for {user_id}",
+        "value": password,
+        "note": "Share securely. This is shown only once.",
     })
 
 
