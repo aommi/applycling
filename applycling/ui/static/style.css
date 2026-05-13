@@ -480,6 +480,114 @@ input[type="file"] {
   color: var(--text);
 }
 
+.admin-banner {
+  border-left: 3px solid var(--accent);
+}
+
+.admin-banner-success {
+  border-left-color: var(--accent);
+}
+
+.admin-banner-error {
+  border-left-color: #c0392b;
+}
+
+.admin-banner-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.admin-banner-value {
+  display: block;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.admin-banner-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.admin-users {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-users th,
+.admin-users td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.admin-users th {
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-dim {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.admin-reason {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-actions form {
+  margin: 0;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.badge-new        { color: #d4a017; border-color: #d4a017; }
+.badge-confirming { color: #2e86c1; border-color: #2e86c1; }
+.badge-active     { color: #229954; border-color: #229954; }
+.badge-running    { color: var(--accent); border-color: var(--accent); }
+
+.badge-tg-linked  { color: #229954; border-color: #229954; }
+.badge-tg-none    { color: var(--text-dim); }
+.badge-tg-chat_id_zero { color: #c0392b; border-color: #c0392b; }
+
+.badge-run-completed { color: #229954; border-color: #229954; }
+.badge-run-running   { color: var(--accent); border-color: var(--accent); }
+.badge-run-failed    { color: #c0392b; border-color: #c0392b; }
+
 .dropzone {
   position: relative;
   margin-bottom: 12px;

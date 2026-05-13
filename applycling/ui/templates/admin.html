@@ -5,6 +5,73 @@
 </div>
 
 <div class="onboarding-shell">
+  {% if banner %}
+  <section class="submit-card admin-banner admin-banner-{{ banner.kind }}">
+    <div class="admin-banner-title">{{ banner.title }}</div>
+    <code class="admin-banner-value">{{ banner.value }}</code>
+    {% if banner.note %}
+    <div class="admin-banner-note">{{ banner.note }}</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="submit-card onboarding-card">
+    <h2>Users</h2>
+    {% if users %}
+    <table class="admin-users">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Name</th>
+          <th>State</th>
+          <th>Progress</th>
+          <th>Telegram</th>
+          <th>Last run</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.email }}</td>
+          <td>{{ u.display_name }}</td>
+          <td>
+            <span class="badge badge-{{ u.onboarding_state }}">{{ u.onboarding_state }}</span>
+            {% if u.has_active_run %}<span class="badge badge-running">running</span>{% endif %}
+          </td>
+          <td title="Missing: {{ u.progress_missing | join(', ') if u.progress_missing else 'none' }}">
+            {{ u.progress_done }}/{{ u.progress_total }}
+          </td>
+          <td>
+            <span class="badge badge-tg-{{ u.telegram_state }}">{{ u.telegram_state }}</span>
+          </td>
+          <td>
+            <span class="badge badge-run-{{ u.last_status }}">{{ u.last_status }}</span>
+            <span class="admin-dim">{{ u.last_at }}</span>
+            {% if u.last_status_reason %}
+            <div class="admin-dim admin-reason" title="{{ u.last_status_reason }}">{{ u.last_status_reason }}</div>
+            {% endif %}
+          </td>
+          <td class="admin-dim">{{ u.created_at }}</td>
+          <td class="admin-actions">
+            <form method="post" action="/admin/users/{{ u.id }}/link-code">
+              <button type="submit" class="btn btn-small">Link Code</button>
+            </form>
+            <form method="post" action="/admin/users/{{ u.id }}/reset-password"
+                  onsubmit="return confirm('Reset password for {{ u.email }}?');">
+              <button type="submit" class="btn btn-small">Reset PW</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="submit-note">No users yet, or DATABASE_URL is not configured.</p>
+    {% endif %}
+  </section>
+
   <section class="submit-card onboarding-card">
     <h2>Invite alpha users</h2>
     <p class="submit-intro">
