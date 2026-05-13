@@ -814,6 +814,23 @@ def _unlinked_telegram_response() -> JSONResponse:
     )
 
 
+def _linked_profile_incomplete_response(user_id: str) -> JSONResponse:
+    return JSONResponse(
+        {
+            "relay_message": (
+                "Telegram is linked, but your applycling Profile is not ready "
+                "yet. Log in to applycling, open Profile, upload your resume "
+                "and save your details, then send me a job URL."
+            ),
+            "onboarding_state": "new",
+            "user_id": user_id,
+            "trigger_pipeline": False,
+            "profile_preview": None,
+            "actions": ["complete_profile"],
+        }
+    )
+
+
 def _onboarding_token_secret() -> str:
     """Return the server-only secret used to sign web onboarding tokens."""
     secret = (
@@ -1065,7 +1082,7 @@ async def forward(
             _store().save_user_profile(profile=profile)
 
     elif current_state == "new":
-        return _unlinked_telegram_response()
+        return _linked_profile_incomplete_response(user_id)
 
     else:
         return JSONResponse(

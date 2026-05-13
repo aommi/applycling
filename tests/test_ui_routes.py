@@ -838,12 +838,12 @@ def test_forward_unlinked_url_requires_web_link(
     mock_run.assert_not_called()
 
 
-def test_forward_linked_new_state_requires_web_link(
+def test_forward_linked_new_state_requires_profile_completion(
     client,
     allow_forward_localhost,
     fake_postgres_store,
 ):
-    """A linked row still in 'new' state cannot use Telegram onboarding."""
+    """A linked row still in 'new' state is linked but must finish Profile."""
     with patch(
         "applycling.ui.routes._resolve_linked_telegram_user",
         return_value={
@@ -861,9 +861,12 @@ def test_forward_linked_new_state_requires_web_link(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["onboarding_state"] == "unlinked"
+    assert payload["onboarding_state"] == "new"
+    assert payload["user_id"] == _USER_ID
     assert payload["trigger_pipeline"] is False
-    assert payload["actions"] == ["link_required"]
+    assert payload["actions"] == ["complete_profile"]
+    assert "telegram is linked" in payload["relay_message"].lower()
+    assert "profile" in payload["relay_message"].lower()
     assert fake_postgres_store.instances == []
 
 

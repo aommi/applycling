@@ -4,8 +4,9 @@
 
 Alpha onboarding/admin hardening shipped through PRs #60, #61, #62, #63, #64,
 and fix/resume-preflight-guard on 2026-05-13. Next: deploy latest `main` to
-the VPS, run Alembic to head `007_add_telegram_link_code`, then run the
-end-to-end web + Telegram onboarding/admin playbook with a real alpha user.
+the VPS, run Alembic to head `008_null_telegram_placeholder_emails`, then run
+the end-to-end web-first Telegram linking/admin playbook with a real alpha
+user.
 
 ## In Progress
 
@@ -43,8 +44,7 @@ end-to-end web + Telegram onboarding/admin playbook with a real alpha user.
   `007_add_telegram_link_code`.
 - 2026-05-13 PR #62 added `/profile` onboarding progress, first-login redirect
   for incomplete profiles, self-serve Telegram link-code generation from the
-  web Profile page, and Telegram resume email matching that prompts linking
-  before storing resume/profile data on a newly-created Telegram row.
+  web Profile page, and canonical web-profile setup for invited users.
 - 2026-05-13 PR #63 added drag-and-drop resume upload on `/profile`.
 - 2026-05-13 PR #64 added the `/admin` user roster with onboarding/progress,
   Telegram state, latest-run diagnostics, per-row Link Code generation, and
@@ -52,10 +52,20 @@ end-to-end web + Telegram onboarding/admin playbook with a real alpha user.
   removing inline-JS reset confirmation XSS risk and making `chat_id_zero`
   win over `linked` via `_telegram_state()`.
 - Branch `fix/resume-preflight-guard` (merged 2026-05-13) adds a generation
-  guard: Telegram active URL, Telegram new URL, web submit/regenerate, and
-  /api/intake all refuse to schedule pipeline work when the scoped user row
-  has no stored resume text. URL-before-resume is now a relay message, not a
-  skip-onboarding path.
+  guard: `/api/forward` active URL, web submit/regenerate, and `/api/intake`
+  all refuse to schedule pipeline work when the scoped user row has no stored
+  resume text. `/api/forward` new no longer dispatches at all.
+- Direct-main web-first Telegram linking follow-up (2026-05-13) makes web/admin
+  invite the canonical account creation path. `/api/forward` consumes
+  `link CODE` first, then resolves non-deleted users by `telegram_id` without
+  auto-creating rows. Unlinked Telegram messages return link-required guidance
+  with an admin-invite fallback and never store resume text, charge quota, or
+  dispatch pipeline work. Linked users whose Profile is incomplete get a
+  complete-profile relay instead of being told to link again.
+- Placeholder Telegram emails are cleanup-only now: migration
+  `008_null_telegram_placeholder_emails` nulls `tg_<digits>@applycling.local`
+  rows with no password hash, and `/admin` displays null/placeholder emails as
+  `Telegram-only`.
 
 ## Blocked
 
@@ -92,7 +102,8 @@ Hermes profile relies on new link-code behavior, otherwise Telegram/web linking
 will hit a schema that doesn't have `telegram_link_code_hash`.
 
 1. **Pre-deploy on VPS (`/opt/applycling`):**
-   - `git pull` latest `main` (contains PRs #60, #61, #62, #63, #64).
+   - `git pull` latest `main` (contains PRs #60, #61, #62, #63, #64,
+     resume guard, and web-first Telegram linking cleanup).
    - Append to `/opt/applycling/.env`:
      - `APPLYCLING_FORWARD_ALLOWED_SOURCES=172.30.0.1`
      - `APPLYCLING_SESSION_SECRET=<generate via `openssl rand -hex 32`>`
@@ -112,15 +123,17 @@ will hit a schema that doesn't have `telegram_link_code_hash`.
 
 3. **Run the Alembic migration:**
    - `docker compose exec applycling python -m alembic upgrade head`
-   - Expect head = `007_add_telegram_link_code`.
+   - Expect head = `008_null_telegram_placeholder_emails`.
 
 4. **Smoke test the container in isolation:**
    - `curl -s http://127.0.0.1:8080/healthz` → 200.
    - From the **host** (not the container):
      `curl -s -X POST http://127.0.0.1:8080/api/forward -H 'Content-Type: application/json' -d '{"telegram_id":99999999,"chat_id":99999999,"first_name":"Smoke","message_text":"hello"}'`
-     → 200 with a `relay_message` (not 403). 403 here means the gateway
-     allowlist is wrong.
-   - Clean up: `DELETE FROM users WHERE telegram_id = 99999999;`
+     → 200 with a link-required `relay_message` (not 403) and no user row
+     created for `telegram_id=99999999`. 403 here means the gateway allowlist
+     is wrong.
+   - Confirm cleanup is unnecessary: `SELECT id FROM users WHERE telegram_id = 99999999;`
+     should return 0 rows.
 
 5. **Update Hermes SOUL on the VPS host (do NOT create a second profile/bot):**
    - `cp /opt/applycling/app/docs/deploy/hermes_forwarding_template.md \
@@ -141,15 +154,21 @@ will hit a schema that doesn't have `telegram_link_code_hash`.
      `DATABASE_URL`.
 
 6. **End-to-end onboarding test (use your own Telegram account):**
-   - New-user resume path: send a multi-line resume → expect
-     "Reading your resume now…" relay; DB row has
-     `onboarding_state='confirming'`, `resume` populated.
-   - Approval: send `looks good` → relay "You're all set!";
-     `onboarding_state='active'`.
-   - Active job: send a real job URL → relay "On it…"; package generates,
-     PDF arrives via Telegram, `pipeline_runs` row finishes `succeeded`.
-   - URL-before-resume path (separate test account, or reset): send a URL as
-     first message → expect a resume-required relay message (200) and no
+   - Unlinked Telegram text: send any non-link-code message before linking →
+     expect a link-required relay that mentions Profile and asking the admin
+     for an invite; no user row, pipeline run, or daily-cap charge.
+   - Web-first setup: invite a user from `/admin`, log in, complete `/profile`
+     with resume + profile details, generate a Telegram link code, then send
+     `link CODE` to the bot. Confirm the existing user row gets
+     `telegram_id`/`chat_id`.
+   - Linked active job: send a real job URL → relay "On it…"; package
+     generates, PDF arrives via Telegram, `pipeline_runs` row finishes
+     `succeeded`.
+   - Linked incomplete Profile path (separate test user): link Telegram before
+     completing `/profile`, then send a URL → expect a complete-profile relay
+     message and no pipeline run / daily-cap charge.
+   - Linked URL-before-resume path: active linked user with no stored resume
+     sends a URL → expect a resume-required relay message (200) and no
      pipeline run / daily-cap charge.
    - Daily-cap path: hit 10 generations in a day → 11th returns 429 with
      "Daily generation limit reached".
@@ -162,6 +181,8 @@ will hit a schema that doesn't have `telegram_link_code_hash`.
      converted into stored text in `users.resume` on the authenticated row.
    - Generate a Telegram link code from `/profile`, send `link CODE` to the
      Telegram bot, and confirm Telegram attaches to the same user row.
+   - Confirm `/admin` shows `Telegram-only` for legacy placeholder/null email
+     rows and the user table stays inside its background container.
    - Try `https://<vps>/onboarding/confirm` with no token / a tampered token
      → 403 for the legacy confirm route.
    - Visit `/admin` as `APPLYCLING_ADMIN_USER_ID`, invite a test user, log in
