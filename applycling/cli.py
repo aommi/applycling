@@ -2265,5 +2265,70 @@ def users_list():
         )
 
 
+@users_group.command("merge")
+@click.option("--source-user-id", required=True, help="Duplicate user UUID to merge from")
+@click.option("--target-user-id", required=True, help="Canonical user UUID to merge into")
+@click.option("--dry-run", is_flag=True, help="Preview the merge without writing")
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="Confirm the merge without an interactive prompt",
+)
+def users_merge(source_user_id, target_user_id, dry_run, yes):
+    """Merge a duplicate user row into a canonical user row."""
+    from applycling.user_admin import UserMergeError, merge_users
+
+    if not dry_run and not yes:
+        click.confirm(
+            "This moves jobs/runs/artifacts to the target user and soft-deletes "
+            "the source user. Continue?",
+            abort=True,
+        )
+
+    try:
+        result = merge_users(
+            source_user_id,
+            target_user_id,
+            dry_run=dry_run,
+        )
+    except UserMergeError as e:
+        raise click.ClickException(str(e))
+
+    mode = "DRY RUN" if result["dry_run"] else "MERGED"
+    click.echo(f"{mode}: {result['source_user_id']} -> {result['target_user_id']}")
+    moved = result["moved"]
+    click.echo(
+        f"Moved rows: jobs={moved['jobs']}, "
+        f"pipeline_runs={moved['pipeline_runs']}, artifacts={moved['artifacts']}"
+    )
+    fields = result["merged_fields"]
+    click.echo(
+        "Target identity: "
+        f"email={fields.get('email')!r}, "
+        f"telegram_id={fields.get('telegram_id')!r}, "
+        f"chat_id={fields.get('chat_id')!r}, "
+        f"onboarding_state={fields.get('onboarding_state')!r}"
+    )
+
+
+@users_group.command("link-code")
+@click.option("--user-id", required=True, help="Existing web/canonical user UUID")
+@click.option("--ttl-minutes", type=int, default=30, help="Code lifetime in minutes")
+def users_link_code(user_id, ttl_minutes):
+    """Create a one-time Telegram account link code for a user."""
+    from applycling.user_admin import TelegramLinkError, create_telegram_link_code
+
+    try:
+        result = create_telegram_link_code(user_id, ttl_minutes=ttl_minutes)
+    except TelegramLinkError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"User: {result['user_id']}")
+    click.echo(f"Telegram link code: {result['code']}")
+    click.echo("Send this in Telegram:")
+    click.echo(f"  link {result['code']}")
+    click.echo(f"Expires at: {result['expires_at'].isoformat()}")
+
+
 if __name__ == "__main__":
     main()

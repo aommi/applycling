@@ -624,6 +624,64 @@ def test_forward_422_on_invalid_body(client, allow_forward_localhost):
     assert response.status_code == 422
 
 
+def test_forward_link_code_attaches_telegram_before_user_creation(
+    client,
+    allow_forward_localhost,
+):
+    """A link code connects Telegram to an existing user without duplicate creation."""
+    with (
+        patch(
+            "applycling.ui.routes.consume_telegram_link_code",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "merged_source_user_id": None,
+                "moved": {"jobs": 0, "pipeline_runs": 0, "artifacts": 0},
+            },
+        ) as mock_consume,
+        patch("applycling.ui.routes.get_or_create_user_by_telegram") as mock_get,
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "link ABC12345"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["actions"] == ["linked_telegram"]
+    assert response.json()["user_id"] == _USER_ID
+    mock_consume.assert_called_once_with(
+        "ABC12345",
+        telegram_id=123456,
+        chat_id=789012,
+        first_name="Jane",
+    )
+    mock_get.assert_not_called()
+
+
+def test_forward_invalid_link_code_returns_bounded_error(
+    client,
+    allow_forward_localhost,
+):
+    from applycling.user_admin import TelegramLinkError
+
+    with (
+        patch(
+            "applycling.ui.routes.consume_telegram_link_code",
+            side_effect=TelegramLinkError("link code is invalid or expired"),
+        ),
+        patch("applycling.ui.routes.get_or_create_user_by_telegram") as mock_get,
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "link ABC12345"},
+        )
+
+    assert response.status_code == 409
+    assert "couldn't link" in response.json()["relay_message"].lower()
+    mock_get.assert_not_called()
+
+
 def test_forward_new_user_resume_moves_to_confirming(
     client,
     allow_forward_localhost,
@@ -969,3 +1027,117 @@ def test_onboarding_post_rejects_empty_token(client, monkeypatch):
         data={"token": "", "display_name": "Jane Doe"},
     )
     assert response.status_code == 403
+
+
+def test_profile_page_prefills_current_user_profile(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Logged-in web users see the canonical resume/profile from their row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    store_cls = fake_postgres_store
+    original_init = store_cls.__init__
+
+    def _init_with_profile(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.profile = {
+            "profile": {
+                "name": "Jane Doe",
+                "email": "jane@example.com",
+                "phone": "555",
+                "location": "Vancouver",
+                "linkedin": "https://linkedin.com/in/jane",
+                "portfolio": "https://jane.example.com",
+            },
+            "resume": "Jane resume text",
+            "display_name": "Jane Doe",
+        }
+
+    with (
+        patch.object(store_cls, "__init__", _init_with_profile),
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+    ):
+        response = client.get("/profile")
+
+    assert response.status_code == 200
+    assert "Jane resume text" in response.text
+    assert "jane@example.com" in response.text
+
+
+def test_profile_update_saves_current_user_profile(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Profile edits update the current canonical user row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    with patch("applycling.ui.routes._current_user_id", return_value=_USER_ID):
+        response = client.post(
+            "/profile",
+            data={
+                "display_name": "Jane Doe",
+                "email": "jane@example.com",
+                "phone": "555",
+                "location": "Vancouver",
+                "linkedin": "https://linkedin.com/in/jane",
+                "portfolio": "https://jane.example.com",
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    saved = fake_postgres_store.instances[-1].saved[-1]
+    assert saved["display_name"] == "Jane Doe"
+    assert saved["profile"]["email"] == "jane@example.com"
+
+
+def test_onboarding_submit_resume_updates_current_user_from_uploaded_file(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Uploading a resume stores extracted text on the logged-in user row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    with patch("applycling.ui.routes._current_user_id", return_value=_USER_ID):
+        response = client.post(
+            "/onboarding/submit-resume",
+            files={
+                "resume_file": (
+                    "resume.txt",
+                    b"Jane Doe\nExperience: Engineer",
+                    "text/plain",
+                )
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    saved = fake_postgres_store.instances[-1].saved[-1]
+    assert saved["resume"] == "Jane Doe\nExperience: Engineer"
+    assert saved["onboarding_state"] == "confirming"
+
+
+def test_onboarding_submit_resume_rejects_large_upload(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Resume uploads are capped before writing unbounded temp files."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    with patch("applycling.ui.routes._current_user_id", return_value=_USER_ID):
+        response = client.post(
+            "/onboarding/submit-resume",
+            files={
+                "resume_file": (
+                    "resume.txt",
+                    b"x" * (ui_routes._MAX_RESUME_UPLOAD_BYTES + 1),
+                    "text/plain",
+                )
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 400
+    assert "10 MB" in response.text
+    assert fake_postgres_store.instances == []

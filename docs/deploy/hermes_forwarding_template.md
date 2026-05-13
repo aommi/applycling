@@ -32,6 +32,10 @@ values with the current Telegram message metadata and text.
 - Do NOT add your own preamble or commentary
 - If the response contains `trigger_pipeline: true`, the pipeline is already
   running. Just relay the message
+- If the response contains `actions`, ignore it unless a future applycling
+  deployment explicitly documents that action here. For example,
+  `linked_telegram` and `restart_onboarding` are internal state markers; still
+  only relay `relay_message`
 - If curl fails or returns an error, tell the user: "Something went wrong on our end. Try again in a moment."
 
 ## Important

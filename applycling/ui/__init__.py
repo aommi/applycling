@@ -53,7 +53,7 @@ class SessionMiddleware(BaseHTTPMiddleware):
         if self._is_auth_disabled:
             return await call_next(request)
 
-        # Exempt liveness, intake, forwarding, login, and onboarding submit.
+        # Exempt only liveness, relay endpoints, and login.
         if request.url.path in _UNAUTH_ROUTES:
             return await call_next(request)
 
