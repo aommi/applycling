@@ -36,14 +36,14 @@ class _FakeConn:
         return _FakeCursor(self.row)
 
 
-def test_get_chat_id_for_user_preserves_zero(monkeypatch):
-    """A stored 0 is a DB value, not the same as a missing row."""
+def test_get_chat_id_for_user_treats_zero_as_missing(monkeypatch):
+    """Legacy chat_id=0 rows should not send Telegram requests to chat 0."""
     import psycopg
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://example")
     monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: _FakeConn((0,)))
 
-    assert telegram_notify._get_chat_id_for_user("user-1") == 0
+    assert telegram_notify._get_chat_id_for_user("user-1") is None
 
 
 def test_get_chat_id_for_user_missing_row(monkeypatch):

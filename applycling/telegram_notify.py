@@ -100,7 +100,9 @@ def _get_chat_id_for_user(user_id: str) -> int | None:
                 (user_id,),
             )
             row = cur.fetchone()
-    return row[0] if row and row[0] is not None else None
+    if not row or row[0] in (None, 0):
+        return None
+    return row[0]
 
 
 def notify_to_user(token: str, user_id: str, text: str) -> bool:
