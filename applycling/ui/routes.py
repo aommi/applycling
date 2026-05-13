@@ -10,6 +10,8 @@ import base64
 import hashlib
 import hmac
 import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 from urllib.parse import urlparse
@@ -24,6 +26,7 @@ from applycling.resume_import import ResumeImportError, extract_resume_text
 from applycling.db_seed import get_or_create_user_by_telegram
 from applycling.forward_endpoint import (
     APPROVAL_KEYWORDS,
+    ForwardResponse,
     handle_active_user_non_url,
     handle_active_user_url,
     handle_confirming_approval,
@@ -48,6 +51,7 @@ from applycling.auth import create_session_token, verify_password
 from applycling.user_admin import (
     TelegramLinkError,
     consume_telegram_link_code,
+    create_telegram_link_code,
     parse_telegram_link_code,
 )
 
@@ -66,6 +70,46 @@ templates.env.globals["job_actions"] = job_actions
 # Background task tracking — prevents asyncio from GC-ing fire-and-forget tasks.
 _background_tasks: set[asyncio.Task] = set()
 _MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024
+_EMAIL_RE = re.compile(r"[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[A-Za-z]{2,}")
+
+
+def _profile_progress(stored: dict) -> dict:
+    """Return shared onboarding/profile progress state for web display."""
+    profile = stored.get("profile") or {}
+    has_resume = bool((stored.get("resume") or "").strip())
+    has_name = bool((stored.get("display_name") or profile.get("name") or "").strip())
+    has_email = bool((profile.get("email") or "").strip())
+    telegram_linked = stored.get("telegram_id") not in (None, 0, "")
+    ready = has_resume and has_name and has_email
+    return {
+        "has_resume": has_resume,
+        "has_name": has_name,
+        "has_email": has_email,
+        "telegram_linked": telegram_linked,
+        "ready": ready,
+        "steps": [
+            {"label": "Resume saved", "done": has_resume},
+            {"label": "Name saved", "done": has_name},
+            {"label": "Email saved", "done": has_email},
+            {"label": "Telegram linked", "done": telegram_linked},
+        ],
+    }
+
+
+def _profile_needs_setup(stored: dict) -> bool:
+    return not _profile_progress(stored)["ready"]
+
+
+def _extract_email(text: str) -> str | None:
+    match = _EMAIL_RE.search(text)
+    return match.group(0).lower() if match else None
+
+
+def _format_link_expires_at(value: datetime) -> str:
+    """Render link-code expiry in a compact user-facing UTC format."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _web_readonly() -> bool:
@@ -180,8 +224,13 @@ async def login_submit(
             request, "login.html", {"error": error, "email": email}, status_code=401,
         )
 
-    token = create_session_token(str(row["id"]))
+    user_id = str(row["id"])
+    token = create_session_token(user_id)
     next_url = _safe_next_url(request.query_params.get("next", "/"))
+    if next_url == "/":
+        stored = PostgresStore(user_id=user_id, database_url=db_url).load_user_profile()
+        if _profile_needs_setup(stored):
+            next_url = "/profile"
 
     response = RedirectResponse(next_url, status_code=303)
     response.set_cookie(
@@ -524,6 +573,29 @@ def _try_increment_daily_generation(user_id: str) -> bool:
         return result.fetchone() is not None
 
 
+def _find_user_by_profile_email(email: str) -> dict | None:
+    """Find an active user whose profile JSON email matches *email*."""
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return None
+    store = PostgresStore(
+        user_id="00000000-0000-0000-0000-000000000001",
+        database_url=db_url,
+    )
+    with store._conn() as conn:
+        row = conn.execute(
+            """
+            SELECT id, display_name, telegram_id
+            FROM users
+            WHERE lower(profile->>'email') = %s
+              AND deleted_at IS NULL
+            LIMIT 1
+            """,
+            (email.lower(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 _verify_localhost = verify_localhost
 
 
@@ -788,12 +860,27 @@ async def forward(
             background_tasks.add_task(_run_scoped_pipeline, ctx, token)
         else:
             if looks_like_resume_text(message_text):
-                _store().save_user_profile(
-                    resume=message_text,
-                    display_name=first_name,
-                    onboarding_state="confirming",
-                )
-                response = handle_new_user_resume(user_id, message_text, first_name)
+                email = _extract_email(message_text)
+                existing_user = _find_user_by_profile_email(email) if email else None
+                if existing_user and str(existing_user["id"]) != user_id:
+                    response = ForwardResponse(
+                        relay_message=(
+                            "That resume email matches an existing web account. "
+                            "Open the web Profile page, generate a Telegram link "
+                            "code, then send `link CODE` here."
+                        ),
+                        onboarding_state="new",
+                        user_id=user_id,
+                        trigger_pipeline=False,
+                        actions=["link_existing_account"],
+                    )
+                else:
+                    _store().save_user_profile(
+                        resume=message_text,
+                        display_name=first_name,
+                        onboarding_state="confirming",
+                    )
+                    response = handle_new_user_resume(user_id, message_text, first_name)
             else:
                 response = handle_new_user_resume_rejected(user_id)
 
@@ -833,6 +920,7 @@ async def onboarding_landing(request: Request) -> HTMLResponse:
     telegram_enabled = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
     stored = _load_current_user_profile(request)
     profile = stored.get("profile") or {}
+    progress = _profile_progress(stored)
     return templates.TemplateResponse(
         request,
         "onboarding.html",
@@ -840,6 +928,9 @@ async def onboarding_landing(request: Request) -> HTMLResponse:
             "telegram_enabled": telegram_enabled,
             "telegram_link": os.environ.get("APPLYCLING_TELEGRAM_LINK", ""),
             "resume_text": stored.get("resume", ""),
+            "progress": progress,
+            "link_code": None,
+            "link_expires_at": None,
             "profile": {
                 "display_name": stored.get("display_name") or profile.get("name", ""),
                 "email": profile.get("email", ""),
@@ -887,6 +978,43 @@ async def profile_update(
         display_name=display_name,
     )
     return RedirectResponse("/profile", status_code=303)
+
+
+@router.post("/profile/telegram-link-code", response_class=HTMLResponse)
+async def profile_telegram_link_code(request: Request) -> HTMLResponse:
+    """Generate a one-time Telegram link code for the current user."""
+    user_id = _current_user_id(request)
+    db_url = os.environ.get("DATABASE_URL")
+    if not user_id or not db_url:
+        raise HTTPException(status_code=403, detail="Telegram linking requires login")
+
+    try:
+        code = create_telegram_link_code(user_id, database_url=db_url)
+    except TelegramLinkError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    stored = _load_current_user_profile(request)
+    profile = stored.get("profile") or {}
+    return templates.TemplateResponse(
+        request,
+        "onboarding.html",
+        {
+            "telegram_enabled": bool(os.environ.get("TELEGRAM_BOT_TOKEN")),
+            "telegram_link": os.environ.get("APPLYCLING_TELEGRAM_LINK", ""),
+            "resume_text": stored.get("resume", ""),
+            "progress": _profile_progress(stored),
+            "link_code": code["code"],
+            "link_expires_at": _format_link_expires_at(code["expires_at"]),
+            "profile": {
+                "display_name": stored.get("display_name") or profile.get("name", ""),
+                "email": profile.get("email", ""),
+                "phone": profile.get("phone", ""),
+                "location": profile.get("location", ""),
+                "linkedin": profile.get("linkedin", ""),
+                "portfolio": profile.get("portfolio", ""),
+            },
+        },
+    )
 
 
 def _load_current_user_profile(request: Request) -> dict:

@@ -313,6 +313,32 @@ def test_login_next_rejects_external_redirects(client):
     assert response.headers["location"] == "/"
 
 
+def test_login_redirects_incomplete_profile_to_profile_page(client):
+    """First login lands on profile setup when resume/profile is incomplete."""
+    mock_conn = (
+        patch("applycling.ui.routes.PostgresStore")
+    )
+    with (
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://test"}, clear=False),
+        mock_conn as mock_store,
+        patch("applycling.ui.routes.verify_password", return_value=True),
+    ):
+        store = mock_store.return_value
+        store._conn.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = {
+            "id": _USER_ID,
+            "password_hash": "hash",
+        }
+        store.load_user_profile.return_value = {"profile": {}, "resume": ""}
+        response = client.post(
+            "/login",
+            data={"email": "jane@example.com", "password": "secret"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/profile"
+
+
 def test_no_auth_env_bypasses_session(monkeypatch):
     """APPLYCLING_NO_AUTH=true disables session checks."""
     monkeypatch.setenv("APPLYCLING_NO_AUTH", "true")
@@ -375,7 +401,11 @@ class _FakePostgresStore:
 
     def __init__(self, *args, **kwargs):
         self.saved: list[dict] = []
-        self.profile = {"profile": {}, "resume": "Jane Doe\nEngineer"}
+        self.profile = {
+            "profile": {},
+            "resume": "Jane Doe\nEngineer",
+            "telegram_id": None,
+        }
         self.__class__.instances.append(self)
 
     def save_user_profile(self, **kwargs) -> None:
@@ -710,6 +740,43 @@ def test_forward_new_user_resume_moves_to_confirming(
     assert payload["trigger_pipeline"] is False
     assert fake_postgres_store.instances[-1].saved[-1]["resume"] == resume_text
     assert fake_postgres_store.instances[-1].saved[-1]["onboarding_state"] == "confirming"
+
+
+def test_forward_new_user_resume_matching_existing_email_prompts_link(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """Telegram resume intake prompts linking when email matches a web user."""
+    resume_text = _resume_text()
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "new",
+                "display_name": "Jane",
+            },
+        ),
+        patch(
+            "applycling.ui.routes._find_user_by_profile_email",
+            return_value={"id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
+        ) as mock_find,
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": resume_text},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["onboarding_state"] == "new"
+    assert payload["actions"] == ["link_existing_account"]
+    assert "link code" in payload["relay_message"].lower()
+    assert fake_postgres_store.instances == []
+    mock_find.assert_called_once_with("jane@example.com")
 
 
 def test_forward_new_user_short_text_is_not_stored_as_resume(
@@ -1063,6 +1130,8 @@ def test_profile_page_prefills_current_user_profile(
     assert response.status_code == 200
     assert "Jane resume text" in response.text
     assert "jane@example.com" in response.text
+    assert "Resume saved" in response.text
+    assert "Telegram linked" in response.text
 
 
 def test_profile_update_saves_current_user_profile(
@@ -1090,6 +1159,36 @@ def test_profile_update_saves_current_user_profile(
     saved = fake_postgres_store.instances[-1].saved[-1]
     assert saved["display_name"] == "Jane Doe"
     assert saved["profile"]["email"] == "jane@example.com"
+
+
+def test_profile_generates_telegram_link_code(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Users can generate their own Telegram link code from Profile."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch(
+            "applycling.ui.routes.create_telegram_link_code",
+            return_value={
+                "user_id": _USER_ID,
+                "code": "ABC12345",
+                "expires_at": datetime(2026, 5, 13, tzinfo=timezone.utc),
+            },
+        ) as mock_code,
+    ):
+        response = client.post("/profile/telegram-link-code")
+
+    assert response.status_code == 200
+    assert "link ABC12345" in response.text
+    assert "2026-05-13 00:00 UTC" in response.text
+    mock_code.assert_called_once_with(_USER_ID, database_url="postgresql://example")
 
 
 def test_onboarding_submit_resume_updates_current_user_from_uploaded_file(
