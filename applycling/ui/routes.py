@@ -276,6 +276,19 @@ def _humanize_since(value) -> str:
     return f"{seconds // 86400}d ago"
 
 
+def _telegram_state(telegram_id, chat_id) -> str:
+    """Return the admin Telegram state slug for a user row.
+
+    chat_id == 0 wins over a present telegram_id because the column exists to
+    surface broken outbound delivery (Telegram won't accept chat_id 0).
+    """
+    if chat_id == 0:
+        return "chat_id_zero"
+    if telegram_id not in (None, 0, ""):
+        return "linked"
+    return "none"
+
+
 def _list_admin_users() -> list[dict]:
     """Return user rows with status fields for the admin table."""
     db_url = os.environ.get("DATABASE_URL")
@@ -330,12 +343,7 @@ def _list_admin_users() -> list[dict]:
         })
         done = sum(1 for step in progress["steps"] if step["done"])
         total = len(progress["steps"])
-        if row.get("chat_id") == 0:
-            telegram_state = "chat_id_zero"
-        elif progress["telegram_linked"]:
-            telegram_state = "linked"
-        else:
-            telegram_state = "none"
+        telegram_state = _telegram_state(row.get("telegram_id"), row.get("chat_id"))
         users.append({
             "id": str(row["id"]),
             "email": row["email"] or "—",

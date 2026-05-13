@@ -1241,6 +1241,25 @@ def test_onboarding_submit_resume_rejects_large_upload(
     assert "10 MB" in response.text
 
 
+# ── Admin Telegram state helper ───────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "telegram_id,chat_id,expected",
+    [
+        (123456, 0, "chat_id_zero"),       # broken outbound delivery wins
+        (123456, 789012, "linked"),         # healthy link
+        (123456, None, "linked"),           # linked, chat_id not yet stored
+        (None, None, "none"),               # no Telegram identity
+        (None, 0, "chat_id_zero"),          # orphaned chat_id=0 still surfaced
+        (0, 789012, "none"),                # telegram_id=0 is "missing"
+        ("", None, "none"),                 # empty string treated as missing
+    ],
+)
+def test_telegram_state_returns_expected_slug(telegram_id, chat_id, expected):
+    assert ui_routes._telegram_state(telegram_id, chat_id) == expected
+
+
 # ── Admin user list ───────────────────────────────────────────────────
 
 
