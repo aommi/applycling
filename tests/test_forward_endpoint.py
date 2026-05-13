@@ -15,6 +15,7 @@ from applycling.forward_endpoint import (
     handle_new_user_resume,
     handle_new_user_url,
     is_url_like,
+    looks_like_resume_text,
 )
 from applycling.forward_endpoint import verify_localhost
 
@@ -27,6 +28,24 @@ def test_is_url_like_accepts_http_urls() -> None:
 def test_is_url_like_rejects_plain_text() -> None:
     assert not is_url_like("hello, I'm a software engineer")
     assert not is_url_like("")
+
+
+def test_looks_like_resume_text_rejects_short_greetings() -> None:
+    assert not looks_like_resume_text("salam")
+    assert not looks_like_resume_text("hello, I am an engineer")
+
+
+def test_looks_like_resume_text_accepts_resume_like_text() -> None:
+    resume = (
+        "Jane Doe jane@example.com linkedin.com/in/jane "
+        "Senior software engineer with experience building distributed systems. "
+        "Experience at Acme building developer platforms and production APIs. "
+        "Projects include queue workers, observability, and data pipelines. "
+        "Skills: Python, FastAPI, Postgres, Docker, Kubernetes, cloud services. "
+        "Education: BS Computer Science. "
+    )
+    resume = resume + ("Delivered reliable backend systems. " * 10)
+    assert looks_like_resume_text(resume)
 
 
 def test_state_helpers_return_expected_transitions() -> None:

@@ -100,13 +100,13 @@ def _get_chat_id_for_user(user_id: str) -> int | None:
                 (user_id,),
             )
             row = cur.fetchone()
-    return row[0] if row and row[0] else None
+    return row[0] if row and row[0] is not None else None
 
 
 def notify_to_user(token: str, user_id: str, text: str) -> bool:
     """Send a Telegram message to a specific user via their stored chat_id."""
     chat_id = _get_chat_id_for_user(user_id)
-    if not chat_id:
+    if chat_id is None:
         import sys
         print(
             f"[telegram] No chat_id for user {user_id}, cannot notify.",
