@@ -59,7 +59,8 @@
               <button type="submit" class="btn btn-small">Link Code</button>
             </form>
             <form method="post" action="/admin/users/{{ u.id }}/reset-password"
-                  onsubmit="return confirm('Reset password for {{ u.email }}?');">
+                  data-confirm-reset
+                  data-email="{{ u.email }}">
               <button type="submit" class="btn btn-small">Reset PW</button>
             </form>
           </td>
@@ -97,6 +98,15 @@
 </div>
 
 <script>
+  document.querySelectorAll('form[data-confirm-reset]').forEach((form) => {
+    form.addEventListener('submit', (e) => {
+      const email = form.getAttribute('data-email') || 'this user';
+      if (!confirm('Reset password for ' + email + '?')) {
+        e.preventDefault();
+      }
+    });
+  });
+
   document.getElementById('invite-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const result = document.getElementById('invite-result');

@@ -330,9 +330,12 @@ def _list_admin_users() -> list[dict]:
         })
         done = sum(1 for step in progress["steps"] if step["done"])
         total = len(progress["steps"])
-        telegram_state = "linked" if progress["telegram_linked"] else (
-            "chat_id_zero" if row.get("chat_id") == 0 else "none"
-        )
+        if row.get("chat_id") == 0:
+            telegram_state = "chat_id_zero"
+        elif progress["telegram_linked"]:
+            telegram_state = "linked"
+        else:
+            telegram_state = "none"
         users.append({
             "id": str(row["id"]),
             "email": row["email"] or "—",
