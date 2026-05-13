@@ -191,6 +191,47 @@ def test_regenerate_scopes_status_and_pipeline_to_session_user(client):
     mock_schedule.assert_called_once_with("job-1", user_id=_USER_ID)
 
 
+def test_submit_rejects_when_no_resume(client):
+    """POST /submit returns 400 and does not create a job when resume is missing."""
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes._user_has_resume", return_value=False),
+        patch("applycling.ui.routes.jobs_service.create_job_from_url") as mock_create,
+        patch("applycling.ui.routes.jobs_service.set_job_status") as mock_status,
+        patch("applycling.ui.routes.schedule_pipeline_run") as mock_schedule,
+    ):
+        response = client.post(
+            "/submit",
+            data={"url": "https://example.com/jobs/test"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 400
+    assert "resume" in response.text.lower()
+    mock_create.assert_not_called()
+    mock_status.assert_not_called()
+    mock_schedule.assert_not_called()
+
+
+def test_regenerate_rejects_when_no_resume(client):
+    """POST /jobs/{id}/regenerate redirects with no_resume error when resume is missing."""
+    with (
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes._user_has_resume", return_value=False),
+        patch("applycling.ui.routes.jobs_service.set_job_status") as mock_status,
+        patch("applycling.ui.routes.schedule_pipeline_run") as mock_schedule,
+    ):
+        response = client.post(
+            "/jobs/job-1/regenerate",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert "error=no_resume" in response.headers["location"]
+    mock_status.assert_not_called()
+    mock_schedule.assert_not_called()
+
+
 def test_status_update_scopes_to_session_user(client):
     """POST /jobs/{id}/status updates only the authenticated user's job."""
     with (
@@ -489,6 +530,29 @@ def test_intake_409_when_active_run_exists(client):
     assert "already running" in response.json()["error"].lower()
 
 
+def test_intake_400_when_no_resume(client):
+    """POST /api/intake refuses before charging daily cap when resume is missing."""
+    with (
+        patch(
+            "applycling.ui.routes._resolve_user_by_intake_secret",
+            return_value=(_USER_ID, 123456),
+        ),
+        patch("applycling.ui.routes.check_active_run", return_value=False),
+        patch("applycling.ui.routes._update_chat_id"),
+        patch("applycling.ui.routes._user_has_resume", return_value=False),
+        patch("applycling.ui.routes._try_increment_daily_generation") as mock_cap,
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+    ):
+        response = client.post(
+            "/api/intake",
+            json=_VALID_INTAKE_BODY,
+            headers={"X-Intake-Secret": _INTAKE_SECRET},
+        )
+    assert response.status_code == 400
+    mock_cap.assert_not_called()
+    mock_run.assert_not_called()
+
+
 # ── Daily cap tests (atomic) ─────────────────────────────────────────
 
 def test_intake_429_daily_cap_exceeded(client):
@@ -501,6 +565,7 @@ def test_intake_429_daily_cap_exceeded(client):
         patch(
             "applycling.ui.routes.check_active_run", return_value=False,
         ),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch(
             "applycling.ui.routes._try_increment_daily_generation",
             return_value=False,  # cap hit
@@ -525,6 +590,7 @@ def test_intake_daily_cap_not_hit_first_call(client):
         patch(
             "applycling.ui.routes.check_active_run", return_value=False,
         ),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch(
             "applycling.ui.routes._try_increment_daily_generation",
             return_value=True,
@@ -623,6 +689,7 @@ def test_intake_exempted_from_auth(client):
         patch(
             "applycling.ui.routes.check_active_run", return_value=False,
         ),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch(
             "applycling.ui.routes._try_increment_daily_generation",
             return_value=True,

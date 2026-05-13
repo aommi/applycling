@@ -874,6 +874,13 @@ async def intake(
             status_code=409,
         )
 
+    # Resume guard — refuse before charging daily cap
+    if not _user_has_resume(db_user_id):
+        raise HTTPException(
+            status_code=400,
+            detail="No resume found. Upload a resume before generating.",
+        )
+
     # Atomic daily cap — checked BEFORE pipeline starts
     if not _try_increment_daily_generation(db_user_id):
         raise HTTPException(status_code=429, detail="Daily generation limit reached")
