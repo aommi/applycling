@@ -1027,3 +1027,92 @@ def test_onboarding_post_rejects_empty_token(client, monkeypatch):
         data={"token": "", "display_name": "Jane Doe"},
     )
     assert response.status_code == 403
+
+
+def test_profile_page_prefills_current_user_profile(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Logged-in web users see the canonical resume/profile from their row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    store_cls = fake_postgres_store
+    original_init = store_cls.__init__
+
+    def _init_with_profile(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.profile = {
+            "profile": {
+                "name": "Jane Doe",
+                "email": "jane@example.com",
+                "phone": "555",
+                "location": "Vancouver",
+                "linkedin": "https://linkedin.com/in/jane",
+                "portfolio": "https://jane.example.com",
+            },
+            "resume": "Jane resume text",
+            "display_name": "Jane Doe",
+        }
+
+    with (
+        patch.object(store_cls, "__init__", _init_with_profile),
+        patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+    ):
+        response = client.get("/profile")
+
+    assert response.status_code == 200
+    assert "Jane resume text" in response.text
+    assert "jane@example.com" in response.text
+
+
+def test_profile_update_saves_current_user_profile(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Profile edits update the current canonical user row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    with patch("applycling.ui.routes._current_user_id", return_value=_USER_ID):
+        response = client.post(
+            "/profile",
+            data={
+                "display_name": "Jane Doe",
+                "email": "jane@example.com",
+                "phone": "555",
+                "location": "Vancouver",
+                "linkedin": "https://linkedin.com/in/jane",
+                "portfolio": "https://jane.example.com",
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    saved = fake_postgres_store.instances[-1].saved[-1]
+    assert saved["display_name"] == "Jane Doe"
+    assert saved["profile"]["email"] == "jane@example.com"
+
+
+def test_onboarding_submit_resume_updates_current_user_from_uploaded_file(
+    monkeypatch,
+    client,
+    fake_postgres_store,
+):
+    """Uploading a resume stores extracted text on the logged-in user row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://example")
+    with patch("applycling.ui.routes._current_user_id", return_value=_USER_ID):
+        response = client.post(
+            "/onboarding/submit-resume",
+            files={
+                "resume_file": (
+                    "resume.txt",
+                    b"Jane Doe\nExperience: Engineer",
+                    "text/plain",
+                )
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    saved = fake_postgres_store.instances[-1].saved[-1]
+    assert saved["resume"] == "Jane Doe\nExperience: Engineer"
+    assert saved["onboarding_state"] == "confirming"

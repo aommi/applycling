@@ -462,6 +462,24 @@ a:hover { text-decoration: underline; }
   color: var(--text);
 }
 
+.profile-grid input:disabled {
+  color: var(--text-dim);
+}
+
+.file-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+input[type="file"] {
+  display: block;
+  width: 100%;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
 .resume-preview {
   max-height: 280px;
   overflow: auto;

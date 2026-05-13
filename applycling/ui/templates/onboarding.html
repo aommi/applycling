@@ -7,23 +7,52 @@
 
 <div class="onboarding-shell">
   <section class="submit-card onboarding-card">
-    <h2>Paste your resume</h2>
+    <h2>Resume</h2>
     <p class="submit-intro">
-      Paste your current resume. applycling will infer what it can, then show
-      one confirmation screen before you start generating packages.
+      Upload your current resume or paste the text below. This updates the same
+      profile used by the workbench and Telegram.
     </p>
-    <form method="post" action="/onboarding/submit-resume">
+    <form method="post" action="/onboarding/submit-resume" enctype="multipart/form-data">
+      <label class="file-label" for="resume_file">Resume file</label>
+      <input
+        id="resume_file"
+        type="file"
+        name="resume_file"
+        accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+      >
       <textarea
         class="resume-input"
         name="resume_text"
-        placeholder="Paste your resume here..."
-        required
-      ></textarea>
+        placeholder="Or paste your resume here..."
+      >{{ resume_text }}</textarea>
       <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Continue</button>
+        <button type="submit" class="btn btn-primary">Update Resume</button>
       </div>
     </form>
-    <p class="submit-note">Resume text is stored server-side in your profile.</p>
+    <p class="submit-note">PDF, DOCX, Markdown, and text files are converted to stored resume text.</p>
+  </section>
+
+  <section class="submit-card onboarding-card">
+    <h2>Profile</h2>
+    <form method="post" action="/profile">
+      <div class="profile-grid">
+        <label for="display_name">Name</label>
+        <input id="display_name" type="text" name="display_name" value="{{ profile.display_name }}" required>
+        <label for="email">Email</label>
+        <input id="email" type="email" name="email" value="{{ profile.email }}">
+        <label for="phone">Phone</label>
+        <input id="phone" type="text" name="phone" value="{{ profile.phone }}">
+        <label for="location">Location</label>
+        <input id="location" type="text" name="location" value="{{ profile.location }}">
+        <label for="linkedin">LinkedIn</label>
+        <input id="linkedin" type="text" name="linkedin" value="{{ profile.linkedin }}">
+        <label for="portfolio">Portfolio</label>
+        <input id="portfolio" type="text" name="portfolio" value="{{ profile.portfolio }}">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Update Profile</button>
+      </div>
+    </form>
   </section>
 
   {% if telegram_enabled %}

@@ -11,14 +11,16 @@ import hashlib
 import hmac
 import os
 from pathlib import Path
+import tempfile
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
+from applycling.resume_import import ResumeImportError, extract_resume_text
 from applycling.db_seed import get_or_create_user_by_telegram
 from applycling.forward_endpoint import (
     APPROVAL_KEYWORDS,
@@ -826,24 +828,97 @@ async def forward(
 
 @router.get("/onboarding", response_class=HTMLResponse)
 async def onboarding_landing(request: Request) -> HTMLResponse:
-    """Show the web onboarding resume-paste screen."""
+    """Show the canonical web profile/resume setup screen."""
     telegram_enabled = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
+    stored = _load_current_user_profile(request)
+    profile = stored.get("profile") or {}
     return templates.TemplateResponse(
         request,
         "onboarding.html",
         {
             "telegram_enabled": telegram_enabled,
             "telegram_link": os.environ.get("APPLYCLING_TELEGRAM_LINK", ""),
+            "resume_text": stored.get("resume", ""),
+            "profile": {
+                "display_name": stored.get("display_name") or profile.get("name", ""),
+                "email": profile.get("email", ""),
+                "phone": profile.get("phone", ""),
+                "location": profile.get("location", ""),
+                "linkedin": profile.get("linkedin", ""),
+                "portfolio": profile.get("portfolio", ""),
+            },
         },
     )
 
 
+@router.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request) -> HTMLResponse:
+    """Alias for the canonical profile/resume editor."""
+    return await onboarding_landing(request)
+
+
+@router.post("/profile")
+async def profile_update(
+    request: Request,
+    display_name: str = Form(...),
+    email: str = Form(""),
+    phone: str = Form(""),
+    location: str = Form(""),
+    linkedin: str = Form(""),
+    portfolio: str = Form(""),
+) -> RedirectResponse:
+    """Update the current user's canonical profile fields."""
+    user_id = _current_user_id(request)
+    db_url = os.environ.get("DATABASE_URL")
+    if not user_id or not db_url:
+        raise HTTPException(status_code=403, detail="Profile editing requires login")
+
+    PostgresStore(user_id=user_id, database_url=db_url).save_user_profile(
+        profile={
+            "name": display_name,
+            "email": email,
+            "phone": phone,
+            "location": location,
+            "linkedin": linkedin,
+            "portfolio": portfolio,
+            "schema_version": "1.0",
+        },
+        display_name=display_name,
+    )
+    return RedirectResponse("/profile", status_code=303)
+
+
+def _load_current_user_profile(request: Request) -> dict:
+    user_id = _current_user_id(request)
+    db_url = os.environ.get("DATABASE_URL")
+    if not user_id or not db_url:
+        return {}
+    return PostgresStore(user_id=user_id, database_url=db_url).load_user_profile()
+
+
+def _extract_uploaded_resume(resume_file: UploadFile) -> str:
+    filename = Path(resume_file.filename or "resume").name
+    suffix = Path(filename).suffix.lower()
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        while chunk := resume_file.file.read(1024 * 1024):
+            tmp.write(chunk)
+    try:
+        return extract_resume_text(tmp_path)
+    finally:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+
+
 @router.post("/onboarding/submit-resume")
 async def onboarding_submit_resume(
-    request: Request,  # noqa: ARG001
-    resume_text: str = Form(...),
+    request: Request,
+    resume_text: str = Form(""),
+    resume_file: UploadFile | None = File(None),
 ) -> RedirectResponse:
-    """Create a web-only user row and store resume text server-side."""
+    """Store resume text on the current canonical user row."""
     import uuid
 
     import psycopg
@@ -855,16 +930,32 @@ async def onboarding_submit_resume(
             detail="Postgres DATABASE_URL is required for onboarding",
         )
 
-    user_id = str(uuid.uuid4())
+    uploaded_text = ""
+    if resume_file is not None and resume_file.filename:
+        try:
+            uploaded_text = _extract_uploaded_resume(resume_file)
+        except ResumeImportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    final_resume = uploaded_text or resume_text.strip()
+    if not final_resume:
+        raise HTTPException(status_code=400, detail="Resume text or file is required")
 
-    with psycopg.connect(db_url) as conn:
-        conn.execute(
-            "INSERT INTO users (id, email, onboarding_state, display_name, "
-            "resume, daily_generation_limit, created_at, updated_at) "
-            "VALUES (%s, %s, 'confirming', %s, %s, 10, NOW(), NOW())",
-            (user_id, f"web_{user_id}@applycling.local", "", resume_text),
+    user_id = _current_user_id(request)
+    if user_id:
+        PostgresStore(user_id=user_id, database_url=db_url).save_user_profile(
+            resume=final_resume,
+            onboarding_state="confirming",
         )
-        conn.commit()
+    else:
+        user_id = str(uuid.uuid4())
+        with psycopg.connect(db_url) as conn:
+            conn.execute(
+                "INSERT INTO users (id, email, onboarding_state, display_name, "
+                "resume, daily_generation_limit, created_at, updated_at) "
+                "VALUES (%s, %s, 'confirming', %s, %s, 10, NOW(), NOW())",
+                (user_id, f"web_{user_id}@applycling.local", "", final_resume),
+            )
+            conn.commit()
 
     return RedirectResponse(
         f"/onboarding/confirm?token={_sign_onboarding_user_id(user_id)}",
@@ -881,20 +972,24 @@ async def onboarding_confirm(request: Request) -> HTMLResponse:
     user_id = _verify_onboarding_token(token)
     db_url = os.environ.get("DATABASE_URL")
     resume_text = ""
+    stored_profile = {}
+    display_name = ""
 
     if user_id and db_url:
         store = PostgresStore(user_id=user_id, database_url=db_url)
         stored = store.load_user_profile()
         resume_text = stored.get("resume", "")
+        stored_profile = stored.get("profile") or {}
+        display_name = stored.get("display_name") or ""
 
     profile = {
         "token": token,
-        "display_name": "",
-        "email": "",
-        "phone": "",
-        "location": "",
-        "linkedin": "",
-        "portfolio": "",
+        "display_name": display_name or stored_profile.get("name", ""),
+        "email": stored_profile.get("email", ""),
+        "phone": stored_profile.get("phone", ""),
+        "location": stored_profile.get("location", ""),
+        "linkedin": stored_profile.get("linkedin", ""),
+        "portfolio": stored_profile.get("portfolio", ""),
     }
 
     return templates.TemplateResponse(
