@@ -72,6 +72,13 @@ def test_parse_telegram_link_code_accepts_link_commands():
     assert user_admin.parse_telegram_link_code("link short") is None
 
 
+def test_generate_link_code_is_parseable(monkeypatch):
+    values = iter(["__----__", "ABCDEF12345"])
+    monkeypatch.setattr("secrets.token_urlsafe", lambda n: next(values))
+
+    assert user_admin._generate_link_code() == "ABCDEF12"
+
+
 def test_users_merge_cli_invokes_service(monkeypatch):
     from applycling import cli
 

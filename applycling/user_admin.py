@@ -22,6 +22,14 @@ def _hash_link_code(code: str) -> str:
     return hashlib.sha256(code.strip().upper().encode()).hexdigest()
 
 
+def _generate_link_code() -> str:
+    """Return a Telegram-friendly one-time code."""
+    while True:
+        code = secrets.token_urlsafe(8).replace("_", "").replace("-", "").upper()[:8]
+        if len(code) >= 6:
+            return code
+
+
 def parse_telegram_link_code(text: str) -> str | None:
     """Return a link code from a Telegram message, if it is a link command."""
     parts = text.strip().split()
@@ -111,7 +119,7 @@ def create_telegram_link_code(
     import psycopg
     import psycopg.rows
 
-    code = secrets.token_urlsafe(6).replace("_", "").replace("-", "").upper()[:8]
+    code = _generate_link_code()
     expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl_minutes)
 
     with psycopg.connect(db_url, row_factory=psycopg.rows.dict_row) as conn:
@@ -301,6 +309,10 @@ def consume_telegram_link_code(
                     target_uuid,
                 ),
             )
+            # Email is intentionally not updated here. Link codes attach a
+            # Telegram channel to an existing canonical user, whose web email
+            # remains authoritative. The admin merge path may fill missing
+            # target email from a source row because it is a repair operation.
 
     return {
         "user_id": str(target_uuid),
