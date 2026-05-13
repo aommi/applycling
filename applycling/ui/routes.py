@@ -33,7 +33,6 @@ from applycling.forward_endpoint import (
     handle_confirming_correction,
     handle_new_user_resume,
     handle_new_user_resume_rejected,
-    handle_new_user_url,
     is_url_like,
     looks_like_resume_text,
     verify_localhost,
@@ -103,6 +102,19 @@ def _profile_needs_setup(stored: dict) -> bool:
 def _extract_email(text: str) -> str | None:
     match = _EMAIL_RE.search(text)
     return match.group(0).lower() if match else None
+
+
+def _user_has_resume(user_id: str) -> bool:
+    """Return True if the user has stored resume text."""
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return False
+    store = PostgresStore(
+        user_id=user_id,
+        database_url=db_url,
+    )
+    stored = store.load_user_profile()
+    return bool((stored.get("resume") or "").strip())
 
 
 def _format_link_expires_at(value: datetime) -> str:
@@ -348,7 +360,11 @@ async def job_detail(request: Request, job_id: str, error: str = "") -> HTMLResp
         raise HTTPException(status_code=404, detail="Job not found")
     user_id = _current_user_id(request)
     artifacts = jobs_service.list_artifacts(job_id, user_id=user_id)
-    error_msg = "Another generation is already running." if error == "already_running" else ""
+    error_msg = ""
+    if error == "already_running":
+        error_msg = "Another generation is already running."
+    elif error == "no_resume":
+        error_msg = "No resume found. Upload your resume on the Profile page first."
     return templates.TemplateResponse(request, "job_detail.html", {
         "job": job,
         "artifacts": artifacts,
@@ -423,6 +439,14 @@ async def submit_job(request: Request, url: str = Form(...)) -> RedirectResponse
                        "Please wait for it to complete."},
             status_code=409,
         )
+    if user_id and not _user_has_resume(user_id):
+        return templates.TemplateResponse(
+            request,
+            "submit.html",
+            {"error": "No resume found. Upload your resume on the "
+                       "Profile page first, then submit a job URL."},
+            status_code=400,
+        )
 
     # Create job (status defaults to "new").
     job = jobs_service.create_job_from_url(url, user_id=user_id)
@@ -451,6 +475,10 @@ async def regenerate_job(request: Request, job_id: str) -> RedirectResponse:  # 
         # Highlight the error on the detail page.
         return RedirectResponse(
             f"/jobs/{job_id}?error=already_running", status_code=303
+        )
+    if user_id and not _user_has_resume(user_id):
+        return RedirectResponse(
+            f"/jobs/{job_id}?error=no_resume", status_code=303
         )
 
     # Set generating synchronously.
@@ -809,6 +837,17 @@ async def forward(
     if current_state == "active":
         if is_url:
             _update_chat_id(user_id, chat_id)
+            if not _user_has_resume(user_id):
+                return JSONResponse(
+                    {
+                        "relay_message": (
+                            "You haven't uploaded a resume yet. "
+                            "Send your resume text here, or upload it on "
+                            "the web Profile page, then send a job URL."
+                        )
+                    },
+                    status_code=400,
+                )
             if check_active_run(user_id=user_id):
                 return JSONResponse(
                     {"relay_message": "A generation is already running. Please wait."},
@@ -843,21 +882,16 @@ async def forward(
 
     elif current_state == "new":
         if is_url:
-            if check_active_run(user_id=user_id):
-                return JSONResponse(
-                    {"relay_message": "A generation is already running."},
-                    status_code=409,
-                )
-            ctx = PipelineContext.from_user_id(user_id, message_text)
-            if not _try_increment_daily_generation(user_id):
-                return JSONResponse(
-                    {"relay_message": "Daily generation limit reached."},
-                    status_code=429,
-                )
-            response = handle_new_user_url(user_id, message_text, first_name)
-            _store().save_user_profile(onboarding_state="active")
-            token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-            background_tasks.add_task(_run_scoped_pipeline, ctx, token)
+            return JSONResponse(
+                {
+                    "relay_message": (
+                        "I need your resume first before I can generate a "
+                        "package. Send your resume text here, or upload it "
+                        "on the web Profile page, then send me a job URL."
+                    )
+                },
+                status_code=400,
+            )
         else:
             if looks_like_resume_text(message_text):
                 email = _extract_email(message_text)
