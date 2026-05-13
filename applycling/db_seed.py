@@ -77,8 +77,6 @@ def seed_user_by_telegram(telegram_id: int, chat_id: int | None,
         raise ValueError("DATABASE_URL must be set")
 
     user_id = str(uuid.uuid4())
-    email = email or f"tg_{telegram_id}@applycling.local"
-
     with psycopg.connect(url) as conn:
         with conn.cursor() as cur:
             # Check for duplicate
@@ -130,7 +128,11 @@ def get_or_create_user_by_telegram(
     first_name: str | None = None,
     daily_limit: int = 10,
 ) -> dict:
-    """Get an existing Telegram user or create one with onboarding defaults."""
+    """Deprecated: get an existing Telegram user or create one.
+
+    Do not use this from request handlers. Runtime Telegram linking should go
+    through ``consume_telegram_link_code()`` so web accounts stay canonical.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise ValueError("DATABASE_URL must be set")

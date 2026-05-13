@@ -739,7 +739,7 @@ def test_forward_link_code_attaches_telegram_before_user_creation(
                 "moved": {"jobs": 0, "pipeline_runs": 0, "artifacts": 0},
             },
         ) as mock_consume,
-        patch("applycling.ui.routes.get_or_create_user_by_telegram") as mock_get,
+        patch("applycling.ui.routes._resolve_linked_telegram_user") as mock_get,
     ):
         response = client.post(
             "/api/forward",
@@ -769,7 +769,7 @@ def test_forward_invalid_link_code_returns_bounded_error(
             "applycling.ui.routes.consume_telegram_link_code",
             side_effect=TelegramLinkError("link code is invalid or expired"),
         ),
-        patch("applycling.ui.routes.get_or_create_user_by_telegram") as mock_get,
+        patch("applycling.ui.routes._resolve_linked_telegram_user") as mock_get,
     ):
         response = client.post(
             "/api/forward",
@@ -781,58 +781,18 @@ def test_forward_invalid_link_code_returns_bounded_error(
     mock_get.assert_not_called()
 
 
-def test_forward_new_user_resume_moves_to_confirming(
+def test_forward_unlinked_resume_text_requires_web_link(
     client,
     allow_forward_localhost,
     fake_postgres_store,
 ):
-    """A new user's non-URL message is stored as resume text."""
-    resume_text = _resume_text()
-    with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
-        return_value={
-            "user_id": _USER_ID,
-            "telegram_id": 123456,
-            "chat_id": 789012,
-            "onboarding_state": "new",
-            "display_name": "Jane",
-        },
-    ):
-        response = client.post(
-            "/api/forward",
-            json={**_VALID_FORWARD_BODY, "message_text": resume_text},
-        )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["onboarding_state"] == "confirming"
-    assert payload["trigger_pipeline"] is False
-    assert fake_postgres_store.instances[-1].saved[-1]["resume"] == resume_text
-    assert fake_postgres_store.instances[-1].saved[-1]["onboarding_state"] == "confirming"
-
-
-def test_forward_new_user_resume_matching_existing_email_prompts_link(
-    client,
-    allow_forward_localhost,
-    fake_postgres_store,
-):
-    """Telegram resume intake prompts linking when email matches a web user."""
+    """Unlinked Telegram resume text does not create/store user state."""
     resume_text = _resume_text()
     with (
-        patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
-            return_value={
-                "user_id": _USER_ID,
-                "telegram_id": 123456,
-                "chat_id": 789012,
-                "onboarding_state": "new",
-                "display_name": "Jane",
-            },
-        ),
-        patch(
-            "applycling.ui.routes._find_user_by_profile_email",
-            return_value={"id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
-        ) as mock_find,
+        patch("applycling.ui.routes._resolve_linked_telegram_user", return_value=None),
+        patch("applycling.ui.routes._try_increment_daily_generation") as mock_cap,
+        patch("applycling.ui.routes.PipelineContext.from_user_id") as mock_ctx,
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
     ):
         response = client.post(
             "/api/forward",
@@ -841,21 +801,51 @@ def test_forward_new_user_resume_matching_existing_email_prompts_link(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["onboarding_state"] == "new"
-    assert payload["actions"] == ["link_existing_account"]
-    assert "link code" in payload["relay_message"].lower()
+    assert payload["onboarding_state"] == "unlinked"
+    assert payload["trigger_pipeline"] is False
+    assert payload["actions"] == ["link_required"]
+    assert "profile" in payload["relay_message"].lower()
+    assert "admin" in payload["relay_message"].lower()
     assert fake_postgres_store.instances == []
-    mock_find.assert_called_once_with("jane@example.com")
+    mock_cap.assert_not_called()
+    mock_ctx.assert_not_called()
+    mock_run.assert_not_called()
 
 
-def test_forward_new_user_short_text_is_not_stored_as_resume(
+def test_forward_unlinked_url_requires_web_link(
     client,
     allow_forward_localhost,
     fake_postgres_store,
 ):
-    """A greeting should not move a new user into confirming state."""
+    """Unlinked Telegram URLs do not charge or dispatch."""
+    with (
+        patch("applycling.ui.routes._resolve_linked_telegram_user", return_value=None),
+        patch("applycling.ui.routes._try_increment_daily_generation") as mock_cap,
+        patch("applycling.ui.routes.PipelineContext.from_user_id") as mock_ctx,
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["onboarding_state"] == "unlinked"
+    assert payload["trigger_pipeline"] is False
+    assert payload["actions"] == ["link_required"]
+    assert "link code" in payload["relay_message"].lower()
+    assert fake_postgres_store.instances == []
+    mock_cap.assert_not_called()
+    mock_ctx.assert_not_called()
+    mock_run.assert_not_called()
+
+
+def test_forward_linked_new_state_requires_web_link(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """A linked row still in 'new' state cannot use Telegram onboarding."""
     with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
+        "applycling.ui.routes._resolve_linked_telegram_user",
         return_value={
             "user_id": _USER_ID,
             "telegram_id": 123456,
@@ -871,41 +861,10 @@ def test_forward_new_user_short_text_is_not_stored_as_resume(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["onboarding_state"] == "new"
+    assert payload["onboarding_state"] == "unlinked"
     assert payload["trigger_pipeline"] is False
-    assert "resume" in payload["relay_message"].lower()
+    assert payload["actions"] == ["link_required"]
     assert fake_postgres_store.instances == []
-
-
-def test_forward_new_user_url_requires_resume_first(
-    client,
-    allow_forward_localhost,
-    fake_postgres_store,
-):
-    """A new user who sends a URL before a resume is told to upload one."""
-    with (
-        patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
-            return_value={
-                "user_id": _USER_ID,
-                "telegram_id": 123456,
-                "chat_id": 789012,
-                "onboarding_state": "new",
-                "display_name": "Jane",
-            },
-        ),
-        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
-        patch("applycling.ui.routes._try_increment_daily_generation") as mock_cap,
-    ):
-        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert "resume" in payload["relay_message"].lower()
-    assert "upload" in payload["relay_message"].lower()
-    # Pipeline must not be scheduled — no charge, no dispatch.
-    mock_cap.assert_not_called()
-    mock_run.assert_not_called()
 
 
 def test_forward_confirming_approval_marks_active(
@@ -915,7 +874,7 @@ def test_forward_confirming_approval_marks_active(
 ):
     """Approval text activates a confirming user."""
     with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
+        "applycling.ui.routes._resolve_linked_telegram_user",
         return_value={
             "user_id": _USER_ID,
             "telegram_id": 123456,
@@ -941,7 +900,7 @@ def test_forward_confirming_correction_is_preserved(
 ):
     """Corrections are appended to profile.pending_corrections."""
     with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
+        "applycling.ui.routes._resolve_linked_telegram_user",
         return_value={
             "user_id": _USER_ID,
             "telegram_id": 123456,
@@ -968,7 +927,7 @@ def test_forward_confirming_corrections_are_capped(
     """Only the most recent pending corrections are retained."""
     existing = [f"old {idx}" for idx in range(10)]
     with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
+        "applycling.ui.routes._resolve_linked_telegram_user",
         return_value={
             "user_id": _USER_ID,
             "telegram_id": 123456,
@@ -1002,7 +961,7 @@ def test_forward_active_user_url_enforces_active_run_guard(
     """Active users get a 409 before context creation when a run is active."""
     with (
         patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
+            "applycling.ui.routes._resolve_linked_telegram_user",
             return_value={
                 "user_id": _USER_ID,
                 "telegram_id": 123456,
@@ -1030,7 +989,7 @@ def test_forward_active_user_url_enforces_daily_cap(
     """Active users get a 429 after context validation but before dispatch."""
     with (
         patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
+            "applycling.ui.routes._resolve_linked_telegram_user",
             return_value={
                 "user_id": _USER_ID,
                 "telegram_id": 123456,
@@ -1060,7 +1019,7 @@ def test_forward_active_user_url_requires_resume(
     """Active users without a resume get a 200 relay, no pipeline dispatch."""
     with (
         patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
+            "applycling.ui.routes._resolve_linked_telegram_user",
             return_value={
                 "user_id": _USER_ID,
                 "telegram_id": 123456,
@@ -1091,7 +1050,7 @@ def test_forward_unknown_onboarding_state_is_safe(
     """Unexpected states do not fall through to active pipeline behavior."""
     with (
         patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
+            "applycling.ui.routes._resolve_linked_telegram_user",
             return_value={
                 "user_id": _USER_ID,
                 "telegram_id": 123456,
@@ -1109,19 +1068,18 @@ def test_forward_unknown_onboarding_state_is_safe(
     mock_ctx.assert_not_called()
 
 
-def test_forward_soft_deleted_user_returns_bounded_error(
+def test_forward_soft_deleted_or_missing_user_is_treated_as_unlinked(
     client,
     allow_forward_localhost,
 ):
-    """Soft-deleted Telegram rows do not surface raw exceptions to Hermes."""
-    with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
-        side_effect=ValueError("User with telegram_id 123456 exists but is deleted"),
-    ):
+    """Soft-deleted rows are invisible to lookup and get the link-required relay."""
+    with patch("applycling.ui.routes._resolve_linked_telegram_user", return_value=None):
         response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
 
-    assert response.status_code == 409
-    assert "previously removed" in response.json()["relay_message"]
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"] == ["link_required"]
+    assert "admin" in payload["relay_message"].lower()
 
 
 # ── Web onboarding auth/token safety ───────────────────────────────────
@@ -1358,6 +1316,20 @@ def test_onboarding_submit_resume_rejects_large_upload(
 )
 def test_telegram_state_returns_expected_slug(telegram_id, chat_id, expected):
     assert ui_routes._telegram_state(telegram_id, chat_id) == expected
+
+
+@pytest.mark.parametrize(
+    "email,expected",
+    [
+        ("jane@example.com", "jane@example.com"),
+        ("tg_123456@applycling.local", "Telegram-only"),
+        ("tg_notdigits@applycling.local", "tg_notdigits@applycling.local"),
+        (None, "Telegram-only"),
+        ("", "Telegram-only"),
+    ],
+)
+def test_admin_display_email_hides_telegram_placeholders(email, expected):
+    assert ui_routes._admin_display_email(email) == expected
 
 
 # ── Admin user list ───────────────────────────────────────────────────

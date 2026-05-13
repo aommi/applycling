@@ -484,6 +484,28 @@ input[type="file"] {
   border-left: 3px solid var(--accent);
 }
 
+.content:has(.admin-shell) {
+  max-width: 1400px;
+}
+
+.admin-shell {
+  max-width: 1220px;
+}
+
+.admin-shell .submit-card {
+  max-width: none;
+}
+
+.admin-users-card {
+  overflow: hidden;
+}
+
+.admin-users-scroll {
+  overflow-x: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
 .admin-banner-success {
   border-left-color: var(--accent);
 }
@@ -517,6 +539,7 @@ input[type="file"] {
 
 .admin-users {
   width: 100%;
+  min-width: 1060px;
   border-collapse: collapse;
   font-size: 13px;
 }

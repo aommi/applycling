@@ -10,7 +10,6 @@ import base64
 import hashlib
 import hmac
 import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
@@ -23,18 +22,13 @@ from pydantic import BaseModel, HttpUrl
 
 from applycling import jobs_service
 from applycling.resume_import import ResumeImportError, extract_resume_text
-from applycling.db_seed import get_or_create_user_by_telegram
 from applycling.forward_endpoint import (
     APPROVAL_KEYWORDS,
-    ForwardResponse,
     handle_active_user_non_url,
     handle_active_user_url,
     handle_confirming_approval,
     handle_confirming_correction,
-    handle_new_user_resume,
-    handle_new_user_resume_rejected,
     is_url_like,
-    looks_like_resume_text,
     verify_localhost,
 )
 from applycling.pipeline import PipelineContext, run_add_notify
@@ -70,7 +64,6 @@ templates.env.globals["job_actions"] = job_actions
 # Background task tracking — prevents asyncio from GC-ing fire-and-forget tasks.
 _background_tasks: set[asyncio.Task] = set()
 _MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024
-_EMAIL_RE = re.compile(r"[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[A-Za-z]{2,}")
 
 
 def _profile_progress(stored: dict) -> dict:
@@ -98,11 +91,6 @@ def _profile_progress(stored: dict) -> dict:
 
 def _profile_needs_setup(stored: dict) -> bool:
     return not _profile_progress(stored)["ready"]
-
-
-def _extract_email(text: str) -> str | None:
-    match = _EMAIL_RE.search(text)
-    return match.group(0).lower() if match else None
 
 
 def _user_has_resume(user_id: str) -> bool:
@@ -301,6 +289,17 @@ def _telegram_state(telegram_id, chat_id) -> str:
     return "none"
 
 
+def _admin_display_email(email: str | None) -> str:
+    """Return a human label for real emails and legacy Telegram placeholders."""
+    if not email:
+        return "Telegram-only"
+    if email.startswith("tg_") and email.endswith("@applycling.local"):
+        middle = email[3:-len("@applycling.local")]
+        if middle.isdigit():
+            return "Telegram-only"
+    return email
+
+
 def _list_admin_users() -> list[dict]:
     """Return user rows with status fields for the admin table."""
     db_url = os.environ.get("DATABASE_URL")
@@ -358,7 +357,7 @@ def _list_admin_users() -> list[dict]:
         telegram_state = _telegram_state(row.get("telegram_id"), row.get("chat_id"))
         users.append({
             "id": str(row["id"]),
-            "email": row["email"] or "—",
+            "email": _admin_display_email(row["email"]),
             "display_name": row["display_name"] or "",
             "onboarding_state": row.get("onboarding_state") or "new",
             "progress_done": done,
@@ -763,11 +762,11 @@ def _try_increment_daily_generation(user_id: str) -> bool:
         return result.fetchone() is not None
 
 
-def _find_user_by_profile_email(email: str) -> dict | None:
-    """Find an active user whose profile JSON email matches *email*."""
+def _resolve_linked_telegram_user(telegram_id: int) -> dict | None:
+    """Return an existing linked user for a Telegram sender, never creating one."""
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        return None
+        raise ValueError("DATABASE_URL must be set")
     store = PostgresStore(
         user_id="00000000-0000-0000-0000-000000000001",
         database_url=db_url,
@@ -775,18 +774,44 @@ def _find_user_by_profile_email(email: str) -> dict | None:
     with store._conn() as conn:
         row = conn.execute(
             """
-            SELECT id, display_name, telegram_id
+            SELECT id, telegram_id, chat_id, onboarding_state, display_name
             FROM users
-            WHERE lower(profile->>'email') = %s
+            WHERE telegram_id = %s
               AND deleted_at IS NULL
             LIMIT 1
             """,
-            (email.lower(),),
+            (telegram_id,),
         ).fetchone()
-    return dict(row) if row else None
+    if row is None:
+        return None
+    return {
+        "user_id": str(row["id"]),
+        "telegram_id": row["telegram_id"],
+        "chat_id": row["chat_id"],
+        "onboarding_state": row["onboarding_state"] or "new",
+        "display_name": row["display_name"],
+    }
 
 
 _verify_localhost = verify_localhost
+
+
+def _unlinked_telegram_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "relay_message": (
+                "This Telegram account is not linked to applycling yet. "
+                "Log in to applycling, open Profile, generate a Telegram "
+                "link code, then send `link CODE` here. If you don't have "
+                "an account yet, ask the admin for an invite."
+            ),
+            "onboarding_state": "unlinked",
+            "user_id": None,
+            "trigger_pipeline": False,
+            "profile_preview": None,
+            "actions": ["link_required"],
+        }
+    )
 
 
 def _onboarding_token_secret() -> str:
@@ -846,6 +871,8 @@ async def intake(
     Resolves the user by their intake secret hash (bound to users row),
     then verifies the body telegram_id matches. Pre-seeded users only —
     unknown telegram_ids are rejected.
+
+    This endpoint is already lookup-only: it never creates users.
     """
     # Resolve user by secret hash — do NOT trust body telegram_id
     secret = request.headers.get("X-Intake-Secret", "")
@@ -973,23 +1000,12 @@ async def forward(
         )
 
     try:
-        user_data = get_or_create_user_by_telegram(
-            telegram_id=telegram_id,
-            chat_id=chat_id,
-            first_name=first_name,
-        )
-    except ValueError as exc:
-        if "exists but is deleted" in str(exc):
-            return JSONResponse(
-                {
-                    "relay_message": (
-                        "This Telegram account was previously removed. "
-                        "Ask the applycling admin to restore access."
-                    )
-                },
-                status_code=409,
-            )
+        user_data = _resolve_linked_telegram_user(telegram_id)
+    except ValueError:
         raise HTTPException(status_code=503, detail="Forwarding is not configured")
+    if user_data is None:
+        return _unlinked_telegram_response()
+
     user_id = user_data["user_id"]
     current_state = user_data["onboarding_state"]
     store: PostgresStore | None = None
@@ -1049,41 +1065,7 @@ async def forward(
             _store().save_user_profile(profile=profile)
 
     elif current_state == "new":
-        if is_url:
-            return JSONResponse(
-                {
-                    "relay_message": (
-                        "I need your resume first before I can generate a "
-                        "package. Send your resume text here, or upload it "
-                        "on the web Profile page, then send me a job URL."
-                    )
-                },
-            )
-        else:
-            if looks_like_resume_text(message_text):
-                email = _extract_email(message_text)
-                existing_user = _find_user_by_profile_email(email) if email else None
-                if existing_user and str(existing_user["id"]) != user_id:
-                    response = ForwardResponse(
-                        relay_message=(
-                            "That resume email matches an existing web account. "
-                            "Open the web Profile page, generate a Telegram link "
-                            "code, then send `link CODE` here."
-                        ),
-                        onboarding_state="new",
-                        user_id=user_id,
-                        trigger_pipeline=False,
-                        actions=["link_existing_account"],
-                    )
-                else:
-                    _store().save_user_profile(
-                        resume=message_text,
-                        display_name=first_name,
-                        onboarding_state="confirming",
-                    )
-                    response = handle_new_user_resume(user_id, message_text, first_name)
-            else:
-                response = handle_new_user_resume_rejected(user_id)
+        return _unlinked_telegram_response()
 
     else:
         return JSONResponse(
