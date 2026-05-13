@@ -7,6 +7,18 @@
 
 <div class="onboarding-shell">
   <section class="submit-card onboarding-card">
+    <h2>Progress</h2>
+    <div class="progress-list">
+      {% for item in progress.steps %}
+      <div class="progress-item{% if item.done %} done{% endif %}">
+        <span class="progress-mark">{% if item.done %}✓{% else %}•{% endif %}</span>
+        <span>{{ item.label }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="submit-card onboarding-card">
     <h2>Resume</h2>
     <p class="submit-intro">
       Upload your current resume or paste the text below. This updates the same
@@ -59,8 +71,17 @@
   <section class="submit-card onboarding-card telegram-card">
     <h2>Telegram</h2>
     <p class="submit-intro">
-      Use the same profile from Telegram once setup is complete.
+      Connect Telegram to this profile so both surfaces use the same resume.
     </p>
+    {% if link_code %}
+      <div class="link-code">
+        <code>link {{ link_code }}</code>
+      </div>
+      <p class="submit-note">Send that exact message to the Telegram bot. Expires at {{ link_expires_at }}.</p>
+    {% endif %}
+    <form method="post" action="/profile/telegram-link-code">
+      <button type="submit" class="btn btn-primary">Generate Link Code</button>
+    </form>
     {% if telegram_link %}
       <a class="btn" href="{{ telegram_link }}">Connect Telegram</a>
     {% endif %}
