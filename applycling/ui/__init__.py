@@ -89,6 +89,7 @@ def _validate_hosted_secrets() -> None:
     - APPLYCLING_SESSION_SECRET must be set.
     - APPLYCLING_NO_AUTH must not be set in Postgres mode (prod bypass).
     - APPLYCLING_INTAKE_SECRET must be set.
+    - TELEGRAM_BOT_TOKEN should be set for Telegram delivery (warning only).
 
     Raises RuntimeError with a list of all missing vars at once.
     """
@@ -121,6 +122,15 @@ def _validate_hosted_secrets() -> None:
         )
         print(f"[startup] ERROR: {msg}", file=sys.stderr, flush=True)
         raise RuntimeError(msg)
+
+    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        print(
+            "[startup] WARNING: TELEGRAM_BOT_TOKEN is not set. "
+            "Telegram delivery will not work — pipeline output will only "
+            "appear in container logs. Set TELEGRAM_BOT_TOKEN in the "
+            "deployment .env file to enable Telegram notifications.",
+            file=sys.stderr, flush=True,
+        )
 
 
 @app.on_event("startup")
