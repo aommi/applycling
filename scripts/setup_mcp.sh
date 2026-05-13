@@ -92,7 +92,13 @@ log "Claude Desktop config written to: $CLAUDE_CONFIG"
 echo ""
 log "Setting up your profile... (name, resume, LLM provider, API key)"
 echo ""
-.venv/bin/python3.12 -m applycling.cli setup
+if [ -r /dev/tty ]; then
+    .venv/bin/python3.12 -m applycling.cli setup </dev/tty
+else
+    warn "No interactive terminal detected; skipping profile setup."
+    echo "Run this later from a terminal:"
+    echo "  cd \"$REPO_DIR\" && .venv/bin/python3.12 -m applycling.cli setup"
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────
 echo ""

@@ -380,6 +380,61 @@ def test_run_pipeline_no_duplicate_job(isolated_store, tmp_path):
     assert tracker_job.package_folder == str(pkg)
 
 
+def test_run_pipeline_uses_user_context_when_user_id_provided(monkeypatch, tmp_path):
+    """Hosted workbench runs must use the session user's profile/resume context."""
+    import json
+
+    store = SQLiteStore(db_path=tmp_path / "test_tracker.db")
+
+    def _mock_get_store(user_id: str | None = None):  # noqa: ARG001
+        return store
+
+    monkeypatch.setattr(jobs_service, "get_store", _mock_get_store)
+
+    job = jobs_service.create_job_from_url("https://example.com/jobs/scoped")
+    job_id = job["id"]
+    user_id = "user-123"
+
+    pkg = tmp_path / "packages" / "Scoped Package"
+    pkg.mkdir(parents=True)
+    (pkg / "job.json").write_text(
+        json.dumps({
+            "id": job_id,
+            "title": "Scoped Role",
+            "company": "Acme",
+            "fit_summary": "Scoped fit",
+        }),
+        encoding="utf-8",
+    )
+
+    fake_context = object()
+
+    def _fake_artifacts_path(jid: str, user_id: str | None = None) -> Path:  # noqa: ARG001
+        p = tmp_path / "artifacts" / f"{jid}_artifacts.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    with (
+        patch(
+            "applycling.pipeline.PipelineContext.from_user_id",
+            return_value=fake_context,
+        ) as mock_context,
+        patch("applycling.pipeline.run_add_notify", return_value=pkg) as mock_run,
+        patch.object(
+            jobs_service,
+            "_artifacts_path_for_job",
+            side_effect=_fake_artifacts_path,
+        ),
+    ):
+        result = jobs_service.run_pipeline(job_id, user_id=user_id)
+
+    assert "error" not in result
+    mock_context.assert_called_once_with(user_id, "https://example.com/jobs/scoped")
+    assert mock_run.call_args.kwargs["context"] is fake_context
+    assert mock_run.call_args.kwargs["persist_job"] is False
+    assert mock_run.call_args.kwargs["job_id"] == job_id
+
+
 def test_run_pipeline_no_source_url(isolated_store):
     """run_pipeline on a job without source_url returns an error."""
     store = isolated_store

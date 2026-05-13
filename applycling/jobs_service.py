@@ -397,13 +397,16 @@ def run_pipeline(job_id: str, user_id: str | None = None) -> dict[str, Any]:
     # Run pipeline (persist_job=False — no duplicate, we own the job)
     # ------------------------------------------------------------------
     try:
-        from applycling.pipeline import run_add_notify
+        from applycling.pipeline import PipelineContext, run_add_notify
+
+        context = PipelineContext.from_user_id(user_id, url) if user_id else None
 
         folder: Path = run_add_notify(
             url=url,
             notifier=_NullNotifier(),
             persist_job=False,
             job_id=job_id,
+            context=context,
         )
     except Exception as exc:
         reason = str(exc)

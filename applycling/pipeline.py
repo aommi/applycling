@@ -1093,6 +1093,7 @@ def run_add_notify(
     output_root: Optional[Path] = None,
     persist_job: bool = True,
     job_id: str = "",
+    context: Optional[PipelineContext] = None,
 ) -> Path:
     """Run the full add pipeline and deliver results via any Notifier.
 
@@ -1109,6 +1110,9 @@ def run_add_notify(
         output_root: Override output directory.
         persist_job: Whether to create a tracker job row (False when caller owns the job).
         job_id: Pre-existing job id (used when persist_job=False).
+        context: Optional pre-built user context. Required for hosted
+                 multi-tenant callers so generation uses the session user's
+                 profile/resume instead of local ``data/`` files.
 
     Returns:
         Path to the assembled package folder.
@@ -1127,11 +1131,18 @@ def run_add_notify(
         except Exception:
             pass
 
-    # Load config
-    cfg = storage.load_config()
-    final_model = model or cfg.get("model")
-    final_provider = provider or cfg.get("provider", "ollama")
-    out_root = output_root or (Path(cfg.get("output_dir", "./output")).expanduser())
+    # Load config. Hosted callers pass a context built from the users table;
+    # local callers keep the historical file-backed data/ behavior.
+    if context is not None:
+        cfg = context.config
+        final_model = model or context.model or cfg.get("model")
+        final_provider = provider or context.provider or cfg.get("provider", "ollama")
+        out_root = output_root or context.output_dir
+    else:
+        cfg = storage.load_config()
+        final_model = model or cfg.get("model")
+        final_provider = provider or cfg.get("provider", "ollama")
+        out_root = output_root or (Path(cfg.get("output_dir", "./output")).expanduser())
 
     _safe(f"⚙️ Starting: {url}\nProcessing locally on this machine.")
 
@@ -1147,24 +1158,35 @@ def run_add_notify(
     _safe(f"✅ Fetched: {title} @ {company}")
 
     # Build context
-    profile = storage.load_profile() or {}
-    stories = storage.load_stories() or ""
-    linkedin_profile = storage.load_linkedin_profile() if cfg.get("use_linkedin_profile", True) else None
+    if context is not None:
+        ctx = dataclasses.replace(
+            context,
+            output_dir=out_root,
+            config=cfg,
+            model=final_model,
+            provider=final_provider,
+            persist_job=persist_job,
+            job_id=job_id or context.job_id,
+        )
+    else:
+        profile = storage.load_profile() or {}
+        stories = storage.load_stories() or ""
+        linkedin_profile = storage.load_linkedin_profile() if cfg.get("use_linkedin_profile", True) else None
 
-    ctx = PipelineContext(
-        data_dir=storage.DATA_DIR,
-        output_dir=out_root,
-        profile=profile,
-        resume=storage.load_resume(),
-        stories=stories,
-        linkedin_profile=linkedin_profile,
-        config=cfg,
-        model=final_model,
-        provider=final_provider,
-        tracker_store=tracker.get_store(),
-        persist_job=persist_job,
-        job_id=job_id,
-    )
+        ctx = PipelineContext(
+            data_dir=storage.DATA_DIR,
+            output_dir=out_root,
+            profile=profile,
+            resume=storage.load_resume(),
+            stories=stories,
+            linkedin_profile=linkedin_profile,
+            config=cfg,
+            model=final_model,
+            provider=final_provider,
+            tracker_store=tracker.get_store(),
+            persist_job=persist_job,
+            job_id=job_id,
+        )
 
     _STATUS_MAP = {
         "Running role intel": "🎯 Analysing role…",
