@@ -149,6 +149,7 @@ def test_submit_scopes_status_and_pipeline_to_session_user(client):
 
     with (
         patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch("applycling.ui.routes.check_active_run", return_value=False) as mock_active,
         patch(
             "applycling.ui.routes.jobs_service.create_job_from_url",
@@ -174,6 +175,7 @@ def test_regenerate_scopes_status_and_pipeline_to_session_user(client):
     """POST /jobs/{id}/regenerate uses the session user for guards and updates."""
     with (
         patch("applycling.ui.routes._current_user_id", return_value=_USER_ID),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch("applycling.ui.routes.check_active_run", return_value=False) as mock_active,
         patch("applycling.ui.routes.jobs_service.set_job_status") as mock_status,
         patch("applycling.ui.routes.schedule_pipeline_run") as mock_schedule,
@@ -808,37 +810,28 @@ def test_forward_new_user_short_text_is_not_stored_as_resume(
     assert fake_postgres_store.instances == []
 
 
-def test_forward_new_user_url_marks_active_and_dispatches(
+def test_forward_new_user_url_requires_resume_first(
     client,
     allow_forward_localhost,
     fake_postgres_store,
 ):
-    """A new user can send a URL first and skip resume onboarding."""
-    with (
-        patch(
-            "applycling.ui.routes.get_or_create_user_by_telegram",
-            return_value={
-                "user_id": _USER_ID,
-                "telegram_id": 123456,
-                "chat_id": 789012,
-                "onboarding_state": "new",
-                "display_name": "Jane",
-            },
-        ),
-        patch("applycling.ui.routes.check_active_run", return_value=False),
-        patch("applycling.ui.routes._try_increment_daily_generation", return_value=True),
-        patch("applycling.ui.routes.PipelineContext.from_user_id", return_value="ctx") as mock_ctx,
-        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+    """A new user who sends a URL before a resume is told to upload one."""
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        return_value={
+            "user_id": _USER_ID,
+            "telegram_id": 123456,
+            "chat_id": 789012,
+            "onboarding_state": "new",
+            "display_name": "Jane",
+        },
     ):
         response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
 
-    assert response.status_code == 200
+    assert response.status_code == 400
     payload = response.json()
-    assert payload["onboarding_state"] == "active"
-    assert payload["trigger_pipeline"] is True
-    assert fake_postgres_store.instances[-1].saved[-1]["onboarding_state"] == "active"
-    mock_ctx.assert_called_once_with(_USER_ID, _VALID_FORWARD_BODY["message_text"])
-    mock_run.assert_called_once()
+    assert "resume" in payload["relay_message"].lower()
+    assert "upload" in payload["relay_message"].lower()
 
 
 def test_forward_confirming_approval_marks_active(
@@ -945,6 +938,7 @@ def test_forward_active_user_url_enforces_active_run_guard(
             },
         ),
         patch("applycling.ui.routes._update_chat_id"),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch("applycling.ui.routes.check_active_run", return_value=True),
         patch("applycling.ui.routes.PipelineContext.from_user_id") as mock_ctx,
     ):
@@ -972,6 +966,7 @@ def test_forward_active_user_url_enforces_daily_cap(
             },
         ),
         patch("applycling.ui.routes._update_chat_id"),
+        patch("applycling.ui.routes._user_has_resume", return_value=True),
         patch("applycling.ui.routes.check_active_run", return_value=False),
         patch("applycling.ui.routes.PipelineContext.from_user_id", return_value="ctx"),
         patch("applycling.ui.routes._try_increment_daily_generation", return_value=False),
