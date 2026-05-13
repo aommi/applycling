@@ -1008,7 +1008,6 @@ async def forward(
                             "the web Profile page, then send a job URL."
                         )
                     },
-                    status_code=400,
                 )
             if check_active_run(user_id=user_id):
                 return JSONResponse(
@@ -1052,7 +1051,6 @@ async def forward(
                         "on the web Profile page, then send me a job URL."
                     )
                 },
-                status_code=400,
             )
         else:
             if looks_like_resume_text(message_text):

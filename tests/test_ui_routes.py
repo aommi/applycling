@@ -816,22 +816,29 @@ def test_forward_new_user_url_requires_resume_first(
     fake_postgres_store,
 ):
     """A new user who sends a URL before a resume is told to upload one."""
-    with patch(
-        "applycling.ui.routes.get_or_create_user_by_telegram",
-        return_value={
-            "user_id": _USER_ID,
-            "telegram_id": 123456,
-            "chat_id": 789012,
-            "onboarding_state": "new",
-            "display_name": "Jane",
-        },
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "new",
+                "display_name": "Jane",
+            },
+        ),
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+        patch("applycling.ui.routes._try_increment_daily_generation") as mock_cap,
     ):
         response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
 
-    assert response.status_code == 400
+    assert response.status_code == 200
     payload = response.json()
     assert "resume" in payload["relay_message"].lower()
     assert "upload" in payload["relay_message"].lower()
+    # Pipeline must not be scheduled — no charge, no dispatch.
+    mock_cap.assert_not_called()
+    mock_run.assert_not_called()
 
 
 def test_forward_confirming_approval_marks_active(
@@ -976,6 +983,37 @@ def test_forward_active_user_url_enforces_daily_cap(
 
     assert response.status_code == 429
     assert "daily generation limit" in response.json()["relay_message"].lower()
+    mock_run.assert_not_called()
+
+
+def test_forward_active_user_url_requires_resume(
+    client,
+    allow_forward_localhost,
+):
+    """Active users without a resume get a 200 relay, no pipeline dispatch."""
+    with (
+        patch(
+            "applycling.ui.routes.get_or_create_user_by_telegram",
+            return_value={
+                "user_id": _USER_ID,
+                "telegram_id": 123456,
+                "chat_id": 789012,
+                "onboarding_state": "active",
+                "display_name": "Jane",
+            },
+        ),
+        patch("applycling.ui.routes._update_chat_id"),
+        patch("applycling.ui.routes._user_has_resume", return_value=False),
+        patch("applycling.ui.routes._try_increment_daily_generation") as mock_cap,
+        patch("applycling.ui.routes._run_scoped_pipeline") as mock_run,
+    ):
+        response = client.post("/api/forward", json=_VALID_FORWARD_BODY)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "resume" in payload["relay_message"].lower()
+    assert "upload" in payload["relay_message"].lower()
+    mock_cap.assert_not_called()
     mock_run.assert_not_called()
 
 
