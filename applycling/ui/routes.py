@@ -27,13 +27,19 @@ from applycling.forward_endpoint import (
     handle_confirming_approval,
     handle_confirming_correction,
     handle_new_user_resume,
+    handle_new_user_resume_rejected,
     handle_new_user_url,
     is_url_like,
+    looks_like_resume_text,
     verify_localhost,
 )
-from applycling.pipeline import PipelineContext, run_add
+from applycling.pipeline import PipelineContext, run_add_notify
 from applycling.statuses import STATUS_VALUES, status_color, status_label, job_actions
-from applycling.telegram_notify import notify_error_to_user
+from applycling.telegram_notify import (
+    TelegramNotifier,
+    _get_chat_id_for_user,
+    notify_error_to_user,
+)
 from applycling.tracker import check_active_run
 from applycling.tracker.postgres_store import PostgresStore
 from applycling.auth import create_session_token, verify_password
@@ -469,7 +475,7 @@ def _resolve_user_by_intake_secret(secret: str):
 
 
 def _update_chat_id(user_id: str, chat_id: int) -> None:
-    """Store a user's chat_id for outbound delivery if not already set."""
+    """Store a user's chat_id for outbound delivery if missing or invalid."""
     from applycling.tracker.postgres_store import PostgresStore
     store = PostgresStore(
         user_id=user_id,
@@ -477,7 +483,8 @@ def _update_chat_id(user_id: str, chat_id: int) -> None:
     )
     with store._conn() as conn:
         conn.execute(
-            "UPDATE users SET chat_id = %s WHERE id = %s AND chat_id IS NULL",
+            "UPDATE users SET chat_id = %s, updated_at = NOW() "
+            "WHERE id = %s AND (chat_id IS NULL OR chat_id = 0)",
             (chat_id, user_id),
         )
 
@@ -614,7 +621,18 @@ async def intake(
 def _run_scoped_pipeline(ctx: PipelineContext, token: str) -> None:
     """Background task: run the pipeline for a scoped user with error surfacing."""
     try:
-        run_add(ctx)
+        chat_id = _get_chat_id_for_user(ctx.user_id) if token and ctx.user_id else None
+        notifier = (
+            TelegramNotifier(token, str(chat_id))
+            if chat_id is not None
+            else jobs_service._NullNotifier()
+        )
+        run_add_notify(
+            url=ctx.job_url,
+            notifier=notifier,
+            context=ctx,
+            persist_job=ctx.persist_job,
+        )
     except Exception as e:
         import sys
         print(
@@ -728,12 +746,15 @@ async def forward(
             token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
             background_tasks.add_task(_run_scoped_pipeline, ctx, token)
         else:
-            _store().save_user_profile(
-                resume=message_text,
-                display_name=first_name,
-                onboarding_state="confirming",
-            )
-            response = handle_new_user_resume(user_id, message_text, first_name)
+            if looks_like_resume_text(message_text):
+                _store().save_user_profile(
+                    resume=message_text,
+                    display_name=first_name,
+                    onboarding_state="confirming",
+                )
+                response = handle_new_user_resume(user_id, message_text, first_name)
+            else:
+                response = handle_new_user_resume_rejected(user_id)
 
     else:
         return JSONResponse(

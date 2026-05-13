@@ -13,6 +13,19 @@ APPROVAL_KEYWORDS = frozenset(
 )
 _DEFAULT_ALLOWED_FORWARD_SOURCES = ("127.0.0.1", "::1", "::ffff:127.0.0.0/104")
 _CORRECTION_ECHO_LIMIT = 240
+_MIN_RESUME_CHARS = 500
+_RESUME_SIGNALS = (
+    "@",
+    "linkedin.com",
+    "github.com",
+    "experience",
+    "education",
+    "skills",
+    "projects",
+    "engineer",
+    "manager",
+    "developer",
+)
 
 
 @dataclass
@@ -64,12 +77,33 @@ def handle_new_user_resume(
     name_part = f" {first_name}" if first_name else ""
     return ForwardResponse(
         relay_message=(
-            f"Got it{name_part}! Reading your resume now. "
-            "I'll extract what I can and show you for confirmation."
+            f"Got it{name_part}! I saved your resume. "
+            "Reply 'looks good' to confirm it, or send any corrections."
         ),
         onboarding_state="confirming",
         user_id=user_id,
     )
+
+
+def handle_new_user_resume_rejected(user_id: str) -> ForwardResponse:
+    """Ask a new user for resume content when the message is too short."""
+    return ForwardResponse(
+        relay_message=(
+            "I need your resume before onboarding. Paste your resume text "
+            "or send a job URL if you want to skip setup for now."
+        ),
+        onboarding_state="new",
+        user_id=user_id,
+    )
+
+
+def looks_like_resume_text(text: str) -> bool:
+    """Return whether *text* is plausible resume content, not a greeting."""
+    normalized = " ".join(text.lower().split())
+    if len(normalized) < _MIN_RESUME_CHARS:
+        return False
+    signal_count = sum(1 for signal in _RESUME_SIGNALS if signal in normalized)
+    return signal_count >= 2
 
 
 def handle_new_user_url(

@@ -138,6 +138,8 @@ def get_or_create_user_by_telegram(
     import psycopg
     import psycopg.rows
 
+    normalized_chat_id = chat_id if chat_id not in (None, 0) else None
+
     def _as_user_data(row: dict) -> dict:
         return {
             "user_id": str(row["id"]),
@@ -161,16 +163,19 @@ def get_or_create_user_by_telegram(
 
             if row:
                 resolved_chat_id = row["chat_id"]
-                if chat_id is not None and resolved_chat_id is None:
+                if (
+                    normalized_chat_id is not None
+                    and resolved_chat_id in (None, 0)
+                ):
                     cur.execute(
                         """
                         UPDATE users
                         SET chat_id = %s, updated_at = NOW()
-                        WHERE id = %s AND chat_id IS NULL
+                        WHERE id = %s AND (chat_id IS NULL OR chat_id = 0)
                         """,
-                        (chat_id, row["id"]),
+                        (normalized_chat_id, row["id"]),
                     )
-                    resolved_chat_id = chat_id
+                    resolved_chat_id = normalized_chat_id
                 row["chat_id"] = resolved_chat_id
                 return _as_user_data(row)
 
@@ -183,7 +188,11 @@ def get_or_create_user_by_telegram(
                 )
                 VALUES (%s, %s, %s, %s, 'new', %s, %s, NOW(), NOW())
                 ON CONFLICT (telegram_id) DO UPDATE
-                SET chat_id = COALESCE(users.chat_id, EXCLUDED.chat_id),
+                SET chat_id = CASE
+                        WHEN users.chat_id IS NULL OR users.chat_id = 0
+                        THEN EXCLUDED.chat_id
+                        ELSE users.chat_id
+                    END,
                     display_name = COALESCE(users.display_name, EXCLUDED.display_name),
                     updated_at = NOW()
                 WHERE users.deleted_at IS NULL
@@ -192,10 +201,10 @@ def get_or_create_user_by_telegram(
                 (
                     user_id,
                     telegram_id,
-                    chat_id,
+                    normalized_chat_id,
                     first_name,
                     daily_limit,
-                    f"tg_{telegram_id}@applycling.local",
+                    None,
                 ),
             )
             row = cur.fetchone()

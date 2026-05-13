@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -349,6 +350,18 @@ _VALID_FORWARD_BODY = {
 }
 
 
+def _resume_text() -> str:
+    return (
+        "Jane Doe jane@example.com linkedin.com/in/jane "
+        "Senior software engineer with experience building distributed systems. "
+        "Experience at Acme building developer platforms and production APIs. "
+        "Projects include queue workers, observability, and data pipelines. "
+        "Skills: Python, FastAPI, Postgres, Docker, Kubernetes, cloud services. "
+        "Education: BS Computer Science. "
+        + ("Delivered reliable backend systems. " * 10)
+    )
+
+
 @pytest.fixture
 def allow_forward_localhost():
     """Bypass the localhost dependency for route-level forward tests."""
@@ -502,6 +515,53 @@ def test_intake_daily_cap_not_hit_first_call(client):
     mock_ctx.assert_called_once()
 
 
+def test_run_scoped_pipeline_uses_notifier_and_context():
+    """Telegram background runs use run_add_notify with the scoped context."""
+    ctx = SimpleNamespace(
+        user_id=_USER_ID,
+        job_url="https://example.com/jobs/software-engineer",
+        persist_job=True,
+    )
+
+    with (
+        patch("applycling.ui.routes._get_chat_id_for_user", return_value=789012),
+        patch("applycling.ui.routes.TelegramNotifier") as mock_notifier_cls,
+        patch("applycling.ui.routes.run_add_notify") as mock_run,
+    ):
+        ui_routes._run_scoped_pipeline(ctx, "telegram-token")
+
+    mock_notifier_cls.assert_called_once_with("telegram-token", "789012")
+    mock_run.assert_called_once_with(
+        url=ctx.job_url,
+        notifier=mock_notifier_cls.return_value,
+        context=ctx,
+        persist_job=True,
+    )
+
+
+def test_run_scoped_pipeline_falls_back_to_null_notifier_without_chat_id():
+    """Missing chat_id should not crash the background worker."""
+    ctx = SimpleNamespace(
+        user_id=_USER_ID,
+        job_url="https://example.com/jobs/software-engineer",
+        persist_job=True,
+    )
+
+    with (
+        patch("applycling.ui.routes._get_chat_id_for_user", return_value=None),
+        patch("applycling.ui.routes.TelegramNotifier") as mock_notifier_cls,
+        patch("applycling.ui.routes.run_add_notify") as mock_run,
+    ):
+        ui_routes._run_scoped_pipeline(ctx, "telegram-token")
+
+    mock_notifier_cls.assert_not_called()
+    assert isinstance(
+        mock_run.call_args.kwargs["notifier"],
+        ui_routes.jobs_service._NullNotifier,
+    )
+    assert mock_run.call_args.kwargs["context"] is ctx
+
+
 # ── Validation tests ─────────────────────────────────────────────────
 
 def test_intake_422_on_invalid_url(client):
@@ -570,6 +630,7 @@ def test_forward_new_user_resume_moves_to_confirming(
     fake_postgres_store,
 ):
     """A new user's non-URL message is stored as resume text."""
+    resume_text = _resume_text()
     with patch(
         "applycling.ui.routes.get_or_create_user_by_telegram",
         return_value={
@@ -582,15 +643,44 @@ def test_forward_new_user_resume_moves_to_confirming(
     ):
         response = client.post(
             "/api/forward",
-            json={**_VALID_FORWARD_BODY, "message_text": "Jane Doe\nEngineer"},
+            json={**_VALID_FORWARD_BODY, "message_text": resume_text},
         )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["onboarding_state"] == "confirming"
     assert payload["trigger_pipeline"] is False
-    assert fake_postgres_store.instances[-1].saved[-1]["resume"] == "Jane Doe\nEngineer"
+    assert fake_postgres_store.instances[-1].saved[-1]["resume"] == resume_text
     assert fake_postgres_store.instances[-1].saved[-1]["onboarding_state"] == "confirming"
+
+
+def test_forward_new_user_short_text_is_not_stored_as_resume(
+    client,
+    allow_forward_localhost,
+    fake_postgres_store,
+):
+    """A greeting should not move a new user into confirming state."""
+    with patch(
+        "applycling.ui.routes.get_or_create_user_by_telegram",
+        return_value={
+            "user_id": _USER_ID,
+            "telegram_id": 123456,
+            "chat_id": 789012,
+            "onboarding_state": "new",
+            "display_name": "Jane",
+        },
+    ):
+        response = client.post(
+            "/api/forward",
+            json={**_VALID_FORWARD_BODY, "message_text": "salam"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["onboarding_state"] == "new"
+    assert payload["trigger_pipeline"] is False
+    assert "resume" in payload["relay_message"].lower()
+    assert fake_postgres_store.instances == []
 
 
 def test_forward_new_user_url_marks_active_and_dispatches(
