@@ -79,6 +79,9 @@ def main() -> int:
     ap.add_argument("--only", metavar="F1,F2",
                     help=f"comma list, subset of {','.join(FIELDS)}; "
                          "default = all present files")
+    ap.add_argument("--confirm-email", metavar="EMAIL",
+                    help="must match the target row's email; required to --apply "
+                         "when the row has an email (guards against wrong user)")
     args = ap.parse_args()
 
     if os.environ.get("APPLYCLING_DB_BACKEND") != "postgres":
@@ -132,6 +135,36 @@ def main() -> int:
     if not args.apply:
         print("\nDry run only. Re-run with --apply to write these changes.")
         return 0
+
+    # --- apply: identity confirmation + backup before writing ---
+    current_email = ""
+    if isinstance(current.get("profile"), dict):
+        current_email = (current["profile"].get("email") or "").strip()
+    display_name = current.get("display_name") or ""
+    print(f"\nRow identity: email={current_email or '(none)'}  "
+          f"display_name={display_name or '(none)'}")
+
+    if current_email:
+        if not args.confirm_email:
+            print("Refusing to write: this row has an email. Pass --confirm-email "
+                  "to confirm you are targeting the right user.", file=sys.stderr)
+            return 2
+        if args.confirm_email.strip().lower() != current_email.lower():
+            print(f"Refusing to write: --confirm-email does not match the row email "
+                  f"({current_email}).", file=sys.stderr)
+            return 2
+
+    # Back up the current row before overwriting, so an apply is reversible.
+    import datetime
+    backup_dir = ROOT / "data" / ".sync_backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_path = backup_dir / f"{args.user_id}-{ts}.json"
+    backup_path.write_text(
+        json.dumps(current, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    print(f"Backup of current row written to: {backup_path}")
 
     store.save_user_profile(**to_write)
     print("\nDone. Wrote: " + ", ".join(to_write))
