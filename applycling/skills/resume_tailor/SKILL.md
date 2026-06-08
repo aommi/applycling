@@ -40,11 +40,11 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - No em-dashes. No double hyphens. Use commas, semicolons, or break into two sentences.
 
 **Bullet quality standards (every bullet must pass these):**
-- Numbers must be defensible — if you can't reconstruct how the metric was measured, don't use it. Specific numbers (6.4%) read as more credible than round ones (12%).
+- Numbers must be defensible: use the most precise figure you can actually defend, and never manufacture precision. Round numbers are fine when that is how the metric is genuinely known — do not invent a 6.4% when the real figure is "about 12%".
 - One idea per bullet. Scannable in a single breath. Sell the *what*; leave the *how* for the interview.
 - No two bullets should read as near-duplicates — vary opener verbs, metric types, and sentence structure.
 - Don't start three bullets in one role with the same verb.
-- Every claim must pass the chain: resume ≤ LinkedIn ≤ reality. If it's not corroborated on LinkedIn, don't put it on the resume.{stories_section}
+- Anything material on the resume should be corroborated by LinkedIn or safe to discuss honestly if asked. If a tailored resume introduces a new public-facing claim, update LinkedIn when practical — but do not block on perfect resume↔LinkedIn parity.{stories_section}
 
 **Transparency (you MUST report these at the very end, after the resume):**
 After the resume markdown, add a section starting with `<!-- TAILORING LOG` that lists:
