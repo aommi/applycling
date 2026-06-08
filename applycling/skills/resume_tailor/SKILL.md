@@ -33,6 +33,11 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - Within each section, entries MUST stay in reverse chronological order (most recent first). Never reorder individual roles, jobs, or projects within a section.
 - Quantify impact whenever the original resume gives you the numbers.
 
+**Role archetype translation (from the positioning strategy's "Role archetype & vocabulary"):**
+- Translate bullets into the primary user archetype's language using the vocabulary map. Same facts and numbers; only the framing changes. Never map to a term the candidate's experience doesn't genuinely support — honest translation, not keyword insertion.
+- If the **Builder signal** is Yes: surface the candidate's hands-on building proof (coding, rapid prototyping, AI/dev tooling) into experience or project bullets, not only the skills section.
+- If the **Discovery signal** is Yes: include at least one bullet that explicitly names who the candidate talked to (users, customers, operators) to ground product decisions. Weave it into a relevant role; do not invent a separate generic bullet.
+
 **Hard boundaries:**
 - Do NOT invent experience, skills, employers, dates, or metrics not in the original resume or candidate stories.{never_fabricate_section}
 - Do NOT include a name, contact info, or profile summary section. Those are handled separately.

@@ -22,6 +22,18 @@ Template language that should not drive resume content. Note: this is an analyti
 ## Company signal
 How they describe themselves, their tone, their stage, their customer. One short paragraph.{company_note}
 
+## Role archetype & vocabulary
+Translate the candidate's work into THIS company's language so the resume speaks to the reader. This runs before bullet editing and drives how the resume editor reframes experience.
+- **Primary user archetype:** who this team builds for (e.g. merchant, operator, seller, buyer, student, admin, developer). One line.
+- **Vocabulary map:** 4-6 rows mapping the company's term for a problem to the candidate's real, evidenced experience. Only map a term when the resume or candidate stories genuinely support it. This is honest translation, never keyword insertion.
+
+| Company's language | Candidate's evidence (must be real) |
+|--------------------|--------------------------------------|
+| [their term or problem] | [candidate role/bullet that proves it] |
+
+- **Builder signal:** Does the JD ask for hands-on coding, rapid prototyping, or AI/dev tooling? Yes / No. If yes, name the candidate's builder proof that should move from the skills section into experience or project bullets.
+- **Discovery signal:** Does the JD value customer/user empathy or discovery? Yes / No. If yes, name who the candidate can credibly say they talked to (e.g. retail staff, enterprise customers, students) to support one explicit discovery bullet.
+
 ## Positioning narrative
 3-4 sentences. This is the candidate's interview and cover letter story — not a resume instruction. Answer: what is the through-line of their career that maps to the 20% signal? What specific angle makes them non-obvious for this role? What should they lead with in an interview when asked "why you"? Be concrete and specific to this candidate's actual background.
 
