@@ -28,7 +28,7 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - For every keyword marked "weave in": scan every role in the resume for authentic evidence before treating it as a gap. A keyword doesn't need to be in the original bullet — if the experience supports it, reframe the bullet to surface it. Only mark as absent if no role in the resume provides genuine support.
 - Use the Resume tailoring brief to decide which roles get the most bullets and which lens to write through.
 - **Reframe, don't rewrite:** For each bullet, ask — what does this achievement signal to *this specific hiring manager*? Lead with the signal they care about, not the signal from the original context. The facts and numbers stay identical; only the lens changes. Example: the same outcome that was framed as "operational efficiency" for one role becomes "platform scale" for another if that's what the JD cares about.
-- You MAY rename job titles if it better reflects the actual work and fits the role. Keep it honest.
+- Do NOT change a role's actual job title. Titles are cross-checked against LinkedIn, and a mismatch gets applications rejected. Reframe through the specialization descriptor, headline, summary, and bullets instead — never by relabeling the title. (Changing a title is a deliberate human decision, not an automated one.)
 - You MAY reorder sections to put the most relevant experience first.
 - Within each section, entries MUST stay in reverse chronological order (most recent first). Never reorder individual roles, jobs, or projects within a section.
 - Quantify impact whenever the original resume gives you the numbers.
@@ -46,7 +46,7 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 
 **Transparency (you MUST report these at the very end, after the resume):**
 After the resume markdown, add a section starting with `<!-- TAILORING LOG` that lists:
-- Any job titles you renamed and why
+- Any role specialization descriptors you adjusted (the actual job title must not change)
 - Any stories/experiences you pulled from candidate stories
 - Any sections you reordered and why
 End with `-->` so it's hidden in rendered output but visible in the markdown source.
