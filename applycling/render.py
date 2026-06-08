@@ -336,7 +336,8 @@ def _parse_resume(markdown_text: str) -> dict:
         elif kind == "skills":
             sections.append({"kind": "skills", "title": title, "skills": _parse_skills(body)})
         elif kind == "education":
-            sections.append({"kind": "education", "title": title, "items": _parse_education(body)})
+            sections.append({"kind": "education", "title": title,
+                             "items": _parse_education(body), "lines": body})
         else:
             sections.append({"kind": "generic", "title": title, "lines": body})
 
@@ -418,6 +419,10 @@ def _render_section(sec: dict) -> str:
                 rows.append(f'<div class="skill-line">{_inline(s["items"])}</div>')
         return f'<section>{h2}<div class="skills">{"".join(rows)}</div></section>'
     if kind == "education":
+        if not sec["items"]:
+            # Education written as bold/plain lines rather than ### headings:
+            # render generically rather than silently dropping the section.
+            return f'<section>{h2}{_render_generic(sec["lines"])}</section>'
         blocks = []
         for e in sec["items"]:
             title = _esc(e["degree"])

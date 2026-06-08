@@ -164,6 +164,30 @@ jane@example.com
     assert "AWS Solutions Architect" in html
 
 
+def test_education_as_bold_lines_is_not_dropped():
+    # Regression: education written as **bold** lines (not ### headings) must
+    # still render, not silently vanish.
+    src = """# Jane Doe
+
+jane@example.com
+
+## EXPERIENCE
+
+### Engineer — Acme
+*City · 2018 – 2024*
+
+- Shipped features.
+
+## EDUCATION
+**M.Sc., Systems Engineering — Concordia University** · Montreal · 2016–2019
+**B.Eng., Management Systems Engineering — Amirkabir University of Technology** · Tehran · 2008–2012
+"""
+    html = render._structured_resume_html(src)
+    assert html is not None
+    assert "Concordia University" in html
+    assert "Amirkabir University of Technology" in html
+
+
 def test_non_resume_input_falls_back_to_none():
     # A cover letter has no experience roles -> structured renderer declines.
     cover = """# Dear Hiring Manager
