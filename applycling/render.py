@@ -399,6 +399,7 @@ def _render_generic(lines: list[str]) -> str:
 def _render_role(r: dict) -> str:
     left = f'<span class="role-title">{_esc(r["role"])}</span>'
     if r["company"]:
+        # Company sits below the title through the block-level role-title style.
         left += f'<span class="company">{_esc(r["company"])}</span>'
     if r["location"]:
         left += f'<span class="meta"> · {_esc(r["location"])}</span>'
