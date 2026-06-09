@@ -154,6 +154,8 @@ def test_structured_html_has_semantic_markup():
     assert 'class="role-dates"' in html
     assert "May 2024 – Feb 2026" in html
     assert 'class="company"' in html
+    assert ".role-title { display: block;" in html
+    assert '<span class="role-title">Product Manager, Digital Merchandising</span><span class="company">MEC' in html
     assert 'class="skills"' in html
     assert 'class="education-title"' in html
     # bold markdown becomes <strong>, not literal **

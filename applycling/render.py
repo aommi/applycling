@@ -113,12 +113,12 @@ h2 {
 .role { margin-top: 10px; break-inside: avoid; }
 .role:first-of-type { margin-top: 0; }
 .role-head { margin-bottom: 4px; }
-.role-main { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
+.role-main { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .role-left { min-width: 0; }
-.role-title { font-weight: 800; color: #172033; font-size: 10.2pt; }
+.role-title { display: block; font-weight: 800; color: #172033; font-size: 10.2pt; }
 .company { font-weight: 800; color: #245b73; }
 .meta { color: #4c5870; font-size: 8.85pt; }
-.role-dates { color: #172033; font-size: 8.85pt; white-space: nowrap; }
+.role-dates { color: #172033; font-size: 8.85pt; line-height: 1.25; white-space: nowrap; }
 ul { margin: 5px 0 0 0; padding-left: 14px; }
 li { margin: 3px 0; padding-left: 1px; }
 .project { margin-top: 8px; break-inside: avoid; }
@@ -399,7 +399,7 @@ def _render_generic(lines: list[str]) -> str:
 def _render_role(r: dict) -> str:
     left = f'<span class="role-title">{_esc(r["role"])}</span>'
     if r["company"]:
-        left += f' <span class="company">{_esc(r["company"])}</span>'
+        left += f'<span class="company">{_esc(r["company"])}</span>'
     if r["location"]:
         left += f'<span class="meta"> · {_esc(r["location"])}</span>'
     dates = f'<div class="role-dates">{_esc(r["dates"])}</div>' if r["dates"] else ""
