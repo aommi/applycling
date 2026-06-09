@@ -37,7 +37,14 @@ Rewrite the resume below so that it speaks directly to the job description. Foll
 - Do NOT invent experience, skills, employers, dates, or metrics not in the original resume or candidate stories.{never_fabricate_section}
 - Do NOT include a name, contact info, or profile summary section. Those are handled separately.
 - No filler: no "passionate about", "dynamic", "collaborated with", "helped to".
-- No em-dashes. No double hyphens. Use commas, semicolons, or break into two sentences.{stories_section}
+- No em-dashes. No double hyphens. Use commas, semicolons, or break into two sentences.
+
+**Bullet quality standards (every bullet must pass these):**
+- Numbers must be defensible: use the most precise figure you can actually defend, and never manufacture precision. Round numbers are fine when that is how the metric is genuinely known — do not invent a 6.4% when the real figure is "about 12%".
+- One idea per bullet. Scannable in a single breath. Sell the *what*; leave the *how* for the interview.
+- No two bullets should read as near-duplicates — vary opener verbs, metric types, and sentence structure.
+- Don't start three bullets in one role with the same verb.
+- Anything material on the resume should be corroborated by LinkedIn or safe to discuss honestly if asked. If a tailored resume introduces a new public-facing claim, update LinkedIn when practical — but do not block on perfect resume↔LinkedIn parity.{stories_section}
 
 **Transparency (you MUST report these at the very end, after the resume):**
 After the resume markdown, add a section starting with `<!-- TAILORING LOG` that lists:
