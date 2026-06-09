@@ -394,8 +394,12 @@ class PostgresStore(TrackerStore):
                           config: dict | None = None,
                           chat_id: int | None = None,
                           onboarding_state: str | None = None,
-                          display_name: str | None = None) -> None:
-        """Save profile fields for the store's scoped user. Only updates non-None values."""
+                          display_name: str | None = None) -> int:
+        """Save profile fields for the store's scoped user. Only updates non-None values.
+
+        Returns the number of rows affected (0 if nothing to write or the user
+        id does not exist), so callers can detect a no-op write.
+        """
         import json
         sets = []
         params = []
@@ -424,19 +428,20 @@ class PostgresStore(TrackerStore):
             sets.append("display_name = %s")
             params.append(display_name)
         if not sets:
-            return
+            return 0
         params.append(self._user_id)
         with self._conn() as conn:
-            conn.execute(
+            cur = conn.execute(
                 f"UPDATE users SET {', '.join(sets)}, updated_at = NOW() WHERE id = %s",
                 params,
             )
+            return cur.rowcount
 
     def load_user_profile(self) -> dict:
         """Return profile fields for the store's scoped user."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT profile, resume, stories, linkedin_profile, config, "
+                "SELECT email, profile, resume, stories, linkedin_profile, config, "
                 "chat_id, onboarding_state, display_name "
                 "FROM users WHERE id = %s",
                 (self._user_id,),
@@ -444,6 +449,7 @@ class PostgresStore(TrackerStore):
         if row is None:
             return {}
         return {
+            "email": row["email"],
             "profile": row["profile"] or {},
             "resume": row["resume"] or "",
             "stories": row["stories"] or "",

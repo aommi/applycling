@@ -124,6 +124,13 @@ def main() -> int:
         print(f"Could not load user {args.user_id}: {e}", file=sys.stderr)
         return 1
 
+    # load_user_profile() returns {} when the user row does not exist; never
+    # back up or write blindly into a missing/wrong id.
+    if not current:
+        print(f"Refusing to run: no user row found for id {args.user_id}.",
+              file=sys.stderr)
+        return 2
+
     print(f"Target user: {args.user_id}")
     print(f"Backend:     postgres ({os.environ['DATABASE_URL'].split('@')[-1]})")
     print(f"Mode:        {'APPLY (writing)' if args.apply else 'DRY RUN (no write)'}")
@@ -137,8 +144,10 @@ def main() -> int:
         return 0
 
     # --- apply: identity confirmation + backup before writing ---
-    current_email = ""
-    if isinstance(current.get("profile"), dict):
+    # Prefer the real users.email column; fall back to profile JSON only if the
+    # column is null (e.g. Telegram-only rows).
+    current_email = (current.get("email") or "").strip()
+    if not current_email and isinstance(current.get("profile"), dict):
         current_email = (current["profile"].get("email") or "").strip()
     display_name = current.get("display_name") or ""
     print(f"\nRow identity: email={current_email or '(none)'}  "
@@ -166,8 +175,12 @@ def main() -> int:
     )
     print(f"Backup of current row written to: {backup_path}")
 
-    store.save_user_profile(**to_write)
-    print("\nDone. Wrote: " + ", ".join(to_write))
+    affected = store.save_user_profile(**to_write)
+    if not affected:
+        print("WARNING: write affected 0 rows — nothing was changed. "
+              f"Verify user id {args.user_id} still exists.", file=sys.stderr)
+        return 1
+    print(f"\nDone. Wrote {', '.join(to_write)} ({affected} row).")
     return 0
 
 
