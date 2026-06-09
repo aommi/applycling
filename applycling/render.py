@@ -218,9 +218,13 @@ def _parse_roles(body: list[str]) -> list[dict]:
         location, dates = _split_once(meta, " · ")
         bullets: list[str] = []
         while j < n and not body[j].startswith("### "):
-            bullet = _BULLET_RE.match(body[j].strip())
+            s = body[j].strip()
+            bullet = _BULLET_RE.match(s)
             if bullet:
                 bullets.append(bullet[1].strip())
+            elif s and bullets:
+                # Wrapped continuation of the previous bullet: don't drop it.
+                bullets[-1] = f"{bullets[-1]} {s}".strip()
             j += 1
         roles.append({
             "role": role, "company": company,
@@ -241,11 +245,26 @@ def _parse_projects(body: list[str]) -> list[dict]:
             (i for i, s in enumerate(content) if re.search(r"github\.com|https?://", s)),
             -1,
         )
-        if link_i == -1:
-            desc, links = " ".join(content), ""
-        else:
-            desc, links = " ".join(content[:link_i]), content[link_i]
-        projects.append({"name": name, "description": desc, "links": links})
+        pre = content if link_i == -1 else content[:link_i]
+        links = "" if link_i == -1 else content[link_i]
+        # Separate prose description from project bullets so bullets render as
+        # a real list, not flattened into the description paragraph.
+        desc_parts: list[str] = []
+        bullets: list[str] = []
+        for s in pre:
+            bullet = _BULLET_RE.match(s)
+            if bullet:
+                bullets.append(bullet[1].strip())
+            elif bullets:
+                bullets[-1] = f"{bullets[-1]} {s}".strip()  # wrapped continuation
+            else:
+                desc_parts.append(s)
+        projects.append({
+            "name": name,
+            "description": " ".join(desc_parts),
+            "bullets": bullets,
+            "links": links,
+        })
     return projects
 
 
@@ -406,6 +425,8 @@ def _render_section(sec: dict) -> str:
             block = f'<div class="project"><div class="project-name">{_esc(p["name"])}</div>'
             if p["description"]:
                 block += f'<div class="project-desc">{_inline(p["description"])}</div>'
+            if p.get("bullets"):
+                block += "<ul>" + "".join(f"<li>{_inline(b)}</li>" for b in p["bullets"]) + "</ul>"
             if p["links"]:
                 block += f'<div class="project-links">{_inline(p["links"])}</div>'
             blocks.append(block + "</div>")

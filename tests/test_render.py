@@ -94,6 +94,58 @@ def test_parse_skills_and_education_and_projects():
     assert edu["items"][0]["school"] == "Concordia University"
 
 
+def test_project_bullets_render_as_list_not_flattened():
+    # A project bullet must become a real <li>, not get joined into the
+    # description paragraph (regression from the Shopify PDF).
+    src = """# Jane Doe
+
+jane@example.com
+
+## EXPERIENCE
+
+### Engineer — Acme
+*City · 2018 – 2024*
+
+- Shipped features.
+
+## SELECTED PROJECTS
+
+### ApplyCling (Current)
+Messaging-first AI agent.
+- Built with an agentic stack including MCP and Claude Code.
+[github.com/aommi/applycling](https://github.com/aommi/applycling)
+"""
+    model = render._parse_resume(src)
+    proj = next(s for s in model["sections"] if s["kind"] == "projects")["projects"][0]
+    assert proj["description"] == "Messaging-first AI agent."
+    assert proj["bullets"] == ["Built with an agentic stack including MCP and Claude Code."]
+    html = render._structured_resume_html(src)
+    assert "<li>Built with an agentic stack including MCP and Claude Code.</li>" in html
+    # the bullet text must not be flattened into the description
+    assert "- Built" not in html
+
+
+def test_wrapped_bullet_continuation_is_kept():
+    # A bullet split across two source lines must keep its continuation text.
+    src = """# Jane Doe
+
+jane@example.com
+
+## EXPERIENCE
+
+### Engineer — Acme
+*City · 2018 – 2024*
+
+- Led a large cross-functional initiative
+  that shipped a new billing platform end to end.
+"""
+    model = render._parse_resume(src)
+    role = next(s for s in model["sections"] if s["kind"] == "experience")["roles"][0]
+    assert role["bullets"] == [
+        "Led a large cross-functional initiative that shipped a new billing platform end to end."
+    ]
+
+
 def test_structured_html_has_semantic_markup():
     html = render._structured_resume_html(SAMPLE, title="Test")
     assert html is not None
